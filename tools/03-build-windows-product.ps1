@@ -976,6 +976,43 @@ Assert-File $SetupExe
 Write-Host "[PASS] Unsigned WAPT Community setup built."
 
 # ----------------------------------------------------------------------
+# Sign final Community setup
+# ----------------------------------------------------------------------
+
+if ($SignKey) {
+    Write-Host ""
+    Write-Host "Signing final WAPT Community setup..."
+
+    $SignPassword = [IO.File]::ReadAllText($SignKeyPasswordFile).TrimEnd("`r", "`n")
+
+    try {
+        & $SignTool `
+            'sign' `
+            '/f' $SignKey `
+            '/p' $SignPassword `
+            '/fd' 'SHA256' `
+            '/tr' 'http://timestamp.sectigo.com/rfc3161' `
+            '/td' 'SHA256' `
+            $SetupExe
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Setup Authenticode signing failed with exit code $LASTEXITCODE"
+        }
+    }
+    finally {
+        $SignPassword = $null
+    }
+
+    $SetupSignature = Get-AuthenticodeSignature -LiteralPath $SetupExe
+
+    if ($SetupSignature.Status -ne 'Valid') {
+        throw "Invalid Authenticode signature on final setup: $($SetupSignature.Status)"
+    }
+
+    Write-Host "[PASS] Final WAPT Community setup signed and validated."
+}
+
+# ----------------------------------------------------------------------
 # Validate final Community setup
 # ----------------------------------------------------------------------
 
