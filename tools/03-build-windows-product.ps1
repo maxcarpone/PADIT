@@ -695,6 +695,30 @@ Copy-Item (Join-Path $Vc90 'Microsoft.VC90.CRT.manifest') $Output
 
 Copy-Item (Join-Path $Tools 'dmidecode.exe') $Output
 
+# Install the controlled SignTool required by CreateWaptSetup()
+# to Authenticode-sign dynamically generated waptagent.exe.
+$UtilsTarget = Join-Path $Output 'utils'
+$ProductSignTool = Join-Path $UtilsTarget 'signtool.exe'
+
+New-Item -ItemType Directory -Path $UtilsTarget -Force | Out-Null
+
+Copy-Item `
+    -LiteralPath $SignTool `
+    -Destination $ProductSignTool `
+    -Force
+
+Assert-File $ProductSignTool
+
+$ProductSignToolHash = (
+    Get-FileHash -LiteralPath $ProductSignTool -Algorithm SHA256
+).Hash
+
+if ($ProductSignToolHash -ne $SignToolFiles['signtool.exe']) {
+    throw "Product signtool.exe SHA256 mismatch."
+}
+
+Write-Host "[PASS] Controlled SignTool installed for dynamic agent signing."
+
 # Product source trees required by Inno Setup.
 Write-Host "Copying Git-controlled product trees..."
 
