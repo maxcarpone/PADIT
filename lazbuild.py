@@ -194,24 +194,30 @@ def update_hash_file(filepath):
     else:
         print('No %s hash file to process' % filepath)
 
-def sign_exe(exe_path,p12path,p12password):
-    SIGNTOOL = os.path.join(wapt_root_dir,'utils','signtool.exe')
-    if not os.path.exists(SIGNTOOL):
-      SIGNTOOL = os.path.join(programfiles32(),'wapt','utils','signtool.exe')
-    if not os.path.exists(SIGNTOOL):
-      SIGNTOOL = os.path.join(r'c:\wapt','utils','signtool.exe')
+def sign_exe(exe_path,p12path,p12password,signtool_path):
+    if not signtool_path or not os.path.isfile(signtool_path):
+        raise Exception('signtool.exe not found: %s' % signtool_path)
+
+    SIGNTOOL = signtool_path
 
     for attempt in [1, 2, 3]:
         try:
             print("Signing attempt #" + str(attempt))
-            run(r'"%s" sign /f "%s" /p "%s" /t http://timestamp.sectigo.com "%s"' % (SIGNTOOL,p12path,p12password,exe_path))
+            subprocess.check_output([
+                SIGNTOOL,
+                'sign',
+                '/f', p12path,
+                '/p', p12password,
+                '/fd', 'SHA256',
+                '/tr', 'http://timestamp.sectigo.com/rfc3161',
+                '/td', 'SHA256',
+                exe_path,
+            ])
             break
         except subprocess.CalledProcessError as cpe:
-            cpe.cmd =  cpe.cmd.replace(p12password, '********')
-            cpe.output = cpe.output.replace(p12password, '********')
-            print("Got CalledProcessError from subprocess.check_output: %s" % str(cpe))
-        except Exception as e:
-            print("Got an exception from subprocess.check_output")
+            print("Got CalledProcessError from signtool (return code %s)" % cpe.returncode)
+        except Exception:
+            print("Got an exception from signtool")
             raise
 
 def set_app_ico(lpi_path,edition):
@@ -239,6 +245,7 @@ def main():
     parser.add_option("-c","--compress", action='store_true', dest="compress", default=False, help="Compress with UPX.  (default: %default)")
     parser.add_option("-k","--sign-key", dest="sign_key_path", help="Sign with this  key.  (default: %default)")
     parser.add_option("-w","--sign-key-pwd-path", dest="sign_key_pwd_path", help="Path to password file. (default: %default)")
+    parser.add_option("--sign-tool", dest="sign_tool_path", help="Path to signtool.exe used for Authenticode signing. (default: %default)")
     parser.add_option("-t","--target-dir", dest="target_dir", help="Target exe directory (default: ")
     (options,args) = parser.parse_args()
 
@@ -276,8 +283,7 @@ def main():
             run('"%s" "%s"' % (os.path.join(programfiles32(),'upx','upx.exe'),exe_fn))
 
         if options.sign_key_path:
-            sign_exe(exe_fn,options.sign_key_path,open(options.sign_key_pwd_path,'rb').read())
-
+            sign_exe(exe_fn,options.sign_key_path,open(options.sign_key_pwd_path,'rb').read(),options.sign_tool_path)
 
 
 if __name__ == "__main__":
