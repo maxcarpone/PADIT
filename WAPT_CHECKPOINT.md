@@ -5423,17 +5423,18 @@ consolidated Debian 10 WAPT 1.8.3 server
 The consolidated Windows installation and historical-client upgrade path are
 therefore validated end-to-end.
 
-### 47.6 — Autonomous distribution cleanup — source review checkpoint (2026-09-24)
+### 47.6 — Autonomous distribution cleanup — consolidated validation (2026-09-25)
 
-Status: IN PROGRESS — source cleanup substantially complete; consolidated diff review, commit and rebuild still pending.
+Status: PASS — source cleanup committed, autonomous Windows rebuild validated, and focused Windows runtime validation completed.
 
 The source review for implicit dependencies on obsolete/upstream WAPT / Tranquil infrastructure has been completed for the main runtime and installer paths.
 
-Validated changes already committed:
-- `2ee19e47e7` — Remove implicit upstream templates repository.
-- `a5e88dfd` — Remove upstream repository defaults from installers.
+Validated cleanup commits:
+- `2ee19e47e` — Remove implicit upstream templates repository.
+- `a5e88dfde` — Remove upstream repository defaults from installers.
+- `1a3d18afa` — Remove implicit upstream service dependencies.
 
-Additional intentional changes currently remain uncommitted:
+The consolidated cleanup includes:
 
 - `waptconsole/uvisrepositories.lfm`
   - neutralized external repository UI hints;
@@ -5461,7 +5462,7 @@ Additional intentional changes currently remain uncommitted:
 - Usage telemetry cleanup:
   - `waptconsole/uwaptconsole.pas`
     - `send_usage_report` default changed from `True` to `False`;
-    - reporting now additionally requires an explicitly configured `usage_report_url`;
+    - reporting additionally requires an explicitly configured `usage_report_url`;
     - no default telemetry destination remains.
   - `waptconsole/uviswaptconfig.pas`
     - UI/config default for `send_usage_report` changed from `True` to `False`.
@@ -5470,70 +5471,430 @@ Additional intentional changes currently remain uncommitted:
   - `waptconsole/uviswaptconfig.lfm`
     - caption changed from `Send anonymous usage statistics to Tranquil IT`
       to `Send anonymous usage statistics`.
-  - historical translation catalog (`.po`) entries have deliberately not yet been manually edited; inspect what the normal Lazarus build regenerates.
 
 - `waptsetup/wapt.iss`
   - removed `AppUpdatesURL=https://wapt.tranquil.it/wapt/releases/latest`;
   - publisher/support/contact metadata intentionally retained for now and deferred to future identity/branding work.
 
-Source review conclusions:
+Source review conclusions remain:
 - Historical copyright, attribution, doctest/example and documentation references to Tranquil/WAPT are not being globally removed.
 - Explicit historical attribution to WAPT/Tranquil may remain.
 - Functional routing toward current/upstream repositories or services must not be implicit.
 - External repositories remain supported when explicitly configured by the administrator.
-- Current TIS/WAPT repositories must not be presented as package sources for this fork because compatibility must not be assumed (notably the transitional Python 2 package/runtime model).
-- Remaining matches in `common.py`, `setuphelpers_windows.py`, `waptpackage.py`, `waptutils.py`, `waptsetup/create_setup.py`, and the documentation message in `waptsetup/wapt.iss` were classified as doctest/example/documentary references, not automatic runtime dependencies.
-- `waptservice/waptservice_common.py` and `wapt-get/waptwinutils.inc` Tranquil references inspected were historical paths/identifiers/examples, not external runtime destinations.
+- Current TIS/WAPT repositories must not be presented as package sources for this fork because compatibility must not be assumed, notably with the transitional Python 2 package/runtime model.
+- Remaining historical/example references are not considered automatic runtime dependencies.
 
-EOL precautions remain mandatory:
+EOL precautions remain mandatory for future source changes:
 - do not normalize the repository;
 - do not use `git add .`;
 - preserve each file's existing EOL representation;
 - `waptconsole/uwaptconsole.pas` is historically `i/mixed w/mixed`;
-- `waptsetup/wapt.iss` is canonically LF after restore/edit and currently has only the intended `AppUpdatesURL` deletion.
+- preserve intentionally restored canonical LF files where applicable.
 
-Exact next action:
-1. Perform one consolidated review of all intentional uncommitted §47.6 changes (`git status`, `git diff --check`, targeted/full diff).
-2. Verify no accidental EOL churn or unrelated modifications.
-3. Commit the validated autonomous-distribution cleanup using an explicit file list (never `git add .`).
-4. Rebuild the Windows product using the already validated build workflow.
-5. Inspect any PO/catalog changes produced by the normal Lazarus build before deciding whether to retain them.
-6. Perform focused runtime validation:
-   - clean installation has no implicit upstream repository;
-   - no automatic contact to Store/TIS/Tranquil during normal operation;
-   - generated agent/install remains functional;
-   - external repository functionality still works when explicitly configured by the administrator.
-7. Rebuild/update the Debian server package as required by the server source changes and perform only focused homepage/artifact-link regression tests.
-8. Update §47.6 and freeze the resulting consolidated 1.8.3 milestone before starting Debian 11.
+The autonomous-distribution source cleanup is now considered closed unless a new runtime contradiction appears.
 
-Do not reopen already closed DB migration, DR, historical 1.8.2.7393 -> 1.8.3.7444 migration, or Windows manifest/AuthentiCode investigations unless a new contradiction appears.
+
+### 47.7 — Automated Windows Authenticode signing and build hardening (2026-09-25)
+
+Status: PASS for the technical signing workflow. The current self-signed certificate remains a validation/internal certificate and is not yet the preferred final distribution identity.
+
+Following the autonomous-distribution cleanup, the Windows build workflow was extended to make Authenticode signing reproducible and part of the controlled build process.
+
+Relevant commits:
+
+- `23c995105` — Integrate controlled Authenticode signing into Windows build.
+- `892481166` — Fix Lazarus DLL signing and fail on signing errors.
+- `128d55f8a` — Retry transient Lazarus access violations.
+- `474d66114` — Sign final Windows setup during product build.
+- `604c5b889` — Include controlled SignTool for dynamic agent signing.
+- `9f3737b47` — Install SignTool for dynamic agent signing.
+- `a38b4fe4e` — Restrict SignTool installation to WAPTSetup.
+
+Automatic build branches created during this sequence include:
+
+- `build/windows-1.8.3-7451-auto`
+- `build/windows-1.8.3-7452-auto`
+- `build/windows-1.8.3-7454-auto`
+- `build/windows-1.8.3-7455-auto`
+- `build/windows-1.8.3-7456-auto`
+- `build/windows-1.8.3-7457-auto`
+
+Current source HEAD:
+
+- branch: `release/1.8.3`
+- commit: `a38b4fe4e`
+- matching validated automatic build branch: `build/windows-1.8.3-7457-auto`
+
+The automated build now:
+- signs the intended Lazarus-produced Windows binaries;
+- treats signing failures as build failures;
+- signs the final WAPTSetup artifact;
+- validates the resulting signatures;
+- uses controlled SignTool material from the build kit;
+- tolerates the observed transient Lazarus access-violation failure through controlled retry logic.
+
+The controlled SignTool copied into the assembled product tree is:
+
+- path: `C:\wapt-product-1.8.3\utils\signtool.exe`
+- size: `543160` bytes
+- SHA256: `92A5751C292C7D3C41619CA0F0A28D1121CF55EF55D75DCCE394BF01F0194193`
+
+Its hash is explicitly checked by `tools/03-build-windows-product.ps1`.
+
+
+### 47.8 — WAPTSetup / WAPTAgent SignTool separation
+
+Historical `CreateWaptSetup()` logic expects SignTool at:
+
+`<wapt_base_dir>\utils\signtool.exe`
+
+and derives the PKCS#12 signing-key path from the selected personal certificate using:
+
+`ChangeFileExt(WaptPersonalCertificatePath,'.p12')`
+
+The controlled SignTool therefore has to be available on a workstation used to generate a customized agent from the console.
+
+However, SignTool itself is not required on ordinary WAPT clients.
+
+The retained installer rule is therefore:
+
+    #if edition == "waptsetup"
+    Source: "{#wapt_base_dir}utils\signtool.exe"; DestDir: "{app}\utils"; Flags: ignoreversion;
+    #endif
+
+Validated behavior:
+
+WAPTSetup:
+- installs the management console;
+- installs the Inno Setup material required for dynamic agent generation;
+- installs controlled `utils\signtool.exe`.
+
+WAPTAgent:
+- retains the historically bundled console and client components;
+- does not install `utils\signtool.exe`.
+
+Clean WAPTAgent-only installation test:
+
+    Test-Path 'C:\Program Files (x86)\wapt\utils\signtool.exe'
+
+Result:
+
+    False
+
+The private Authenticode build certificate/PFX and its password are never included in WAPTSetup or WAPTAgent.
+
+The console's historical dynamic-agent signing mechanism is separate: it looks for a `.p12` associated with the administrator-selected WAPT personal certificate. In the current operational model, those personal certificate/key pairs may reside on the team's `Z:` storage.
+
+
+### 47.9 — Windows 1.8.3.7457 authoritative build proof
+
+Status: PASS.
+
+The complete Windows autonomous build succeeded from the controlled workflow.
+
+Build environment:
+
+- source: `C:\git\waptdev`
+- build kit: `C:\wapt-build-kit`
+- runtime: `C:\wapt-runtime-1.8.3`
+- output: `C:\wapt-product-1.8.3`
+- isolated worktree: `C:\wapt-build-worktree-auto`
+- Lazarus: `C:\lazarus`
+- isolated Lazarus PCP: `C:\wapt-build-lazarus-pcp-auto`
+
+Final WAPTSetup:
+
+- FileVersion: `1.8.3.7457`
+- ProductVersion: `1.8.3.7457`
+- ProductName: `WAPTSetup`
+- size: `26908904` bytes
+- SHA256: `89257ED1541FDE4F840F64FAE8B014CCA1976402DED33577734774210937AA61`
+
+The build explicitly reported:
+
+- unsigned WAPT Community setup successfully built;
+- final setup successfully Authenticode-signed;
+- final signature successfully validated;
+- final Community setup successfully validated;
+- base Windows product tree successfully assembled.
+
+Installed console validation:
+
+- FileVersion: `1.8.3.7457`
+- ProductVersion: `1.8.3`
+- signer: `CN=WAPT Community Thouet Code Signing`
+- RFC3161 timestamp signer: `CN=Sectigo Public Time Stamping Signer R37`
+
+The Windows `1.8.3.7457` build supersedes `1.8.3.7444` as the authoritative current Windows binary proof.
+
+
+### 47.10 — Console-driven waptagent.exe 1.8.3.7457 generation
+
+Status: PASS.
+
+A new agent was generated from the installed WAPT Community 1.8.3.7457 console and published to the Debian 10 server.
+
+Published server artifact:
+
+- path: `/var/www/wapt/waptagent.exe`
+- SHA256: `ED0D099A9FF0D921AAFA11C5FAD720653825C378B76E95AF9DAFA0120C5E562C`
+
+The published file was downloaded again on Windows.
+
+Windows validation:
+
+- FileVersion: `1.8.3.7457`
+- ProductVersion: `1.8.3.7457`
+- ProductName: `WAPTAgent`
+- SHA256: `ED0D099A9FF0D921AAFA11C5FAD720653825C378B76E95AF9DAFA0120C5E562C`
+
+The Debian and Windows SHA256 values are identical.
+
+Validated chain:
+
+    WAPTSetup 1.8.3.7457
+      -> installed console 1.8.3.7457
+      -> console-driven agent generation
+      -> upload to Debian 10
+      -> /var/www/wapt/waptagent.exe
+      -> Windows download
+      -> identical SHA256
+
+The generated outer `waptagent.exe` installer itself reports `NotSigned`.
+
+A historical `waptagent.exe` 1.8.2.7393 comparison also reports `NotSigned`.
+
+The unsigned outer generated agent installer is therefore not considered a newly introduced 1.8.3 regression.
+
+
+### 47.11 — Historical 7393 vs 7457 Authenticode trust validation
+
+The installed executable set was compared directly between historical WAPT 1.8.2.7393 and current WAPT 1.8.3.7457.
+
+Historical 1.8.2.7393 principal WAPT executables report `Valid` Authenticode signatures, including:
+
+- `wapt-get.exe`
+- `waptconsole.exe`
+- `waptdeploy.exe`
+- `waptexit.exe`
+- `waptmessage.exe`
+- `waptself.exe`
+- `wapttray.exe`
+
+Historical signer:
+
+- Subject: `CN=TRANQUIL I.T. SYSTEMS`
+- Issuer: `CN=Sectigo RSA Code Signing CA`
+- thumbprint: `601F66DF07CA2546D596AC53720C1050E5E8D1FC`
+- certificate validity: 2020-02-13 to 2023-02-13
+
+Observed historical trust chain:
+
+    TRANQUIL I.T. SYSTEMS
+      -> Sectigo RSA Code Signing CA
+      -> USERTrust RSA Certification Authority
+
+Historical timestamp signer:
+
+- `CN=Sectigo RSA Time Stamping Signer #2`
+
+The expired historical end-entity certificate still validates through Authenticode because the executable was timestamped while the signing certificate was valid.
+
+The historical Tranquil signer certificate was not found directly in either:
+
+- `Cert:\LocalMachine\Root`
+- `Cert:\LocalMachine\TrustedPublisher`
+
+The 7393 trust model therefore relied on the public CA chain rather than on deployment of a private WAPT trust root.
+
+
+### 47.12 — Current internal Authenticode certificate trust behavior
+
+Current validation signer:
+
+- Subject: `CN=WAPT Community Thouet Code Signing`
+- Issuer: `CN=WAPT Community Thouet Code Signing`
+- thumbprint: `015133A6B6119ACB3C9F24400C348077D19B954B`
+- validity: 2026-09-25 to 2027-09-25
+- self-signed.
+
+Current timestamping is performed through the public Sectigo RFC3161 service.
+
+Without trusting the self-signed certificate, the signed 1.8.3.7457 WAPT executables report `UnknownError`.
+
+Observed Windows trust error:
+
+    A certificate chain processed, but terminated in a root certificate
+    which is not trusted by the trust provider.
+
+This can also prevent execution of the console under the applicable Windows security policy.
+
+A controlled test imported only the public certificate:
+
+- `WAPT-Community-Thouet-Code-Signing.cer`
+- size: `1070` bytes
+
+into:
+
+- `Cert:\LocalMachine\Root`
+
+After import, all tested WAPT executables signed by the current certificate changed from `UnknownError` to `Valid`:
+
+- `wapt-get.exe`
+- `waptconsole.exe`
+- `waptdeploy.exe`
+- `waptexit.exe`
+- `waptmessage.exe`
+- `waptself.exe`
+- `wapttray.exe`
+
+Unrelated/unsigned binaries remained `NotSigned`, including:
+
+- `dmidecode.exe`
+- `unins000.exe`
+- `waptpython.exe`
+- `waptpythonw.exe`
+- current `openssl.exe`
+
+Conclusion:
+
+The 1.8.3.7457 Authenticode signing implementation is technically correct. The observed `UnknownError` is caused by lack of trust in the self-signed validation certificate, not by an invalid binary signature.
+
+
+### 47.13 — Final Authenticode distribution policy — pending external identity
+
+The current `WAPT Community Thouet Code Signing` certificate is retained as an internal/validation signing identity.
+
+It successfully proves the complete technical signing workflow:
+
+- controlled signing input;
+- SHA-256 Authenticode signatures;
+- RFC3161 timestamping;
+- Lazarus artifact signing;
+- final WAPTSetup signing;
+- automated signature verification;
+- failure handling in the build workflow.
+
+It is not currently preferred as the final broad-distribution trust model.
+
+Deploying the public `.cer` through Active Directory GPO would technically solve trust for domain-joined systems, but this is not considered the preferred final architecture because:
+- some managed systems are outside the domain;
+- a private-root bootstrap would add a deployment prerequisite;
+- it would reduce installation autonomy compared with historical 1.8.2.7393 behavior.
+
+Preferred target before broad final distribution:
+
+- use an Authenticode code-signing identity with a Windows-recognized trust chain;
+- require no WAPT-specific private root installation on a clean Windows machine;
+- support domain and non-domain machines identically;
+- preserve the already validated automated signing/timestamp workflow.
+
+The private signing key/PFX must remain outside distributed WAPT products.
+
+The current self-signed certificate remains suitable for development, laboratory validation and controlled internal testing until the final signing identity is selected.
+
+
+### 47.14 — Current 1.8.3 consolidation status and exact next action
+
+Current Windows authoritative proof:
+
+- source HEAD: `a38b4fe4e`
+- build branch: `build/windows-1.8.3-7457-auto`
+- WAPTSetup: `1.8.3.7457`
+- generated WAPTAgent: `1.8.3.7457`
+
+Validated:
+- autonomous Windows build workflow;
+- controlled build-kit inputs;
+- isolated Lazarus build;
+- transient Lazarus failure retry;
+- automated Authenticode signing;
+- final setup signing;
+- autonomous-distribution source cleanup;
+- WAPTSetup-only SignTool deployment;
+- console-driven agent generation;
+- Debian publication;
+- byte-integrity proof through identical SHA256;
+- WAPTAgent-only installation without SignTool;
+- historical/current Authenticode trust comparison;
+- current self-signed certificate behavior and trust remediation.
+
+Still pending before the consolidated `1.8.3.1` freeze:
+1. Update/finalize technical documentation for the 7457 milestone.
+2. Ensure all temporary/test runtime naming has been replaced by the neutral production path `C:\wapt-runtime-1.8.3` in defaults and documentation.
+3. Decide/acquire the final Authenticode signing identity for broad distribution, or explicitly document the internal-certificate limitation if release timing requires deferral.
+4. Perform the final release-candidate Windows build after any remaining release-only changes.
+5. Record final hashes, versions and Git lineage.
+6. Perform the minimal clean-machine release-candidate regression proof.
+7. Update/rebuild Debian packaging only where required by committed server/product changes and perform focused artifact/homepage regression validation.
+8. Freeze/tag the consolidated autonomous release as `1.8.3.1`.
+9. Only after the 1.8.3.1 consolidation is frozen, begin the next modernization/security phase and Debian 11 work.
+
+Do not reopen already validated:
+- Debian 10 DR tooling;
+- historical database migration;
+- 1.8.2.7393 -> 1.8.3 migration proof;
+- VC90 CRT manifest investigation;
+- Windows 7393 historical signing-chain investigation;
+- generated-agent SignTool distribution investigation;
+unless a new contradiction appears.
+
 
 ## 48. Resume protocol for the next ChatGPT thread
 
 Gipity, resume the WAPT project from the attached checkpoint.
-Treat WAPT_CHECKPOINT.md as the authoritative technical state.
+Treat `WAPT_CHECKPOINT.md` as the authoritative technical state.
 Do not repeat already validated investigations unless a contradiction appears.
 
-The Windows autonomous build workflow 01 -> 02 -> 03 is validated on clean
-VM107. The authoritative Windows binary proof is 1.8.3.7444; Git count 7445
-contains only subsequent documentation/script-naming changes.
+The current authoritative Windows proof is now WAPT Community `1.8.3.7457`.
 
-The reconstructed tis-waptsetup 1.8.3.7445 package is validated and contains
-the exact validated Windows setup/deploy payload.
+Current source state:
+- branch: `release/1.8.3`
+- HEAD: `a38b4fe4e`
+- matching automatic build branch: `build/windows-1.8.3-7457-auto`.
 
-The authentic historical database migration from db_version 1.8.2.1 to
-1.8.3.0 is PASS.
+The autonomous Windows workflow is validated end-to-end:
+- controlled environment/build-kit;
+- isolated Lazarus build;
+- automated Authenticode signing;
+- signed final WAPTSetup;
+- WAPTSetup-only controlled SignTool installation;
+- console-driven WAPTAgent generation;
+- Debian publication;
+- identical server/download SHA256;
+- WAPTAgent-only installation without SignTool.
 
-The consolidated Windows installation chain is also PASS:
-- setup/deploy publication integrity;
-- generated waptagent.exe 1.8.3.7444;
-- historical signing identity 0790007d;
-- generated 0790007d-waptupgrade 1.8.3.7444-1;
-- clean-machine agent installation and automatic historical certificate
-  provisioning;
-- authentic console-driven client migration 1.8.2.7393 -> 1.8.3.7444;
-- automatic WAPTService restart and successful console reconnection.
+Authoritative 7457 artifacts currently recorded:
 
-Resume at section 47.6 "Exact next action".
-The next technical objective is autonomous-distribution validation.
-Short answers, one step at a time.
+WAPTSetup:
+- FileVersion/ProductVersion: `1.8.3.7457`
+- SHA256: `89257ED1541FDE4F840F64FAE8B014CCA1976402DED33577734774210937AA61`
+
+Generated WAPTAgent:
+- FileVersion/ProductVersion: `1.8.3.7457`
+- SHA256: `ED0D099A9FF0D921AAFA11C5FAD720653825C378B76E95AF9DAFA0120C5E562C`
+
+Current Authenticode validation identity:
+- `CN=WAPT Community Thouet Code Signing`
+- thumbprint `015133A6B6119ACB3C9F24400C348077D19B954B`
+- self-signed;
+- signatures become `Valid` after trusting its public certificate;
+- it is an internal/validation identity, not yet the preferred final broad-distribution trust model.
+
+Historical 1.8.2.7393 used a public Sectigo/USERTrust trust chain and required no WAPT-specific root deployment.
+
+Because some managed clients are outside the Active Directory domain, GPO deployment of the current self-signed `.cer` is not the preferred final solution. A Windows-recognized external Authenticode signing identity is preferred for broad distribution.
+
+The autonomous-distribution cleanup is committed through:
+- `2ee19e47e`
+- `a5e88dfde`
+- `1a3d18afa`
+
+Do not reopen the autonomous-distribution source audit unless runtime testing reveals a contradiction.
+
+Resume at §47.14 "Current 1.8.3 consolidation status and exact next action".
+
+Immediate objective:
+finish the remaining release documentation/naming cleanup, decide the final Authenticode identity strategy, produce the release candidate, then freeze the consolidated autonomous `1.8.3.1` milestone before starting Debian 11.
+
+Keep answers concise and proceed one validated step at a time.
