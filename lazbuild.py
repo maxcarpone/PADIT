@@ -287,7 +287,14 @@ def main():
         update_hash_file(os.path.abspath(options.update_hash_filepath.format(**locals())))
         cmd = '"%s" --primary-config-path="%s" -B "%s"%s' % (os.path.expandvars(options.lazbuildpath), os.path.expandvars(options.primary_config_path), os.path.expandvars(lpi_path), '' if sys.platform != 'darwin' else ' --ws=cocoa')
         print(u'Running: %s' % cmd)
-        run(cmd)
+        for attempt in [1, 2, 3]:
+            try:
+                run(cmd)
+                break
+            except subprocess.CalledProcessError as cpe:
+                if cpe.returncode != 217 or attempt == 3:
+                    raise
+                print("Lazarus crashed with exit code 217; retrying (%s/3)..." % (attempt + 1))
         (fn,ext) = os.path.splitext(get_lpi_output(lpi_path))
         if ext in ('','.'):
             ext = get_lpi_output_extension(lpi_path)
