@@ -609,7 +609,7 @@ begin
   EdLicencesDirectory.Directory := inifile.ReadString('global', 'licences_directory', '');
 
   cbSendStats.Checked :=
-    inifile.ReadBool('global', 'send_usage_report', True);
+    inifile.ReadBool('global', 'send_usage_report', False);
 
   EdClientCertificatePath.FileName := inifile.ReadString('global','client_certificate','');
   EdClientPrivateKeyPath.FileName := inifile.ReadString('global','client_private_key','');

@@ -540,7 +540,7 @@ object VisWAPTConfig: TVisWAPTConfig
         Alignment = taRightJustify
         Anchors = [akTop, akRight]
         BorderSpacing.Right = 3
-        Caption = 'Send anonymous usage statistics to Tranquil IT'
+        Caption = 'Send anonymous usage statistics'
         ParentColor = False
         Visible = False
       end

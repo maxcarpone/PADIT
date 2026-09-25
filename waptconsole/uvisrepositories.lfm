@@ -47,7 +47,7 @@ object VisRepositories: TVisRepositories
     object EdName: TTIComboBox
       Left = 187
       Height = 21
-      Hint = 'E.g. : https://store.wapt.fr/wapt'#13#10'Used by WAPT console for duplicating packages.'
+      Hint = 'Name used to identify the external repository.'
       Top = 3
       Width = 232
       HistoryCaseSensitive = False
@@ -101,7 +101,7 @@ object VisRepositories: TVisRepositories
     object EdRepoURL: TTIEdit
       Left = 187
       Height = 23
-      Hint = 'E.g. : https://store.wapt.fr/wapt'#13#10'Used by WAPT console for duplicating packages.'
+      Hint = 'URL of the external packages repository.'
       Top = 32
       Width = 232
       AutoSize = False
@@ -143,7 +143,7 @@ object VisRepositories: TVisRepositories
     object EdHttpProxy: TTIEdit
       Left = 187
       Height = 21
-      Hint = 'E.g. : http://proxy.tranquilit.local:3128'#13#10'Only required if a proxy is needed for templates access'
+      Hint = 'HTTP proxy URL, if required to access the external repository.'
       Top = 61
       Width = 232
       Constraints.MinWidth = 200
@@ -753,7 +753,6 @@ object VisRepositories: TVisRepositories
   end
   object DlgSelectPackagesCertsBundlePath: TSelectDirectoryDialog
     Title = 'Select directory of Authorized packages certificates'
-    InitialDir = 'C:\tranquilit\'
     Options = [ofFileMustExist, ofEnableSizing, ofViewDetail]
     left = 552
     top = 64

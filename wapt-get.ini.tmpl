@@ -29,7 +29,6 @@ dbdir = c:\wapt\db
 
 ; default sources location (
 default_sources_url=
-; https://svn.tranquil.it/sources/%(packagename)s-wapt/trunk/
 
 ; where to create templates of packages, or unzip packages to edit
 default_sources_root=c:\waptdev
@@ -38,7 +37,7 @@ default_sources_root=c:\waptdev
 default_sources_root_host=c:\waptdev\hosts
 
 ; From where copy templates packages in waptconsole
-;templates_repo_url=https://store.wapt.fr/wapt
+;templates_repo_url=
 
 ; default prefix to add to software name when creating package templates
 default_package_prefix=tis
@@ -49,22 +48,22 @@ default_sources_suffix=wapt
 ; command to run for uploading a package to your server (wapt-get upload-package or build-upload)
 ; if no command is supplied, it is assumed your wapt server is running waptserver and support http upload with POST 
 ; with files encoded
-;upload_cmd="C:\Program Files\WinSCP\WinSCP.exe" wapt@srvwapt.tranquilit.local /upload %(filenames)s
+;upload_cmd="C:\Program Files\WinSCP\WinSCP.exe" wapt@srvwapt.mydomain.local /upload %(filenames)s
 ; you could put your public authorization key in server's /opt/wapt/.ssh/authorized_keys
 ; example if you have cygwin :
 ;   create key : c:\cygwin\bin\ssh localhost ssh-keygen
-;   copy key :   c:\cygwin\bin\ssh localhost ssh-copy-id -i ~/.ssh/id_dsa wapt@srvwapt.tranquilit.local
+;   copy key :   c:\cygwin\bin\ssh localhost ssh-copy-id -i ~/.ssh/id_dsa wapt@srvwapt.mydomain.local
 ; then with putty (wapt user is assumed as copied wapt files should belong to it)
-;upload_cmd="c:\Program Files (x86)\putty\pscp -v -i c:\private\mykey.pem -l wapt %(filenames)s srvwapt.tranquilit.local:/var/www/wapt/
+;upload_cmd="c:\Program Files (x86)\putty\pscp -v -i c:\private\mykey.pem -l wapt %(filenames)s srvwapt.mydomain.local:/var/www/wapt/
 
 ; command to run (deprecated by http upload) : for example to update Packages index.
-;after_upload="c:\Program Files (x86)\putty\plink" -v -i c:\private\mykey.pem -l wapt srvwapt.tranquilit.local "python /opt/wapt/wapt-scanpackages.py /var/www/wapt/ -l info"
+;after_upload="c:\Program Files (x86)\putty\plink" -v -i c:\private\mykey.pem -l wapt srvwapt.mydomain.local "python /opt/wapt/wapt-scanpackages.py /var/www/wapt/ -l info"
 
 ; define a wapt_server key only if one server is running
 ; a wapt server support the following url :
 ; if not present : no waptserver is queried
 ; if empty : use DNS SRV record _waptserver._tcp.mondomaine.local
-;wapt_server=https://wapt.tranquil.it
+;wapt_server=https://srvwapt.mydomain.local
 
 ; for windows task scheduling "wapt-get setup-tasks" to create windows scheduled tasks (when waptservice is not installed)
 ;waptupgrade_task_period=360
@@ -81,10 +80,10 @@ default_sources_suffix=wapt
 ;websockets_check_config_interval=5
 
 ; for https waptserver / wapt_repo connections : 0 disable/1 enable or path to certificate(s)  of the server
-;verify_cert = C:\wapt\ssl\server\wapt142.tranquilit.local.crt
+;verify_cert = C:\wapt\ssl\server\srvwapt.mydomain.local.crt
 ;verify_cert = 1
 ; for tls websockets : check certificate : 1 or disable check 0, if not set waptsockets_verify==verify_cert
-;websockets_verify_cert=C:\tranquilit\wapt\ssl\server\wapt142.tranquilit.local.crt
+;websockets_verify_cert=C:\wapt\ssl\server\srvwapt.mydomain.local.crt
 ;websockets_verify_cert=1
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -107,7 +106,7 @@ default_sources_suffix=wapt
 ;use_http_proxy_for_server=0
 ;use_http_proxy_for_templates=0
 
-;repositories=private,tranquilit
+;repositories=private
 
 ;;;;;;;;;;;
 ; shutdown policy
@@ -119,21 +118,17 @@ default_sources_suffix=wapt
 
 ;;;;;;;;;;;;;;;;;;;;;;;;
 ; When DNS query is used to lookup wapt_server or repo_url, define explicitely the dnsdomain zone to lookup.
-;dnsdomain=tranquilit.local
+;dnsdomain=mydomain.local
 
 ;;;;;;;;;;;;;;
 ; enable ssl certificate validation for wapt_server and repo_url https://
 ; can be activated easily for main repo with command "wapt-get enable-check-certificate"
-;verify_cert=c:\wapt\ssl\server\srvwapt.tranquilit.local
+;verify_cert=c:\wapt\ssl\server\srvwapt.mydomain.local
 
 [private]
 repo_url=http://wapt/wapt
 
-[tranquilit]
-repo_url=http://wapt.tranquil.it/wapt
-default_source_url=https://dev.tranquil.it/wapt/
-
 ;;; explicit repository for host packages (in case this one is centralized for example
 ;[wapt-host]
-;repo_url=https://srvwapt.tranquilit.local/wapt-host
+;repo_url=https://srvwapt.mydomain.local/wapt-host
 

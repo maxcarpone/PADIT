@@ -800,7 +800,6 @@ begin
     rs.RepoName := Waptrepo.Name;
     if rs.ShowModal = mrOk then
     begin
-      //urlExternalRepo.Caption := format(rsUrl, [IniReadString(WaptIniFilename,EdRepoName.Text,'repo_url','https://store.wapt.fr/wapt')]);
       FillReposList;
       RepoName:='';
       RepoName:=rs.RepoName;

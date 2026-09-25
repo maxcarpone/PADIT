@@ -1719,7 +1719,7 @@ begin
   // global settings, not per cert
   ini := TIniFile.Create(AppIniFilename);
   try
-    if ini.ReadBool('global','send_usage_report',True) then
+    if ini.ReadBool('global','send_usage_report',False) and (ini.ReadString('global','usage_report_url','') <> '') then
     begin
       Proxy:=Ini.ReadString('wapt-templates','http_proxy','');
       if Proxy = '' then
@@ -1727,7 +1727,7 @@ begin
       last_usage_report:=ini.ReadDateTime('global','last_usage_report',0);
       if now - last_usage_report >= 0.5 then
       try
-        stats_report_url:=ini.ReadString('global','usage_report_url',rsDefaultUsageStatsURL);
+        stats_report_url:=ini.ReadString('global','usage_report_url','');
         stats := WAPTServerJsonGet('api/v1/usage_statistics',[])['result'];
         if stats<>Nil then
         begin

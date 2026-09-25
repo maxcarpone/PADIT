@@ -156,7 +156,6 @@ AppPublisher={#Company}
 OutputDir={#output_dir}
 SolidCompression=True
 AppPublisherURL=https://www.tranquil.it
-AppUpdatesURL=https://wapt.tranquil.it/wapt/releases/latest
 AppSupportURL=https://www.wapt.fr
 AppContact=wapt@lists.tranquil.it
 AppSupportPhone=+33 2 40 97 57 55

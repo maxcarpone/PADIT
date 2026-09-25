@@ -320,8 +320,6 @@ resourcestring
   rsInstallOn = '  install on c:\wapt : --setup -s';
   rsCompletionProgress = '%s : %.0f%% completed';
 
-
-  rsDefaultUsageStatsURL = 'http://wapt.tranquil.it/usage_stats';
   rsErrorBuildingUploadPackage = 'Error building or uploading package %s';
 
   rsNotAValidQueriesFile = 'The file %s does not looks like a valid WAPT json Queries file';

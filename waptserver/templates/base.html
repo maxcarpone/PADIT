@@ -49,7 +49,6 @@
                 <ul class="nav navbar-nav">
                     <li class="dropdown"> <a class="dropdown-toggle" data-toggle="dropdown" href="#">Repository<span class="caret"></span></a>
                         <ul class="dropdown-menu">
-                            <li><a target="_blank" href="http://wapt.tranquil.it/">{{ _("TIS repository") }}</a></li>
                             <li><a href="/store">{{ _("Local repository") }}</a></li>
                         </ul>
                     </li>
@@ -58,7 +57,7 @@
                         <ul class="dropdown-menu">
                             <li><a href="/wapt/waptagent.exe">{{ _("WAPT Agent (for deploying onto user desktop)") }}</a></li>
                             {% if data.wapt.setup.url %}<li><a href="{{data.wapt.setup.url}}">{{ _("WAPTSetup (for installing on management machine)") }}</a></li>{% endif %}
-                            <li><a href="{{data.wapt.deploy.url}}">{{ _("WAPTDeploy (for setting up deployment GPO)") }}</a></li>
+                            {% if data.wapt.deploy.url %}<li><a href="{{data.wapt.deploy.url}}">{{ _("WAPTDeploy (for setting up deployment GPO)") }}</a></li>{% endif %}
                         </ul>
                     </li>
                     {% endif %}
