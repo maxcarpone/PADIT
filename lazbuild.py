@@ -174,6 +174,19 @@ def get_lpi_output(lpi_fn):
     lpi = etree.parse(lpi_fn)
     return lpi.find('CompilerOptions/Target/Filename').attrib['Value']
 
+
+def get_lpi_output_extension(lpi_fn):
+    lpr_fn = os.path.splitext(lpi_fn)[0] + '.lpr'
+    if os.path.isfile(lpr_fn):
+        with open(lpr_fn, 'r') as lpr:
+            for line in lpr:
+                declaration = line.strip().lower()
+                if declaration.startswith('library '):
+                    return '.dll'
+                if declaration.startswith('program '):
+                    return '.exe'
+    return '.exe'
+
 def update_hash_file(filepath):
     if os.path.isfile(filepath):
         files = open(filepath,'r').read().splitlines()
@@ -213,12 +226,14 @@ def sign_exe(exe_path,p12path,p12password,signtool_path):
                 '/td', 'SHA256',
                 exe_path,
             ])
-            break
+            return
         except subprocess.CalledProcessError as cpe:
             print("Got CalledProcessError from signtool (return code %s)" % cpe.returncode)
         except Exception:
             print("Got an exception from signtool")
             raise
+
+    raise Exception('Failed to sign after 3 attempts: %s' % exe_path)
 
 def set_app_ico(lpi_path,edition):
     (lpi_rootname,lpi_ext) = os.path.splitext(lpi_path)
@@ -275,7 +290,7 @@ def main():
         run(cmd)
         (fn,ext) = os.path.splitext(get_lpi_output(lpi_path))
         if ext in ('','.'):
-            ext = '.exe'
+            ext = get_lpi_output_extension(lpi_path)
         exe_fn = os.path.abspath(os.path.abspath(os.path.join(lpi_dirname,fn+ext)))
 
         if options.compress:
