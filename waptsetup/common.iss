@@ -22,7 +22,9 @@ Type: filesandordirs; Name: "{app}\waptenterprise"
 Source: "{#wapt_base_dir}waptsetup\innosetup\*"; DestDir: "{app}\waptsetup\innosetup"; Flags: createallsubdirs recursesubdirs ignoreversion skipifsourcedoesntexist;
 #endif
 
+#if edition == "waptsetup"
 Source: "{#wapt_base_dir}utils\signtool.exe"; DestDir: "{app}\utils"; Flags: ignoreversion;
+#endif
 
 Source: "{#wapt_base_dir}waptsetup\common.iss"; DestDir: "{app}\waptsetup";
 Source: "{#wapt_base_dir}waptsetup\wapt.iss"; DestDir: "{app}\waptsetup";
