@@ -2942,7 +2942,10 @@ begin
       Run(format('"%s" sign /fd SHA256 /tr "http://timestamp.sectigo.com/rfc3161" /td SHA256 /f "%s" %s "%s"',[signtool,p12keypath,SignArg, Result]),'',3600000,'','','',OnProgress);
     except
       on E:Exception do
+      begin
         Logger('Unable to sign waptagent:'+E.Message);
+        raise;
+      end;
     end;
     // Create waptagent.sha256
     StringToFile(AppendPathDelim(BuildDir) + 'waptupgrade\waptagent.sha256',SHA256Hash(Result)+'  waptagent.exe');
