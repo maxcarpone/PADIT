@@ -121,8 +121,11 @@ Source: "{#wapt_base_dir}msvc*90.dll"; DestDir: "{app}";
 Source: "{#wapt_base_dir}Microsoft.VC90.CRT.manifest"; DestDir: "{app}";
 #endif
 
-; public Authenticode Root CA used to trust WAPT-signed executables
+; Embed the public Authenticode Root CA for early trust bootstrap.
 Source: "{#wapt_base_dir}signing\public\Thouet-Software-Signing-Root-CA.cer"; Flags: dontcopy
+
+; Keep a public copy available for later dynamic waptagent.exe generation.
+Source: "{#wapt_base_dir}signing\public\Thouet-Software-Signing-Root-CA.cer"; DestDir: "{app}\signing\public"; Flags: ignoreversion
 
 ; config file sample
 Source: "{#wapt_base_dir}wapt-get.ini.tmpl"; DestDir: "{app}"; 
