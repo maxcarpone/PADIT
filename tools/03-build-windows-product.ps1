@@ -122,6 +122,8 @@ $Nssm = Join-Path $BuildKit 'runtime\nssm'
 $InnoInstaller = Join-Path $BuildKit 'inno-setup\innosetup-5.6.0-unicode.exe'
 $SignToolRoot = Join-Path $BuildKit 'windows-sdk\signtool'
 $SignTool = Join-Path $SignToolRoot 'signtool.exe'
+$SigningPublic = Join-Path $BuildKit 'signing\public'
+$SigningRootCer = Join-Path $SigningPublic 'Thouet-Software-Signing-Root-CA.cer'
 $SignToolFiles = @{
     'appxsip.dll'                                            = 'A7F956DC76B0330B557BE3882B66D49F75ED366A7A9AE4C5F9BB72E410C44F73'
     'cert2spc.exe'                                           = '607D2F55A06D79243FAFA5CAF60493EDAE38D68F96C8652F69389A812CC30C38'
@@ -170,6 +172,10 @@ Assert-File (Join-Path $Nssm 'win64\nssm.exe') `
 
 Assert-File $InnoInstaller `
     '84A97B5820F83E7EB7258B69CC857C4F446DFB5C7C337C35E05A0CC304729346'
+Assert-File $SigningRootCer `
+    '5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A'
+
+Write-Host "[PASS] Controlled Authenticode Root CA certificate validated."
 
 $InnoRootFiles = @(
     'Default.isl',
@@ -694,6 +700,24 @@ Copy-Item (Join-Path $Vc90 'msvcm90.dll') $Output
 Copy-Item (Join-Path $Vc90 'Microsoft.VC90.CRT.manifest') $Output
 
 Copy-Item (Join-Path $Tools 'dmidecode.exe') $Output
+
+# Install the controlled public Authenticode Root CA certificate.
+# This public certificate is embedded in WAPT installers so clients can
+# establish trust in WAPT executables signed by the private signing PKI.
+$ProductSigningPublic = Join-Path $Output 'signing\public'
+$ProductSigningRootCer = Join-Path $ProductSigningPublic 'Thouet-Software-Signing-Root-CA.cer'
+
+New-Item -ItemType Directory -Path $ProductSigningPublic -Force | Out-Null
+
+Copy-Item `
+    -LiteralPath $SigningRootCer `
+    -Destination $ProductSigningRootCer `
+    -Force
+
+Assert-File $ProductSigningRootCer `
+    '5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A'
+
+Write-Host "[PASS] Controlled Authenticode Root CA certificate installed in product."
 
 # Install the controlled SignTool required by CreateWaptSetup()
 # to Authenticode-sign dynamically generated waptagent.exe.
