@@ -6007,17 +6007,19 @@ mechanism.
 
 Current authoritative Windows binary proof is now:
 
-- WAPT Community `1.8.3.7465`;
+- WAPT Community `1.8.3.7468`;
 - development branch: `release/1.8.3`;
-- dynamic agent SHA256 signing fix:
-  `de9f00288` — `Use SHA256 for generated agent Authenticode signature`.
+- dynamic agent timestamp commit:
+  `4cae11289` — `Timestamp generated agent Authenticode signature`;
+- dynamic agent signing failure hardening commit:
+  `5d15c4d60` — `Fail generated agent build on signing error`.
 
-The previous 7457 proof remains historical evidence only and is superseded by
-the complete 7465 validation described below.
+The previous 7465 proof remains valid historical evidence but is superseded by
+the complete 7468 validation described below.
 
 #### Definitive Windows signing PKI
 
-The definitive private Windows signing architecture is:
+The definitive private Windows signing architecture remains:
 
 `Thouet Software Signing Root CA`
 -> `Thouet Software Code Signing`
@@ -6041,7 +6043,8 @@ Validated properties:
 - Root -> Code Signing chain: PASS;
 - controlled SignTool signing: PASS;
 - Authenticode: `Valid`;
-- Sectigo RFC3161 timestamp for product build signing: PASS.
+- Sectigo RFC3161 timestamp for product-build signing: PASS;
+- Sectigo RFC3161 timestamp for dynamically generated WAPTAgent: PASS.
 
 PKI generator:
 - `tools/create-windows-signing-pki.ps1`;
@@ -6058,8 +6061,8 @@ and securely supplied password.
 
 #### Definitive Code Signing build integration
 
-The definitive Code Signing PFX has been integrated into the existing
-validated Windows build workflow.
+The definitive Code Signing PFX is integrated into the validated Windows build
+workflow.
 
 Private Code Signing PFX location:
 
@@ -6068,12 +6071,14 @@ Private Code Signing PFX location:
 A clean/exported Code Signing PFX is used without including the Root private
 key.
 
-Relevant historical integration commits include:
+Relevant integration and hardening commits include:
 
 - `e00472bd2` — `Export code signing PFX without Root private key`;
 - `93bed1a9f` — `Fix Windows Root CA bootstrap and Community publisher`;
 - `2b897fe6d` — `Keep public signing Root CA for agent generation`;
-- `de9f00288` — `Use SHA256 for generated agent Authenticode signature`.
+- `de9f00288` — `Use SHA256 for generated agent Authenticode signature`;
+- `4cae11289` — `Timestamp generated agent Authenticode signature`;
+- `5d15c4d60` — `Fail generated agent build on signing error`.
 
 The private Root key is not required for normal product builds.
 
@@ -6108,11 +6113,7 @@ The Root private key is never included in:
 - server publication;
 - client installation.
 
-Community installer publisher metadata was also changed from:
-
-`Tranquil IT Systems`
-
-to:
+Community installer publisher metadata is:
 
 `Thouet Software`
 
@@ -6120,20 +6121,20 @@ in:
 - `waptsetup/waptsetup.iss`;
 - `waptsetup/waptagent.iss`.
 
-The Root bootstrap has now been validated with both:
+The Root bootstrap has been validated with both:
 - normal WAPTSetup installation;
 - dynamically generated WAPTAgent installation.
 
-#### WAPT Community 1.8.3.7465 product proof
+#### WAPT Community 1.8.3.7468 product proof
 
 Final WAPTSetup:
 
-- FileVersion: `1.8.3.7465`;
-- ProductVersion: `1.8.3.7465`;
+- FileVersion: `1.8.3.7468`;
+- ProductVersion: `1.8.3.7468`;
 - ProductName: `WAPTSetup`;
-- size: `26910784` bytes;
+- size: `26907832` bytes;
 - SHA256:
-  `CD1F9EC9439D839F803A05D4F9F282F5311E194F87D3055BDE0566F338F7B3B1`.
+  `4E3B2A944167FE51FBAA1C96942108F2F6E0AF25F33EC70DE552A11546393128`.
 
 Build result:
 - unsigned Community setup build: PASS;
@@ -6141,9 +6142,9 @@ Build result:
 - final setup validation: PASS;
 - signer uses the definitive Thouet Software Code Signing identity.
 
-The setup was installed and the WAPT console launched successfully.
+The 7468 build contains both dynamic-agent hardening changes described below.
 
-#### Dynamic WAPTAgent signing archaeology and fix
+#### Dynamic WAPTAgent SHA256 and RFC3161 signing
 
 Historical `CreateWaptSetup()` logic in:
 
@@ -6155,182 +6156,235 @@ expects:
 - a `.p12` with the same basename as the selected `.crt`;
 - the console private-key password.
 
-Historical signing logic used:
+The controlled modern SignTool first required the historical command to be
+updated from:
 
 `signtool sign /f ...`
 
-The controlled modern SignTool requires an explicit file digest algorithm and
-returned:
-
-`No file digest algorithm specified`
-
-Manual tests with both the historical certificate material and a newly
-generated temporary certificate proved that signing succeeds when:
-
-`/fd SHA256`
-
-is explicitly supplied.
-
-The source was therefore changed to use:
+to:
 
 `signtool sign /fd SHA256 /f ...`
 
-Commit:
+This was implemented by:
 
 `de9f00288` — `Use SHA256 for generated agent Authenticode signature`
 
-The source change was deliberately minimal:
-- one source line changed;
-- one insertion / one deletion;
-- `git diff --check`: clean.
+The generated-agent signing path was subsequently hardened to add an RFC3161
+timestamp:
 
-#### 7465 dynamically generated agent proof
+`signtool sign /fd SHA256 /tr "http://timestamp.sectigo.com/rfc3161" /td SHA256 /f ...`
 
-A temporary certificate was generated through the WAPT console solely for
-functional testing:
+Commit:
 
-- subject: `CN=Tempo, C=FR`;
-- issuer: `CN=Tempo, C=FR`;
-- thumbprint:
-  `E86F98EB7C919C6BCEE91ABA9D227052A90486F0`;
-- self-signed;
-- matching `.crt`, `.pem` and `.p12` available.
+`4cae11289` — `Timestamp generated agent Authenticode signature`
 
-This certificate is TEST-ONLY and must not become a production signing
-identity.
+A 7468 dynamic-agent test using the temporary self-signed test identity:
 
-Using WAPT Console 1.8.3.7465, dynamic WAPTAgent generation successfully:
+`CN=Tempo, C=FR`
 
-1. built the agent;
-2. found the matching `.p12`;
-3. invoked SignTool with SHA256;
-4. signed the generated executable automatically;
-5. calculated the final agent hash;
-6. uploaded the resulting agent to the Debian 10 WAPT server.
+produced a server-side WAPTAgent SHA256:
 
-Published `/var/www/wapt/waptagent.exe` SHA256:
-
-`8790858B85FC76B68BA01AE6171787AAD1E95418DE039BBB6655DF8EA5292CC3`
+`53149A92D0FC28A5A34ADC6AE15CC6CDFE3D8A0AA970F5D9D8C543BB573553FF`
 
 An independently downloaded Windows copy produced the identical SHA256.
 
 Authenticode inspection showed:
-- signature present;
 - signer: `CN=Tempo, C=FR`;
 - signer thumbprint:
   `E86F98EB7C919C6BCEE91ABA9D227052A90486F0`;
-- timestamp: none;
+- RFC3161 timestamp: present;
+- timestamp signer:
+  `CN=Sectigo Public Time Stamping Signer R37`;
 - Windows status: `UnknownError`.
 
-`UnknownError` is expected for this proof because `Tempo` is self-signed and
-is not a Windows-trusted Root CA.
+`UnknownError` was expected because `Tempo` is self-signed and is not trusted
+by Windows.
 
-It does not indicate a missing or invalidly embedded Authenticode signature.
+This test independently proved that RFC3161 timestamping is now operational in
+the dynamic WAPTAgent generation path.
 
-This validates the functional correction introduced by `de9f00288`.
+#### Dynamic WAPTAgent signing failure hardening
 
-#### 7465 WAPTAgent clean-install and Root bootstrap proof
+Historical dynamic-agent signing behavior caught exceptions from the SignTool
+execution and only logged:
 
-VM107 was used for the final functional agent-installation test.
+`Unable to sign waptagent:...`
 
-Before installation:
-- WAPT had been uninstalled;
-- `C:\Program Files (x86)\wapt` did not exist;
-- `WAPTService` did not exist;
-- `Thouet Software Signing Root CA` was explicitly removed from
-  `LocalMachine\Root`;
-- the temporary `Tempo` certificate was absent from the tested Windows
-  Root/TrustedPublisher stores.
+This allowed an attempted signing operation to fail without necessarily
+propagating the failure to the caller.
 
-The generated 7465 agent with SHA256:
+The Windows dynamic-agent signing path was changed so that when SignTool is
+actually invoked and raises an exception, the exception is logged and then
+re-raised.
 
-`8790858B85FC76B68BA01AE6171787AAD1E95418DE039BBB6655DF8EA5292CC3`
+Commit:
 
-was then installed.
+`5d15c4d60` — `Fail generated agent build on signing error`
 
-After installation:
-- `C:\Program Files (x86)\wapt` exists;
-- `WAPTService` is `Running`;
-- `WAPTService` startup type is `Automatic`;
-- `Thouet Software Signing Root CA` was automatically installed into
-  `LocalMachine\Root`;
-- Root `HasPrivateKey = False`;
-- `Tempo` was not installed into the tested Windows certificate stores.
+The resulting behavior is intentionally limited in scope:
 
-Installed executable validation:
+- if the historical signing prerequisites are absent, the existing unsigned
+  generation path is not globally prohibited by this change;
+- if SignTool and the required signing material are present and signing is
+  attempted, an exception during that signing operation is no longer silently
+  swallowed.
 
-- `wapt-get.exe`
-  - FileVersion: `1.8.3.7465`
-  - Authenticode: `Valid`
-  - signer: `CN=Thouet Software Code Signing`
+The normal 7468 signing path has been validated successfully.
 
-- `waptconsole.exe`
-  - FileVersion: `1.8.3.7465`
-  - Authenticode: `Valid`
-  - signer: `CN=Thouet Software Code Signing`
+No artificial SignTool/network failure was introduced solely to exercise the
+new exception propagation path.
 
-- `wapttray.exe`
-  - FileVersion: `1.8.3.7465`
-  - Authenticode: `Valid`
-  - signer: `CN=Thouet Software Code Signing`
+#### Definitive dynamic-agent signing identity
 
-- `waptexit.exe`
-  - FileVersion: `1.8.3.7465`
-  - Authenticode: `Valid`
-  - signer: `CN=Thouet Software Code Signing`
+The 7468 validation also replaced the temporary `Tempo` identity for the final
+dynamic-agent proof with the definitive Thouet Software Code Signing identity.
 
-- `waptself.exe`
-  - FileVersion: `1.8.3.7465`
-  - Authenticode: `Valid`
-  - signer: `CN=Thouet Software Code Signing`
+The historical WAPT console and dynamic-agent path require several
+representations of the same Code Signing identity.
 
-The installed VM107 client subsequently appeared in the WAPT console and was
-reachable.
+Validated working files:
+
+`Thouet-Software-Code-Signing.crt`
+
+- public Code Signing certificate;
+- selected as the WAPT console personal certificate.
+
+`Thouet-Software-Code-Signing.pem`
+
+- encrypted private key corresponding to the `.crt`;
+- used by the historical WAPT console private-key handling;
+- the console successfully validates the associated key and requests its
+  password.
+
+`Thouet-Software-Code-Signing.p12`
+
+- PKCS#12 representation containing the Code Signing private identity;
+- same basename as the selected `.crt`;
+- automatically located by `CreateWaptSetup()` through the historical
+  `ChangeFileExt(...,'.p12')` convention;
+- used by SignTool for dynamic WAPTAgent Authenticode signing.
+
+The existing definitive:
+
+`Thouet-Software-Code-Signing.pfx`
+
+is also PKCS#12 and was used as the source for the required historical
+representations.
+
+The public `.crt` was successfully extracted from the definitive PFX and
+independently verified:
+
+- subject: `CN=Thouet Software Code Signing`;
+- issuer: `CN=Thouet Software Signing Root CA`;
+- SHA1 thumbprint:
+  `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`.
+
+The `.p12` used for the historical WAPT dynamic-agent path is a byte-identical
+copy of the clean Code Signing `.pfx`.
+
+The Root private key is not required for this process.
+
+#### 7468 definitive dynamically generated WAPTAgent proof
+
+Using WAPT Console 1.8.3.7468 and the definitive Thouet Software Code Signing
+identity, dynamic WAPTAgent generation successfully:
+
+1. validated and unlocked the Code Signing private key through the console;
+2. built the agent;
+3. found the matching `.p12`;
+4. invoked the controlled SignTool with SHA256;
+5. obtained a Sectigo RFC3161 timestamp;
+6. signed the generated executable automatically;
+7. calculated the final agent hash;
+8. uploaded the resulting agent to the Debian 10 WAPT server.
+
+Published `/var/www/wapt/waptagent.exe` SHA256:
+
+`6D5B8CBB6C2D1B06FFFDF39ABA02A924194E4DDC3E96CE4A65971D6D0D37EB8F`
+
+An independently downloaded Windows copy produced the identical SHA256.
+
+Authenticode inspection of that exact downloaded file showed:
+
+- status: `Valid`;
+- status message: `Signature vérifiée.`;
+- signer:
+  `CN=Thouet Software Code Signing`;
+- issuer:
+  `CN=Thouet Software Signing Root CA`;
+- signer thumbprint:
+  `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`;
+- RFC3161 timestamp signer:
+  `CN=Sectigo Public Time Stamping Signer R37`;
+- timestamp issuer:
+  `CN=Sectigo Public Time Stamping CA R41`;
+- timestamp thumbprint:
+  `E97818A928DA150A9FE1BF9CCC7AABB9A00EEEAC`.
 
 Result:
 
-**WAPT Community 1.8.3.7465 dynamic agent generation, SHA256 Authenticode
-signing, installation, public Root CA bootstrap, installed executable trust,
-WAPTService startup and client/server communication are validated end-to-end.**
+**The dynamically generated 7468 WAPTAgent is signed with the definitive
+Thouet Software Code Signing identity, chains successfully to the deployed
+Thouet Software Signing Root CA, reports Authenticode `Valid`, and contains a
+Sectigo RFC3161 timestamp.**
+
+#### 7468 WAPTAgent installation and communication proof
+
+The definitive dynamically generated 7468 WAPTAgent was launched on the
+Windows validation client.
+
+Microsoft Defender SmartScreen still displayed the normal "application not
+recognized" warning.
+
+The warning explicitly identified:
+
+`Éditeur : Thouet Software Code Signing`
+
+The same SmartScreen mechanism had previously been observed with the
+historical 1.8.2.7393 agent in equivalent conditions.
+
+Therefore:
+- the private Thouet Authenticode chain is correctly recognized as the
+  executable publisher;
+- the local Windows Authenticode validation is `Valid`;
+- the private PKI does not by itself establish public SmartScreen reputation;
+- the SmartScreen warning is not considered a new 1.8.3.7468 regression.
+
+After allowing execution:
+- WAPTAgent installation completed successfully;
+- the client registered/reappeared in the WAPT console;
+- the client was reachable from the console;
+- normal client/server communication was confirmed.
+
+Result:
+
+**WAPT Community 1.8.3.7468 definitive dynamic-agent generation, SHA256
+Authenticode signing, RFC3161 timestamping, publication, download identity,
+installation and client/server communication are validated end-to-end.**
 
 #### Trust-model distinction
 
-Two signing/trust mechanisms must remain conceptually separate.
+Windows product Authenticode and WAPT package signing must remain conceptually
+separate.
 
 Windows product Authenticode:
 
 `Thouet Software Signing Root CA`
 -> `Thouet Software Code Signing`
--> WAPT Windows product executables
+-> WAPT Windows product executable
 
-This chain is validated and operational.
+This chain is now validated for both:
+- normal Windows product-build artifacts;
+- dynamically generated WAPTAgent.
 
-Dynamic WAPTAgent signing currently follows the historical WAPT design and
-uses the administrator's WAPT personal signing certificate.
+WAPT package signing is a separate WAPT trust mechanism.
 
-For the 7465 proof this was the temporary self-signed `CN=Tempo`.
-
-Therefore:
-- the generated agent contains a real Authenticode signature;
-- Windows reports `UnknownError` because `Tempo` is self-signed and
-  untrusted;
-- once installation starts, the agent bootstraps the separate public Thouet
-  Root;
-- the installed WAPT product executables then validate as `Valid` through the
-  definitive Thouet Software Authenticode chain.
-
-The Windows SmartScreen mechanism was observed when launching the generated
-7465 agent.
-
-A comparison with the historical 7393 agent showed that the same SmartScreen
-mechanism also occurs with the historical agent in equivalent conditions.
-
-Therefore this behavior is not considered a new 7465 regression.
+The historical WAPT package-signing certificate must not automatically become
+the definitive Windows Authenticode identity, and the new Thouet Windows Code
+Signing certificate must not automatically be treated as the replacement
+package-signing identity without a separately designed migration.
 
 #### Future SCRAB/package-signing certificate migration
-
-The historical WAPT package-signing certificate must not become the
-definitive new signing identity.
 
 When SCRAB is permanently replaced, explicitly design and validate the
 transition from the historical package-signing trust to a new controlled
@@ -6342,7 +6396,7 @@ included in that migration strategy.
 The transition must preserve compatibility with existing clients and existing
 signed packages.
 
-A possible future architecture is:
+A possible future architecture remains:
 - private Root CA kept offline;
 - WAPT package-signing certificates issued by a controlled private PKI rather
   than being independent self-signed certificates;
@@ -6352,10 +6406,68 @@ A possible future architecture is:
 - historical trust is retired only after the package/client transition has
   been proven.
 
-Do not perform this migration as part of the already validated 7465
-Authenticode/bootstrap work.
+Do not perform this migration as part of the already validated Windows
+Authenticode work.
 
 It belongs to the definitive SCRAB replacement phase.
+
+#### PKI documentation and open-source distribution requirements
+
+The 7468 validation exposed historical certificate-format requirements that
+must be documented before the consolidated `1.8.3.1` release is frozen.
+
+Two documentation levels are required.
+
+1. Internal Thouet operational documentation
+
+Document:
+- Root CA creation and secure offline handling;
+- Code Signing certificate creation/issuance;
+- Code Signing renewal;
+- secure password storage;
+- clean Code Signing PFX export without Root private-key leakage;
+- generation/extraction of the `.crt`;
+- generation/extraction of the encrypted `.pem` private key;
+- creation/use of the `.p12` expected by historical dynamic-agent generation;
+- relationship between `.pfx` and `.p12`;
+- which component consumes `.crt`, `.pem`, `.p12` and `.pfx`;
+- deployment of the public Root certificate;
+- certificate verification commands;
+- recovery/renewal procedure.
+
+2. Generic open-source documentation
+
+The public GitHub distribution must not require or expose Thouet private
+material.
+
+Document the supported trust models so another organization can:
+- use its own existing PKI and Code Signing certificate;
+- use a publicly trusted Code Signing identity where appropriate;
+- or create its own private Root CA and Code Signing certificate for an
+  autonomous/private deployment.
+
+For a user without an existing PKI, provide or document tooling capable of
+creating the required signing hierarchy and the certificate/key
+representations expected by WAPT.
+
+The existing:
+
+`tools/create-windows-signing-pki.ps1`
+
+is the starting point for this workflow.
+
+Review it before release to determine whether:
+- organization-specific defaults need to become configurable;
+- additional helper functionality is needed to produce the historical
+  `.crt` + encrypted `.pem` + `.p12` set automatically;
+- validation commands should be automated;
+- private/public output separation needs further hardening.
+
+The public workflow must never publish or commit private Root or Code Signing
+keys.
+
+This documentation/tooling work is a required consolidation item before the
+final autonomous `1.8.3.1` freeze.
 
 #### Already validated and not to reopen without contradiction
 
@@ -6375,32 +6487,36 @@ It belongs to the definitive SCRAB replacement phase.
 - public Root CA bootstrap;
 - WAPTSetup-only controlled SignTool deployment;
 - console-driven WAPTAgent generation;
-- SHA256 dynamic agent signing fix;
+- SHA256 dynamic-agent signing;
+- RFC3161 dynamic-agent timestamping;
+- dynamic signing exception propagation hardening;
+- definitive Thouet Code Signing identity for dynamic WAPTAgent;
+- dynamic WAPTAgent Authenticode `Valid`;
 - Debian agent publication;
 - server/download SHA256 identity proof;
-- WAPTAgent clean installation;
+- WAPTAgent installation;
 - Root bootstrap from dynamically generated WAPTAgent;
-- installed 7465 executable Authenticode validation;
+- installed WAPT executable Authenticode validation;
 - WAPTService startup;
 - client visibility/reachability from the console;
 - no SignTool requirement/leakage into the installed WAPTAgent client;
-- autonomous-distribution source audit.
+- autonomous-distribution source audit;
+- SmartScreen behavior comparison with historical 7393.
 
 #### Still pending before consolidated 1.8.3.1 freeze
 
-1. Review dynamic WAPTAgent timestamping.
-   The current dynamically generated agent has no RFC3161 timestamp.
+1. Produce the PKI documentation and supporting tooling described above:
+   - internal Thouet operational procedure;
+   - generic open-source PKI/signing procedure;
+   - automated `.crt` / `.pem` / `.p12` preparation where useful.
 
-2. Review dynamic agent signing failure handling.
-   Historical `CreateWaptSetup()` catches SignTool failures and logs:
-   `Unable to sign waptagent:...`
-   instead of necessarily aborting generation.
-   Decide whether a requested signing failure must become a hard build failure.
-
-3. Complete remaining release documentation/naming cleanup, including the
+2. Complete remaining release documentation/naming cleanup, including the
    neutral runtime path:
 
    `C:\wapt-runtime-1.8.3`
+
+3. Review remaining organization-specific assumptions/defaults that should not
+   leak into the generic public GitHub distribution.
 
 4. Perform any remaining focused Windows release-candidate regression tests.
 
@@ -6415,28 +6531,42 @@ It belongs to the definitive SCRAB replacement phase.
 
 8. Only after `1.8.3.1` is frozen, begin Debian 11 modernization.
 
-The historical package-signing certificate transition is intentionally
+The historical package-signing certificate transition remains intentionally
 deferred to the definitive SCRAB replacement work and must not be confused
 with the validated Windows Authenticode PKI.
 
 #### Exact next action
 
-Do not modify the validated 7465 Root bootstrap or SHA256 dynamic signing
-mechanism without a specific reason.
+Do not rebuild immediately.
 
-First commit this checkpoint update.
+First commit this checkpoint update so the complete validated 7468 proof is
+preserved.
 
-Then inspect the dynamic WAPTAgent signing path only for the two remaining
-hardening questions:
+Then begin the PKI documentation/tooling consolidation while the exact
+certificate workflow validated during 7468 is still fresh.
 
-1. whether generated agents should receive an RFC3161 timestamp;
-2. whether SignTool failure must abort generation instead of being silently
-   logged.
+Start by reviewing:
 
-Treat these as separate hardening decisions.
+`tools/create-windows-signing-pki.ps1`
 
-After that, finish the remaining release documentation/naming cleanup and
-focused release-candidate validation before freezing `1.8.3.1`.
+against the now-proven operational requirements:
+
+- clean private Root / Code Signing separation;
+- public Root export;
+- Code Signing `.pfx`;
+- Code Signing `.crt`;
+- encrypted Code Signing `.pem`;
+- Code Signing `.p12` expected by historical `CreateWaptSetup()`;
+- no secrets written into Git;
+- generic/configurable organization identity for public use.
+
+Make the smallest maintainable additions needed so a future administrator can
+reproduce the required certificate material without manually rediscovering the
+7468 procedure.
+
+After PKI documentation/tooling is complete, finish the remaining
+documentation/naming cleanup and focused release-candidate validation before
+freezing `1.8.3.1`.
 
 
 ## 48. Resume protocol for the next ChatGPT thread
@@ -6447,23 +6577,27 @@ Do not repeat already validated investigations unless a contradiction appears.
 
 The current authoritative Windows milestone is:
 
-`WAPT Community 1.8.3.7465`
+`WAPT Community 1.8.3.7468`
 
 Current development branch:
 
 `release/1.8.3`
 
-Key current fix:
+Key current dynamic-agent hardening commits:
 
-`de9f00288` — `Use SHA256 for generated agent Authenticode signature`
+- `de9f00288` — `Use SHA256 for generated agent Authenticode signature`;
+- `4cae11289` — `Timestamp generated agent Authenticode signature`;
+- `5d15c4d60` — `Fail generated agent build on signing error`.
 
-Authoritative WAPTSetup 7465:
+Authoritative WAPTSetup 7468:
+- FileVersion/ProductVersion: `1.8.3.7468`;
+- size: `26907832` bytes;
 - SHA256:
-  `CD1F9EC9439D839F803A05D4F9F282F5311E194F87D3055BDE0566F338F7B3B1`.
+  `4E3B2A944167FE51FBAA1C96942108F2F6E0AF25F33EC70DE552A11546393128`.
 
-Authoritative dynamically generated WAPTAgent 7465:
+Authoritative dynamically generated WAPTAgent 7468:
 - SHA256:
-  `8790858B85FC76B68BA01AE6171787AAD1E95418DE039BBB6655DF8EA5292CC3`.
+  `6D5B8CBB6C2D1B06FFFDF39ABA02A924194E4DDC3E96CE4A65971D6D0D37EB8F`.
 
 Definitive Windows Authenticode PKI:
 
@@ -6479,44 +6613,55 @@ Code Signing:
 Code Signing thumbprint:
 `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
 
-The 7465 validation proved end-to-end:
-- final WAPTSetup signed and validated;
-- dynamic WAPTAgent generation works;
-- generated agent is automatically signed using SHA256;
-- server/download SHA256 identity confirmed;
-- agent installs on a machine where WAPT was removed;
-- agent automatically installs the public Thouet Root CA;
-- no Root private key is deployed;
-- installed WAPT executables report Authenticode `Valid`;
-- WAPTService runs automatically;
-- VM107 appears in the console and is reachable.
+The 7468 validation proved end-to-end:
+- final WAPTSetup build/signing validation: PASS;
+- dynamic WAPTAgent SHA256 signing: PASS;
+- dynamic RFC3161 timestamping: PASS;
+- definitive Thouet Code Signing identity used dynamically: PASS;
+- generated WAPTAgent Authenticode: `Valid`;
+- Root -> Code Signing chain: PASS;
+- Sectigo timestamp: PASS;
+- server/download SHA256 identity: PASS;
+- WAPTAgent installation: PASS;
+- client registration/visibility: PASS;
+- client reachability: PASS.
 
-The temporary dynamic-agent signer used for this proof was:
+The authoritative dynamically generated agent signer is no longer the
+temporary `Tempo` certificate.
 
-`CN=Tempo, C=FR`
+`Tempo` remains historical test evidence only.
 
-thumbprint:
+The historical dynamic-agent certificate convention has now been proven to
+require:
+- `.crt` for the selected WAPT personal certificate;
+- encrypted `.pem` private key for console key handling;
+- same-basename `.p12` for SignTool dynamic Authenticode signing.
 
-`E86F98EB7C919C6BCEE91ABA9D227052A90486F0`
+The definitive `.pfx` is the clean Code Signing PKCS#12 source identity.
 
-It is self-signed and TEST-ONLY.
+SmartScreen still displays an "application not recognized" warning for the
+private-PKI signed WAPTAgent, while correctly identifying the publisher as:
 
-Its Windows `UnknownError` is expected because its Root is not trusted.
-Do not treat `Tempo` as a production identity.
+`Thouet Software Code Signing`
+
+Equivalent SmartScreen behavior was observed with the historical 7393 agent,
+so this is not considered a new 7468 regression.
 
 The historical WAPT package-signing identity migration and existing signed
-package transition are deferred to the definitive SCRAB replacement phase.
+package transition remain deferred to the definitive SCRAB replacement phase.
 
 Resume at §47.14 "Exact next action".
 
 Immediate next work:
-- commit the checkpoint update;
-- review RFC3161 timestamping for dynamically generated WAPTAgent;
-- review whether SignTool failure must abort dynamic agent generation;
+- commit the 7468 checkpoint;
+- document and automate the reproducible PKI/certificate preparation workflow;
+- distinguish internal Thouet procedure from generic open-source deployment;
+- review `tools/create-windows-signing-pki.ps1` for generic/configurable use and
+  `.crt` / `.pem` / `.p12` generation;
 - then complete remaining release documentation/naming cleanup and focused
   release-candidate validation.
 
-Do not reopen the validated 7465 Root bootstrap or SHA256 dynamic signing
-mechanism without contradictory evidence.
+Do not reopen the validated 7468 signing/bootstrap/dynamic-agent mechanisms
+without contradictory evidence.
 
 Keep answers concise and proceed one validated step at a time.
