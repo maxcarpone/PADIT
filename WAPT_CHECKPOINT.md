@@ -5761,83 +5761,419 @@ Conclusion:
 The 1.8.3.7457 Authenticode signing implementation is technically correct. The observed `UnknownError` is caused by lack of trust in the self-signed validation certificate, not by an invalid binary signature.
 
 
-### 47.13 — Final Authenticode distribution policy — pending external identity
+### 47.13 — Private Windows signing PKI — definitive validation (2026-09-25)
 
-The current `WAPT Community Thouet Code Signing` certificate is retained as an internal/validation signing identity.
+Status: PASS — definitive private signing PKI created and functionally validated.
 
-It successfully proves the complete technical signing workflow:
+The previous `WAPT Community Thouet Code Signing` self-signed certificate remains
+the signing identity used for the authoritative 1.8.3.7457 build described in
+§47.12. It proved the complete automated Authenticode workflow, but required
+trusting the signing certificate itself as a Root CA.
 
-- controlled signing input;
-- SHA-256 Authenticode signatures;
-- RFC3161 timestamping;
-- Lazarus artifact signing;
-- final WAPTSetup signing;
-- automated signature verification;
-- failure handling in the build workflow.
+The signing architecture has now been improved by separating the long-lived
+trust anchor from the routine Code Signing identity.
 
-It is not currently preferred as the final broad-distribution trust model.
+Current strategy for the modernization/testing phase:
 
-Deploying the public `.cer` through Active Directory GPO would technically solve trust for domain-joined systems, but this is not considered the preferred final architecture because:
-- some managed systems are outside the domain;
-- a private-root bootstrap would add a deployment prerequisite;
-- it would reduce installation autonomy compared with historical 1.8.2.7393 behavior.
+- use a private long-lived Root CA;
+- use a separate short-lived Code Signing certificate issued by that Root;
+- deploy only the public Root CA to managed Windows clients;
+- keep the Root private key offline after validation/archival;
+- use only the Code Signing private key for normal Windows builds;
+- reconsider a publicly trusted external signing identity later, particularly
+  during the expected future rebranding/final-distribution work.
 
-Preferred target before broad final distribution:
+This approach was selected because:
+- the project is still in an active modernization/testing phase;
+- many Windows artifacts will be rebuilt and signed during development;
+- paying for an external code-signing identity is currently excluded;
+- some managed clients are outside Active Directory, so the trust bootstrap
+  must not depend exclusively on GPO;
+- a similar private-CA trust model was observed and validated locally with the
+  FOG Project client.
 
-- use an Authenticode code-signing identity with a Windows-recognized trust chain;
-- require no WAPT-specific private root installation on a clean Windows machine;
-- support domain and non-domain machines identically;
-- preserve the already validated automated signing/timestamp workflow.
+#### PKI generator
 
-The private signing key/PFX must remain outside distributed WAPT products.
+New script:
 
-The current self-signed certificate remains suitable for development, laboratory validation and controlled internal testing until the final signing identity is selected.
+`tools/create-windows-signing-pki.ps1`
+
+Committed as:
+
+`d4279c96a` — `Add private Windows code signing PKI generator`
+
+The generator was validated with disposable PKIs before creating the definitive
+identity.
+
+Validated generator behavior:
+
+- Root CA and Code Signing certificate are separate;
+- Root key: RSA 4096 / SHA-256;
+- Root validity: 10 years by default;
+- Root Basic Constraints: `CA=True`, path length `0`;
+- Root Key Usage: Certificate Signing + CRL Signing;
+- Code Signing key: RSA 3072 / SHA-256;
+- Code Signing validity: 1 year by default;
+- Code Signing Key Usage: Digital Signature;
+- Code Signing EKU: Code Signing (`1.3.6.1.5.5.7.3.3`);
+- Code Signing certificate is issued by the private Root CA;
+- public `.cer` and private `.pfx` files are exported separately;
+- Root and Code Signing passwords are requested interactively;
+- passwords are not written to disk by the generator;
+- existing PKI files are not silently overwritten;
+- temporary certificates/private keys created in `Cert:\CurrentUser\My` are
+  removed after successful export.
+
+Disposable validation proved:
+
+- correct Root certificate extensions;
+- correct Code Signing certificate extensions;
+- correct Root -> Code Signing relationship;
+- successful Authenticode signing of a test executable;
+- Windows Authenticode status `Valid`;
+- successful Sectigo RFC3161 timestamping;
+- correct two-level certificate chain;
+- successful automatic cleanup from `CurrentUser\My`.
+
+#### Definitive Root CA
+
+Subject:
+
+`CN=Thouet Software Signing Root CA`
+
+Issuer:
+
+`CN=Thouet Software Signing Root CA`
+
+Thumbprint:
+
+`DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
+
+Validity:
+
+- NotBefore: `2026-09-25 16:11:50`
+- NotAfter: `2036-09-25 16:21:49`
+
+Public certificate:
+
+`C:\wapt-build-kit\signing\public\Thouet-Software-Signing-Root-CA.cer`
+
+SHA256:
+
+`5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A`
+
+Private Root PFX:
+
+`C:\private-wapt-signing\root\Thouet-Software-Signing-Root-CA.pfx`
+
+SHA256:
+
+`6697614972822ECEC0EFF31C2EAD33C465A9336F4916E10A3C4C59D049A51D49`
+
+The Root private key is not required for normal builds.
+
+The Root PFX has been copied to secure storage. Its password is stored outside
+Git in the organization's KeePass. The Root password must never be recorded in
+the repository, checkpoint, build kit or build scripts.
+
+The Root PFX is intended to become offline-only. Local removal from VM106 may
+be performed after archival verification; this cleanup is not required for the
+next build-integration work.
+
+#### Definitive Code Signing certificate
+
+Subject:
+
+`CN=Thouet Software Code Signing`
+
+Issuer:
+
+`CN=Thouet Software Signing Root CA`
+
+Thumbprint:
+
+`20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
+
+Validity:
+
+- NotBefore: `2026-09-25 16:11:51`
+- NotAfter: `2027-09-25 16:21:51`
+
+Public certificate:
+
+`C:\wapt-build-kit\signing\public\Thouet-Software-Code-Signing.cer`
+
+SHA256:
+
+`6AC1CC6A5A51BF2778089FF29D5DF35786192C87E9DC610FF196C1FDC54647A8`
+
+Private Code Signing PFX:
+
+`C:\private-wapt-signing\codesigning\Thouet-Software-Code-Signing.pfx`
+
+SHA256:
+
+`0AA1763A4CA33BF77BD2EED5D2569C36A2EACDB367DBA8A4D6636E4ED6AA247E`
+
+The Code Signing PFX has a password distinct from the Root PFX password.
+
+Its password is stored outside Git in the organization's KeePass and must never
+be embedded in the repository, build kit, checkpoint or generated products.
+
+Unlike the Root private key, the Code Signing private key is the routine
+signing identity required by the Windows build workflow.
+
+#### Definitive functional signing proof
+
+The definitive public Root certificate was temporarily trusted and the
+definitive Code Signing PFX was imported into `Cert:\CurrentUser\My`.
+
+Validated imported Code Signing identity:
+
+- Subject: `CN=Thouet Software Code Signing`
+- Issuer: `CN=Thouet Software Signing Root CA`
+- Thumbprint: `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
+- `HasPrivateKey=True`
+
+A copy of `waptconsole.exe` was signed using the controlled Windows SDK
+SignTool already present in the WAPT build kit.
+
+Result:
+
+- Authenticode status: `Valid`
+- StatusMessage: `Signature vérifiée.`
+- signer: `CN=Thouet Software Code Signing`
+- issuer: `CN=Thouet Software Signing Root CA`
+- RFC3161 timestamp: PASS
+- timestamp signer: `Sectigo Public Time Stamping Signer R37`
+
+Validated chain:
+
+`CN=Thouet Software Code Signing`
+-> `CN=Thouet Software Signing Root CA`
+
+Code Signing thumbprint:
+
+`20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
+
+Root thumbprint:
+
+`DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
+
+Result:
+
+The definitive private signing PKI is functionally validated end-to-end.
+
+A manual `X509Chain.Build()` may report `RevocationStatusUnknown` because this
+private PKI currently publishes no CRL/OCSP service. This does not contradict
+the validated Windows Authenticode result (`Valid`). A private revocation
+infrastructure is not part of the current transitional implementation.
+
+#### Trust/distribution model
+
+Managed clients ultimately need only the public Root certificate:
+
+`Thouet-Software-Signing-Root-CA.cer`
+
+Clients must never receive:
+
+- `Thouet-Software-Signing-Root-CA.pfx`;
+- `Thouet-Software-Code-Signing.pfx`;
+- either private key;
+- either PFX password.
+
+Installing the public Root into the appropriate Windows Trusted Root store will
+allow Windows to validate executables signed by the current Code Signing
+certificate and future Code Signing certificates issued by the same Root.
+
+This is an improvement over directly trusting the previous self-signed
+`WAPT Community Thouet Code Signing` certificate because routine Code Signing
+certificates can be renewed without changing the long-lived client trust
+anchor.
+
+The exact automatic Root CA provisioning mechanism is still pending.
+
+It must support:
+- domain-joined machines;
+- non-domain machines;
+- clean WAPT installation;
+- upgrade of existing WAPT installations.
+
+GPO may remain useful for domain clients but cannot be the only provisioning
+mechanism.
 
 
 ### 47.14 — Current 1.8.3 consolidation status and exact next action
 
-Current Windows authoritative proof:
+Current authoritative Windows binary proof remains:
 
-- source HEAD: `a38b4fe4e`
-- build branch: `build/windows-1.8.3-7457-auto`
-- WAPTSetup: `1.8.3.7457`
-- generated WAPTAgent: `1.8.3.7457`
+- WAPT Community `1.8.3.7457`;
+- build branch: `build/windows-1.8.3-7457-auto`;
+- build source commit: `a38b4fe4e`.
 
-Validated:
-- autonomous Windows build workflow;
+The current development branch has subsequently advanced to:
+
+- branch: `release/1.8.3`;
+- HEAD: `d4279c96a`;
+- latest change: private Windows signing PKI generator.
+
+Therefore the existing 7457 artifacts remain the authoritative binary proof,
+while `d4279c96a` is the current source state for the next build.
+
+Authoritative 7457 artifacts:
+
+WAPTSetup:
+- FileVersion/ProductVersion: `1.8.3.7457`
+- SHA256:
+  `89257ED1541FDE4F840F64FAE8B014CCA1976402DED33577734774210937AA61`
+
+Generated WAPTAgent:
+- FileVersion/ProductVersion: `1.8.3.7457`
+- SHA256:
+  `ED0D099A9FF0D921AAFA11C5FAD720653825C378B76E95AF9DAFA0120C5E562C`
+
+The 7457 artifacts were signed with the previous internal validation identity:
+
+`CN=WAPT Community Thouet Code Signing`
+
+Thumbprint:
+
+`015133A6B6119ACB3C9F24400C348077D19B954B`
+
+That certificate remains historical evidence for the validated 7457 build. It
+must not be confused with the new definitive private signing PKI.
+
+The new signing architecture is now:
+
+`Thouet Software Signing Root CA`
+-> `Thouet Software Code Signing`
+-> Windows executable
+
+The new architecture has been independently validated on a copied executable,
+but has NOT yet been integrated into and proven through a complete Windows
+product build.
+
+#### Existing build integration state
+
+A source search after PKI creation confirmed that neither the previous
+certificate subject nor its thumbprint is hard-coded in `tools` or
+`waptsetup`.
+
+Current signing integration points are primarily in:
+
+`tools/03-build-windows-product.ps1`
+
+Relevant existing functionality includes:
+
+- controlled Windows SDK SignTool validation;
+- build/Lazarus signing parameters;
+- Authenticode signing of Windows artifacts;
+- final WAPTSetup signing;
+- installation of the controlled `signtool.exe` into WAPTSetup where required
+  for dynamic agent generation;
+- signature validation and build failure handling.
+
+The validated 7457 workflow should be extended rather than rewritten.
+
+#### Already validated and not to reopen without contradiction
+
+- Debian 10 DR tooling;
+- historical database migration;
+- 1.8.2.7393 -> 1.8.3 client migration proof;
+- autonomous Windows build environment;
 - controlled build-kit inputs;
 - isolated Lazarus build;
 - transient Lazarus failure retry;
-- automated Authenticode signing;
-- final setup signing;
-- autonomous-distribution source cleanup;
-- WAPTSetup-only SignTool deployment;
-- console-driven agent generation;
-- Debian publication;
-- byte-integrity proof through identical SHA256;
-- WAPTAgent-only installation without SignTool;
-- historical/current Authenticode trust comparison;
-- current self-signed certificate behavior and trust remediation.
-
-Still pending before the consolidated `1.8.3.1` freeze:
-1. Update/finalize technical documentation for the 7457 milestone.
-2. Ensure all temporary/test runtime naming has been replaced by the neutral production path `C:\wapt-runtime-1.8.3` in defaults and documentation.
-3. Decide/acquire the final Authenticode signing identity for broad distribution, or explicitly document the internal-certificate limitation if release timing requires deferral.
-4. Perform the final release-candidate Windows build after any remaining release-only changes.
-5. Record final hashes, versions and Git lineage.
-6. Perform the minimal clean-machine release-candidate regression proof.
-7. Update/rebuild Debian packaging only where required by committed server/product changes and perform focused artifact/homepage regression validation.
-8. Freeze/tag the consolidated autonomous release as `1.8.3.1`.
-9. Only after the 1.8.3.1 consolidation is frozen, begin the next modernization/security phase and Debian 11 work.
-
-Do not reopen already validated:
-- Debian 10 DR tooling;
-- historical database migration;
-- 1.8.2.7393 -> 1.8.3 migration proof;
 - VC90 CRT manifest investigation;
-- Windows 7393 historical signing-chain investigation;
-- generated-agent SignTool distribution investigation;
-unless a new contradiction appears.
+- automated Authenticode signing workflow;
+- final setup signing;
+- WAPTSetup-only controlled SignTool deployment;
+- console-driven WAPTAgent generation;
+- Debian publication;
+- server/download SHA256 identity proof;
+- WAPTAgent-only installation without SignTool;
+- historical WAPT 1.8.2.7393 public signing-chain investigation;
+- autonomous-distribution source audit;
+- behavior of the previous 1.8.3.7457 self-signed certificate.
+
+#### Still pending before consolidated 1.8.3.1 freeze
+
+1. Integrate the definitive Code Signing PFX into the existing validated
+   Windows build workflow without hard-coding secrets.
+
+2. Implement automatic provisioning of the public Root CA to Windows clients.
+
+3. Ensure Root provisioning works for both domain and non-domain machines.
+
+4. Ensure no private Root material is ever included in:
+   - source control;
+   - build kit;
+   - WAPTSetup;
+   - WAPTAgent;
+   - server publication;
+   - client installation.
+
+5. Ensure normal builds require only the Code Signing private identity and
+   securely supplied password.
+
+6. Complete the remaining release documentation/naming cleanup, including the
+   neutral runtime path:
+
+   `C:\wapt-runtime-1.8.3`
+
+7. Produce a new release-candidate Windows build using the definitive PKI.
+
+8. Validate end-to-end:
+   - signed WAPTSetup;
+   - signed installed WAPT executables;
+   - Root CA provisioning;
+   - Authenticode `Valid` on a clean machine;
+   - console launch;
+   - generated `waptagent.exe`;
+   - agent installation/update;
+   - dynamic agent signing;
+   - no SignTool leakage into WAPTAgent;
+   - no regression in autonomous-distribution behavior.
+
+9. Record final versions, hashes and Git lineage.
+
+10. Update/rebuild Debian packaging only where required by committed
+    server/product changes and perform focused artifact/homepage regression
+    validation.
+
+11. Update this checkpoint and freeze/tag the consolidated autonomous release
+    as `1.8.3.1`.
+
+12. Only after the `1.8.3.1` consolidation is frozen, begin the next
+    modernization/security phase and Debian 11 work.
+
+#### Exact next action
+
+Do not rebuild immediately.
+
+First inspect the existing signing parameter/configuration sections in:
+
+`tools/03-build-windows-product.ps1`
+
+Specifically inspect:
+- initial parameters;
+- current signing/build invocation;
+- final setup signing;
+- controlled SignTool installation;
+- how the current PFX/password/signing identity is supplied.
+
+Then make the smallest possible change required to use:
+
+`C:\private-wapt-signing\codesigning\Thouet-Software-Code-Signing.pfx`
+
+without hard-coding its password or private material into Git.
+
+After Code Signing integration is understood, design the automatic client
+provisioning mechanism for:
+
+`C:\wapt-build-kit\signing\public\Thouet-Software-Signing-Root-CA.cer`
+
+Do not require the Root PFX for normal builds.
 
 
 ## 48. Resume protocol for the next ChatGPT thread
@@ -5846,55 +6182,86 @@ Gipity, resume the WAPT project from the attached checkpoint.
 Treat `WAPT_CHECKPOINT.md` as the authoritative technical state.
 Do not repeat already validated investigations unless a contradiction appears.
 
-The current authoritative Windows proof is now WAPT Community `1.8.3.7457`.
+The current authoritative Windows binary proof remains WAPT Community
+`1.8.3.7457`.
 
-Current source state:
-- branch: `release/1.8.3`
-- HEAD: `a38b4fe4e`
-- matching automatic build branch: `build/windows-1.8.3-7457-auto`.
+Authoritative 7457 build:
+- build source: `a38b4fe4e`;
+- build branch: `build/windows-1.8.3-7457-auto`;
+- WAPTSetup SHA256:
+  `89257ED1541FDE4F840F64FAE8B014CCA1976402DED33577734774210937AA61`;
+- generated WAPTAgent SHA256:
+  `ED0D099A9FF0D921AAFA11C5FAD720653825C378B76E95AF9DAFA0120C5E562C`.
 
-The autonomous Windows workflow is validated end-to-end:
-- controlled environment/build-kit;
-- isolated Lazarus build;
-- automated Authenticode signing;
-- signed final WAPTSetup;
-- WAPTSetup-only controlled SignTool installation;
-- console-driven WAPTAgent generation;
-- Debian publication;
-- identical server/download SHA256;
-- WAPTAgent-only installation without SignTool.
+Current development source:
+- branch: `release/1.8.3`;
+- HEAD: `d4279c96a`;
+- latest change:
+  `Add private Windows code signing PKI generator`.
 
-Authoritative 7457 artifacts currently recorded:
+The 7457 binaries used the previous internal self-signed validation
+certificate:
 
-WAPTSetup:
-- FileVersion/ProductVersion: `1.8.3.7457`
-- SHA256: `89257ED1541FDE4F840F64FAE8B014CCA1976402DED33577734774210937AA61`
+`CN=WAPT Community Thouet Code Signing`
 
-Generated WAPTAgent:
-- FileVersion/ProductVersion: `1.8.3.7457`
-- SHA256: `ED0D099A9FF0D921AAFA11C5FAD720653825C378B76E95AF9DAFA0120C5E562C`
+thumbprint:
 
-Current Authenticode validation identity:
-- `CN=WAPT Community Thouet Code Signing`
-- thumbprint `015133A6B6119ACB3C9F24400C348077D19B954B`
-- self-signed;
-- signatures become `Valid` after trusting its public certificate;
-- it is an internal/validation identity, not yet the preferred final broad-distribution trust model.
+`015133A6B6119ACB3C9F24400C348077D19B954B`
 
-Historical 1.8.2.7393 used a public Sectigo/USERTrust trust chain and required no WAPT-specific root deployment.
+That identity remains historical evidence for the 7457 validation only.
 
-Because some managed clients are outside the Active Directory domain, GPO deployment of the current self-signed `.cer` is not the preferred final solution. A Windows-recognized external Authenticode signing identity is preferred for broad distribution.
+A new definitive private signing PKI has now been created and independently
+validated:
 
-The autonomous-distribution cleanup is committed through:
-- `2ee19e47e`
-- `a5e88dfde`
-- `1a3d18afa`
+Root CA:
+- `CN=Thouet Software Signing Root CA`
+- thumbprint:
+  `DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
+- valid until 2036-09-25.
 
-Do not reopen the autonomous-distribution source audit unless runtime testing reveals a contradiction.
+Code Signing:
+- `CN=Thouet Software Code Signing`
+- issuer: `CN=Thouet Software Signing Root CA`
+- thumbprint:
+  `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
+- valid until 2027-09-25.
 
-Resume at §47.14 "Current 1.8.3 consolidation status and exact next action".
+Definitive functional proof:
+- Root -> Code Signing chain: PASS;
+- controlled SignTool signing: PASS;
+- Authenticode: `Valid`;
+- Sectigo RFC3161 timestamp: PASS.
+
+PKI generator:
+- `tools/create-windows-signing-pki.ps1`;
+- commit `d4279c96a`.
+
+Private Root and Code Signing PFX passwords are stored outside Git in the
+organization's KeePass and must never be written into source, checkpoint or
+build artifacts.
+
+The Root PFX has been copied to secure storage and is intended to be
+offline-only.
+
+The public Root certificate is the client trust anchor:
+
+`Thouet-Software-Signing-Root-CA.cer`
+
+The automatic Root provisioning mechanism is not yet implemented. It must work
+for both domain and non-domain clients.
+
+Resume at §47.14 "Exact next action".
 
 Immediate objective:
-finish the remaining release documentation/naming cleanup, decide the final Authenticode identity strategy, produce the release candidate, then freeze the consolidated autonomous `1.8.3.1` milestone before starting Debian 11.
+inspect the existing signing plumbing in `tools/03-build-windows-product.ps1`,
+integrate the definitive Code Signing identity with the smallest possible
+change, then design automatic public Root CA provisioning.
+
+Do not rebuild until that integration has been reviewed.
+
+After PKI/build integration and Root provisioning are validated, finish the
+remaining release documentation/naming cleanup, produce the release candidate,
+and freeze the consolidated autonomous `1.8.3.1` milestone before starting
+Debian 11.
 
 Keep answers concise and proceed one validated step at a time.
