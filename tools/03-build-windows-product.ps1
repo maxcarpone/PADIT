@@ -701,9 +701,9 @@ Copy-Item (Join-Path $Vc90 'Microsoft.VC90.CRT.manifest') $Output
 
 Copy-Item (Join-Path $Tools 'dmidecode.exe') $Output
 
-# Install the controlled public Authenticode Root CA certificate.
-# This public certificate is embedded in WAPT installers so clients can
-# establish trust in WAPT executables signed by the private signing PKI.
+# Install the controlled public Authenticode Root CA certificate in the
+# product tree. It is retained as public signing material for WAPT and
+# does not establish trust in the Windows certificate store.
 $ProductSigningPublic = Join-Path $Output 'signing\public'
 $ProductSigningRootCer = Join-Path $ProductSigningPublic 'Thouet-Software-Signing-Root-CA.cer'
 
