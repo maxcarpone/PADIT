@@ -6535,38 +6535,401 @@ The historical package-signing certificate transition remains intentionally
 deferred to the definitive SCRAB replacement work and must not be confused
 with the validated Windows Authenticode PKI.
 
+#### Superseded exact next action
+
+The previous 7468 exact-next-action checkpoint has now been completed and
+superseded by the 7478 validation below.
+
+The 7468 proof remains valid historical evidence and must not be reopened
+without contradictory evidence.
+
+
+### 47.15 — WAPT Community 1.8.3.7478 explicit Root trust and final Windows proof
+
+The Windows signing/bootstrap work was extended after the complete 7468 proof
+to make the private Authenticode Root trust model explicit to administrators
+while preserving the already validated autonomous/off-domain installation
+behavior.
+
+Current development branch:
+
+`release/1.8.3`
+
+Current validated source HEAD:
+
+`dcc35657` — `Align server signing guidance with setup trust bootstrap`
+
+Current Git revision count:
+
+`7478`
+
+#### Public Root CA publication and server integration
+
+The public Authenticode Root certificate:
+
+`Thouet-Software-Signing-Root-CA.cer`
+
+is now treated as a public distribution artifact.
+
+Relevant commits:
+
+- `f01d3aa1e` — `Package public signing Root CA with Windows setup`;
+- `178683115` — `Expose public signing Root CA metadata`;
+- `fe42ac48b` — `Present public signing Root CA on server homepage`;
+- `ff5d62d80` — `Guide setup download through publisher trust`.
+
+`waptsetup/deb/createdeb.py` now includes the public Root CA in the Windows
+setup package publication set.
+
+`waptserver/server.py` exposes the Root CA when present in the WAPT publication
+directory and calculates its SHA256.
+
+The WAPT server homepage exposes:
+- the public Root CA download;
+- its SHA256;
+- an explanation of the WAPT publisher trust relationship.
+
+This allows manual inspection or deployment of the public certificate where
+required.
+
+No private signing key is published by this mechanism.
+
+#### Explicit Root trust decision
+
+An intermediate change removed the automatic Root bootstrap:
+
+`dea2e150d` — `Require explicit trust of publisher Root CA`
+
+That change was intentionally reverted after reviewing the operational
+requirements:
+
+`85f04ba9e` — `Revert "Require explicit trust of publisher Root CA"`
+
+Reason:
+
+WAPT must remain autonomously deployable to both domain-joined and off-domain
+machines. Requiring an administrator to pre-deploy the Root through GPO or
+another external mechanism would break that requirement and would regress the
+previously validated installation workflow.
+
+The retained design therefore remains:
+
+1. the public Root CA is embedded in WAPTSetup;
+2. WAPTSetup can bootstrap the Root into the Windows Local Machine trust store;
+3. the Root private key is never distributed;
+4. installed WAPT executables can then validate against the private
+   Authenticode hierarchy;
+5. the public Root certificate remains available in the installed product tree
+   for later dynamic WAPTAgent generation.
+
+The bootstrap was then improved so that an interactive administrator is
+explicitly informed before the Root is trusted.
+
+Commit:
+
+`b2560fd20` — `Confirm publisher Root CA trust during interactive setup`
+
+During an interactive WAPTSetup installation, immediately before modifying the
+Local Machine Root store, WAPTSetup displays a confirmation explaining that:
+
+- WAPT executables are digitally signed by Thouet Software;
+- the `Thouet Software Signing Root CA` will be added to
+  `Local Machine\Trusted Root Certification Authorities`;
+- the administrator should continue only if Thouet Software is trusted as the
+  publisher of the distribution.
+
+Selecting `No` aborts installation.
+
+Selecting `Yes` installs the Root and continues installation.
+
+Silent and very-silent installations retain the non-interactive bootstrap
+behavior so that automated/off-domain deployment remains possible.
+
+The resulting trust model is therefore deliberate:
+
+**interactive installation -> explicit administrator consent -> Root bootstrap**
+
+and:
+
+**silent managed installation -> administrator/deployment-system policy ->
+Root bootstrap**
+
+The mechanism is not dependent on Active Directory or GPO.
+
+#### Server homepage guidance alignment
+
+The server homepage wording was subsequently aligned with the final bootstrap
+behavior.
+
+Commit:
+
+`dcc35657` — `Align server signing guidance with setup trust bootstrap`
+
+The homepage now explains that WAPTSetup itself asks for confirmation before
+adding the Thouet Software Signing Root CA to the Local Machine Trusted Root
+Certification Authorities store.
+
+The downloadable `.cer` remains available for:
+- inspection;
+- fingerprint verification;
+- manual deployment;
+- deployment through an organization's own management mechanism.
+
+Pre-installation of the Root from the homepage is not required for the normal
+interactive WAPTSetup path.
+
+#### Product-tree Root CA handling clarification
+
+The controlled Windows product assembly continues to copy:
+
+`Thouet-Software-Signing-Root-CA.cer`
+
+to:
+
+`signing\public`
+
+in the product tree.
+
+The corresponding comments were clarified by:
+
+`927bcac39` — `Clarify public signing Root CA handling`
+
+The product-tree copy is public signing material. Merely copying it into the
+product tree does not itself establish Windows trust.
+
+Trust is established by the WAPTSetup bootstrap mechanism described above.
+
+Validated public Root certificate SHA256:
+
+`5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A`
+
+Root identity:
+
+`CN=Thouet Software Signing Root CA`
+
+Root thumbprint:
+
+`DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
+
+#### WAPT Community 1.8.3.7478 product proof
+
+A clean controlled Windows product build was performed from the 7478 source
+state.
+
+Final WAPTSetup:
+
+- FileVersion: `1.8.3.7478`;
+- ProductVersion: `1.8.3.7478`;
+- ProductName: `WAPTSetup`;
+- size: `26908768` bytes;
+- SHA256:
+  `956773B68918E48B48C5C2176F37DA1AD9C80E8224C8CDE666353E78BB5B9C7F`.
+
+Build result:
+
+- unsigned Community setup build: PASS;
+- final Authenticode signing: PASS;
+- final setup validation: PASS;
+- controlled public Root CA included in product tree: PASS.
+
+#### Interactive Root bootstrap validation
+
+The existing Thouet Software Signing Root CA was first removed from the
+Windows validation VM Local Machine Root store.
+
+The absence of the Root was verified before installation.
+
+WAPTSetup 1.8.3.7478 was then launched interactively.
+
+Test 1 — administrator refuses Root trust:
+
+- Root confirmation dialog displayed: PASS;
+- `No` selected;
+- installation aborted: PASS;
+- setup window closed: PASS.
+
+Test 2 — administrator accepts Root trust:
+
+- WAPTSetup relaunched;
+- Root confirmation dialog displayed: PASS;
+- `Yes` selected;
+- installation continued normally: PASS;
+- Root installed into `Cert:\LocalMachine\Root`: PASS.
+
+Installed Root:
+
+- subject:
+  `CN=Thouet Software Signing Root CA`;
+- issuer:
+  `CN=Thouet Software Signing Root CA`;
+- thumbprint:
+  `DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`;
+- valid from: `2026-09-25 16:11:50`;
+- valid until: `2036-09-25 16:21:49`.
+
+This proves that explicit administrator consent was added without breaking the
+previously validated Root bootstrap mechanism.
+
+#### WAPT Console post-bootstrap proof
+
+After the accepted 7478 installation, the installed WAPT Console launched
+normally.
+
+Result:
+
+- WAPT Console startup: PASS;
+- no Windows `"Une référence a été renvoyée par le serveur"` launch failure;
+- server connection/configuration UI accessible: PASS;
+- dynamic WAPTAgent creation workflow accessible: PASS.
+
+This confirms the purpose of the Authenticode Root bootstrap: executables signed
+through the private Thouet Software signing hierarchy are trusted by Windows
+before the installed console is used.
+
+The WAPT HTTPS server-certificate verification setting visible in the agent
+creation dialog is a separate trust mechanism and must not be confused with
+Windows Authenticode trust.
+
+#### Definitive 7478 dynamically generated WAPTAgent proof
+
+Using the installed WAPT Console after the successful 7478 Root bootstrap, a
+new WAPTAgent was generated and published to the Debian 10 WAPT server.
+
+Published server file:
+
+`/var/www/wapt/waptagent.exe`
+
+Server-side SHA256:
+
+`99B6E48284A72862846EF27B49CA72711D70BE7271C9964200D075CCA69D3CB8`
+
+An independently downloaded Windows copy:
+
+`C:\Temp\waptagent.exe`
+
+produced the identical SHA256:
+
+`99B6E48284A72862846EF27B49CA72711D70BE7271C9964200D075CCA69D3CB8`
+
+Server/download artifact identity: PASS.
+
+Authenticode inspection of that exact downloaded agent showed:
+
+- status: `Valid`;
+- status message: `Signature vérifiée.`;
+- signer:
+  `CN=Thouet Software Code Signing`;
+- issuer:
+  `CN=Thouet Software Signing Root CA`;
+- signer serial:
+  `3AC70F090F263FAD47BC45A857188D56`;
+- signer thumbprint:
+  `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`;
+- signer validity:
+  `2026-09-25 16:11:51` to `2027-09-25 16:21:51`;
+- RFC3161 timestamp signer:
+  `CN=Sectigo Public Time Stamping Signer R37`;
+- timestamp issuer:
+  `CN=Sectigo Public Time Stamping CA R41`;
+- timestamp thumbprint:
+  `E97818A928DA150A9FE1BF9CCC7AABB9A00EEEAC`.
+
+Result:
+
+**The dynamically generated 7478 WAPTAgent published by the server is
+byte-identical to the independently downloaded validation copy, is signed by
+the definitive Thouet Software Code Signing identity, chains to the installed
+Thouet Software Signing Root CA, reports Authenticode `Valid`, and carries the
+expected Sectigo RFC3161 timestamp.**
+
+#### 7478 Windows release-candidate conclusion
+
+The 7478 validation demonstrates the complete intended Windows trust path:
+
+`WAPTSetup 1.8.3.7478`
+-> signed by `Thouet Software Code Signing`
+-> interactive administrator explicitly accepts private Root trust
+-> `Thouet Software Signing Root CA` installed in `LocalMachine\Root`
+-> installed WAPT Console launches successfully
+-> console dynamically generates WAPTAgent
+-> generated agent is Authenticode-signed automatically
+-> generated agent receives Sectigo RFC3161 timestamp
+-> agent is published to Debian server
+-> server/download SHA256 identity is confirmed
+-> downloaded agent reports Authenticode `Valid`.
+
+The Windows Authenticode/bootstrap mechanism is therefore considered validated
+at the 7478 milestone.
+
+Do not reopen this mechanism without contradictory evidence.
+
+The 7468 validation remains historical evidence for the underlying signing,
+timestamping, installation and client/server mechanisms. The 7478 validation
+supersedes it as the current Windows release-candidate proof for Root bootstrap
+behavior.
+
+#### Still pending before consolidated 1.8.3.1 freeze
+
+The Windows 7478 signing/bootstrap path itself does not require another redesign.
+
+Remaining consolidation work includes:
+
+1. update/rebuild the Debian `tis-waptsetup` packaging from the committed
+   7478-era source changes;
+
+2. confirm that the server publication contains:
+   - current `waptsetup-tis.exe`;
+   - current `waptdeploy.exe` where applicable;
+   - `Thouet-Software-Signing-Root-CA.cer`;
+
+3. validate the deployed server homepage:
+   - WAPTSetup download;
+   - public Root CA download;
+   - displayed Root SHA256;
+   - wording describing the interactive trust bootstrap;
+
+4. perform focused server/package regression validation after deployment;
+
+5. complete the PKI documentation/tooling consolidation already identified in
+   §47.14;
+
+6. complete remaining release documentation and organization-specific naming
+   cleanup;
+
+7. record final versions, hashes and Git lineage;
+
+8. update this checkpoint and freeze/tag the consolidated autonomous release as
+   `1.8.3.1`;
+
+9. only after `1.8.3.1` is frozen, begin Debian 11 modernization.
+
+The historical WAPT package-signing certificate migration remains deferred to
+the definitive SCRAB replacement phase.
+
 #### Exact next action
 
-Do not rebuild immediately.
+Do not rebuild the Windows product again.
 
-First commit this checkpoint update so the complete validated 7468 proof is
-preserved.
+First commit this checkpoint update so the complete 7478 proof and explicit
+Root-trust design are preserved.
 
-Then begin the PKI documentation/tooling consolidation while the exact
-certificate workflow validated during 7468 is still fresh.
+Then move to the Debian 10 server/package side.
 
-Start by reviewing:
+Rebuild the Windows `tis-waptsetup` Debian package from the current committed
+source and deploy it through the existing validated Debian 10 packaging
+workflow.
 
-`tools/create-windows-signing-pki.ps1`
+Verify specifically that the resulting server publication exposes:
 
-against the now-proven operational requirements:
+- the current signed WAPTSetup;
+- `Thouet-Software-Signing-Root-CA.cer`;
+- the correct Root SHA256 metadata;
+- the updated homepage guidance.
 
-- clean private Root / Code Signing separation;
-- public Root export;
-- Code Signing `.pfx`;
-- Code Signing `.crt`;
-- encrypted Code Signing `.pem`;
-- Code Signing `.p12` expected by historical `CreateWaptSetup()`;
-- no secrets written into Git;
-- generic/configurable organization identity for public use.
+Perform only focused regression validation of those server-side changes.
 
-Make the smallest maintainable additions needed so a future administrator can
-reproduce the required certificate material without manually rediscovering the
-7468 procedure.
-
-After PKI documentation/tooling is complete, finish the remaining
-documentation/naming cleanup and focused release-candidate validation before
-freezing `1.8.3.1`.
+Do not reopen the validated Windows 7478 Authenticode, Root bootstrap or
+dynamic-agent mechanisms unless contradictory evidence appears.
 
 
 ## 48. Resume protocol for the next ChatGPT thread
@@ -6577,91 +6940,113 @@ Do not repeat already validated investigations unless a contradiction appears.
 
 The current authoritative Windows milestone is:
 
-`WAPT Community 1.8.3.7468`
+`WAPT Community 1.8.3.7478`
 
 Current development branch:
 
 `release/1.8.3`
 
-Key current dynamic-agent hardening commits:
+Current validated source HEAD:
 
-- `de9f00288` — `Use SHA256 for generated agent Authenticode signature`;
-- `4cae11289` — `Timestamp generated agent Authenticode signature`;
-- `5d15c4d60` — `Fail generated agent build on signing error`.
+`dcc35657` — `Align server signing guidance with setup trust bootstrap`
 
-Authoritative WAPTSetup 7468:
-- FileVersion/ProductVersion: `1.8.3.7468`;
-- size: `26907832` bytes;
+Git revision count at the validated milestone:
+
+`7478`
+
+Authoritative WAPTSetup 7478:
+
+- FileVersion/ProductVersion: `1.8.3.7478`;
+- size: `26908768` bytes;
 - SHA256:
-  `4E3B2A944167FE51FBAA1C96942108F2F6E0AF25F33EC70DE552A11546393128`.
+  `956773B68918E48B48C5C2176F37DA1AD9C80E8224C8CDE666353E78BB5B9C7F`.
 
-Authoritative dynamically generated WAPTAgent 7468:
-- SHA256:
-  `6D5B8CBB6C2D1B06FFFDF39ABA02A924194E4DDC3E96CE4A65971D6D0D37EB8F`.
+Authoritative dynamically generated WAPTAgent 7478 SHA256:
+
+`99B6E48284A72862846EF27B49CA72711D70BE7271C9964200D075CCA69D3CB8`
 
 Definitive Windows Authenticode PKI:
 
 Root:
+
 `CN=Thouet Software Signing Root CA`
 
 Root thumbprint:
+
 `DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
 
 Code Signing:
+
 `CN=Thouet Software Code Signing`
 
 Code Signing thumbprint:
+
 `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
 
-The 7468 validation proved end-to-end:
-- final WAPTSetup build/signing validation: PASS;
-- dynamic WAPTAgent SHA256 signing: PASS;
+The 7478 validation proved:
+
+- controlled WAPTSetup build: PASS;
+- final WAPTSetup signing: PASS;
+- interactive Root trust prompt: PASS;
+- administrator `No` aborts installation: PASS;
+- administrator `Yes` installs Root and continues: PASS;
+- Root present in `LocalMachine\Root`: PASS;
+- WAPT Console launch after bootstrap: PASS;
+- no `"Une référence a été renvoyée par le serveur"` launch failure: PASS;
+- dynamic WAPTAgent generation: PASS;
+- dynamic SHA256 Authenticode signing: PASS;
 - dynamic RFC3161 timestamping: PASS;
-- definitive Thouet Code Signing identity used dynamically: PASS;
+- definitive Thouet Code Signing identity: PASS;
 - generated WAPTAgent Authenticode: `Valid`;
 - Root -> Code Signing chain: PASS;
 - Sectigo timestamp: PASS;
-- server/download SHA256 identity: PASS;
-- WAPTAgent installation: PASS;
-- client registration/visibility: PASS;
-- client reachability: PASS.
+- server/download WAPTAgent SHA256 identity: PASS.
 
-The authoritative dynamically generated agent signer is no longer the
-temporary `Tempo` certificate.
+The public Root CA is also now integrated into the Windows `tis-waptsetup`
+packaging/publication path and exposed through WAPT server metadata/homepage
+changes.
 
-`Tempo` remains historical test evidence only.
+Relevant post-7468 commits include:
 
-The historical dynamic-agent certificate convention has now been proven to
-require:
-- `.crt` for the selected WAPT personal certificate;
-- encrypted `.pem` private key for console key handling;
-- same-basename `.p12` for SignTool dynamic Authenticode signing.
+- `f01d3aa1e` — `Package public signing Root CA with Windows setup`;
+- `178683115` — `Expose public signing Root CA metadata`;
+- `fe42ac48b` — `Present public signing Root CA on server homepage`;
+- `ff5d62d80` — `Guide setup download through publisher trust`;
+- `dea2e150d` — `Require explicit trust of publisher Root CA`
+  (superseded/reverted);
+- `927bcac39` — `Clarify public signing Root CA handling`;
+- `85f04ba9e` — `Revert "Require explicit trust of publisher Root CA"`;
+- `b2560fd20` — `Confirm publisher Root CA trust during interactive setup`;
+- `dcc35657` — `Align server signing guidance with setup trust bootstrap`.
 
-The definitive `.pfx` is the clean Code Signing PKCS#12 source identity.
+The final design deliberately preserves autonomous/off-domain deployment:
 
-SmartScreen still displays an "application not recognized" warning for the
-private-PKI signed WAPTAgent, while correctly identifying the publisher as:
+- the public Root is embedded;
+- interactive setup asks for explicit administrator consent;
+- acceptance installs the Root automatically;
+- rejection aborts installation;
+- silent deployment remains non-interactive;
+- no GPO is required;
+- no Root private key is distributed.
 
-`Thouet Software Code Signing`
+Windows Authenticode trust and WAPT HTTPS server-certificate verification are
+separate mechanisms.
 
-Equivalent SmartScreen behavior was observed with the historical 7393 agent,
-so this is not considered a new 7468 regression.
+Windows Authenticode trust and WAPT package-signing trust are also separate
+mechanisms.
 
-The historical WAPT package-signing identity migration and existing signed
-package transition remain deferred to the definitive SCRAB replacement phase.
-
-Resume at §47.14 "Exact next action".
+Do not reopen the validated 7478 Windows signing/bootstrap/dynamic-agent
+mechanisms without contradictory evidence.
 
 Immediate next work:
-- commit the 7468 checkpoint;
-- document and automate the reproducible PKI/certificate preparation workflow;
-- distinguish internal Thouet procedure from generic open-source deployment;
-- review `tools/create-windows-signing-pki.ps1` for generic/configurable use and
-  `.crt` / `.pem` / `.p12` generation;
-- then complete remaining release documentation/naming cleanup and focused
-  release-candidate validation.
 
-Do not reopen the validated 7468 signing/bootstrap/dynamic-agent mechanisms
-without contradictory evidence.
+- commit this checkpoint;
+- move to the Debian 10 packaging/server side;
+- rebuild/update `tis-waptsetup` from the current source;
+- publish the current signed setup and public Root `.cer`;
+- validate server Root metadata/SHA256 and homepage guidance;
+- perform focused regression tests only;
+- then resume the remaining PKI documentation/tooling and final `1.8.3.1`
+  consolidation work.
 
 Keep answers concise and proceed one validated step at a time.
