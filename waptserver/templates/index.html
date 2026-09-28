@@ -6,6 +6,26 @@
             <div class="col-md-9 col-sx-12">
                 <h2>{{ _("WAPT server") }}</h2>
                 <p>{{ _(""" WAPT server is managed through a WAPT console installed on a Windows system. When installing the WAPT server on Windows, the console is installed by default and can be found under the start menu. """) }}</p>
+                {% if data.wapt.signing_root_ca.url %}
+                <div class="alert alert-warning">
+                    <strong>{{ _("WAPT publisher certificate") }}</strong>
+                    <p>
+                        {{ _("Before installing WAPTSetup, an administrator must explicitly trust the WAPT publisher certificate on this computer.") }}
+                    </p>
+                    <p>
+                        <a href="{{ data.wapt.signing_root_ca.url }}">
+                            {{ _("Download Thouet Software Signing Root CA") }}
+                        </a>
+                    </p>
+                    <p>
+                        <strong>SHA256:</strong>
+                        <code>{{ data.wapt.signing_root_ca.sha256 }}</code>
+                    </p>
+                    <p>
+                        {{ _("Install this certificate in the Local Machine Trusted Root Certification Authorities store only if you choose to trust Thouet Software as the publisher of this WAPT distribution.") }}
+                    </p>
+                </div>
+                {% endif %}
                 <p> {{ _(""" When installing the server on Linux, the <a href=\"/wapt/waptsetup-tis.exe\">WAPT client</a> should be installed on an administration machine, then run from 'Start/All programs'. """) }} </p>
                 <p>{{ _(""" To manually add a new host to the WAPT server, download the <a href=\"/wapt/waptagent.exe\">WAPT agent</a> from the menu to the right. The agent has been properly configured by the server so the default parameters should work. Once the WAPT client has been installed, you can find it in your console. """) }} </p>
                 {% if data.wapt.deploy.url %}
