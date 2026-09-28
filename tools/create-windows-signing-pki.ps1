@@ -108,7 +108,8 @@ Export-PfxCertificate `
 Export-PfxCertificate `
     -Cert $Code `
     -FilePath $CodePfx `
-    -Password $CodePassword | Out-Null
+    -Password $CodePassword `
+    -ChainOption EndEntityCertOnly | Out-Null
 
 Write-Host 'Removing generated private keys from the Windows certificate store...'
 
