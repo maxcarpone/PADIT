@@ -178,6 +178,10 @@ def index():
     waptagent = os.path.join(app.conf['wapt_folder'], 'waptagent.exe')
     waptsetup = os.path.join(app.conf['wapt_folder'], 'waptsetup-tis.exe')
     waptdeploy = os.path.join(app.conf['wapt_folder'], 'waptdeploy.exe')
+    signing_root_ca = os.path.join(
+        app.conf['wapt_folder'],
+        'Thouet-Software-Signing-Root-CA.cer'
+    )
 
     agent_status = setup_status = deploy_status = db_status = 'N/A'
     agent_style = setup_style = deploy_style = disk_space_style = 'style="color: red;"'
@@ -209,6 +213,13 @@ def index():
             deploy_status = deploy_version
         else:
             deploy_status = 'ERROR'
+
+    signing_root_ca_url = ''
+    signing_root_ca_sha256 = None
+
+    if os.path.isfile(signing_root_ca):
+        signing_root_ca_url = 'wapt/Thouet-Software-Signing-Root-CA.cer'
+        signing_root_ca_sha256 = sha256_for_file(signing_root_ca)
 
     try:
         db_status = 'OK (%s)' % get_db_version()
@@ -243,6 +254,10 @@ def index():
             'agent': {'status': agent_status, 'style': agent_style, 'sha256': agent_sha256},
             'setup': {'status': setup_status, 'style': setup_style, 'url':waptsetup_tis_url},
             'deploy': {'status': deploy_status, 'style': deploy_style, 'url':waptdeploy_url},
+            'signing_root_ca': {
+                'url': signing_root_ca_url,
+                'sha256': signing_root_ca_sha256
+            },
             'db': {'status': db_status},
             'disk_space': {'status': disk_space_str, 'style': disk_space_style},
         }
