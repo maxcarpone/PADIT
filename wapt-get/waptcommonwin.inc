@@ -2939,7 +2939,7 @@ begin
       SignArg := '';
       If PrivateKeyPassword<>'' then
         SignArg := Format('/p "%s"',[PrivateKeyPassword]);
-      Run(format('"%s" sign /f "%s" %s "%s"',[signtool,p12keypath,SignArg, Result]),'',3600000,'','','',OnProgress);
+      Run(format('"%s" sign /fd SHA256 /f "%s" %s "%s"',[signtool,p12keypath,SignArg, Result]),'',3600000,'','','',OnProgress);
     except
       on E:Exception do
         Logger('Unable to sign waptagent:'+E.Message);
