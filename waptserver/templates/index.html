@@ -10,7 +10,7 @@
                 <div class="alert alert-warning">
                     <strong>{{ _("WAPT publisher certificate") }}</strong>
                     <p>
-                        {{ _("Before installing WAPTSetup, an administrator must explicitly trust the WAPT publisher certificate on this computer.") }}
+                        {{ _("WAPT executables are digitally signed by Thouet Software. During installation, WAPTSetup will ask for confirmation before adding the Thouet Software Signing Root CA to the Local Machine Trusted Root Certification Authorities store.") }}
                     </p>
                     <p>
                         <a href="{{ data.wapt.signing_root_ca.url }}">
@@ -22,17 +22,13 @@
                         <code>{{ data.wapt.signing_root_ca.sha256 }}</code>
                     </p>
                     <p>
-                        {{ _("Install this certificate in the Local Machine Trusted Root Certification Authorities store only if you choose to trust Thouet Software as the publisher of this WAPT distribution.") }}
+                        {{ _("The public Root CA is also available here for verification or manual deployment. Install it only if you choose to trust Thouet Software as the publisher of this WAPT distribution.") }}
                     </p>
                 </div>
                 {% endif %}
                 {% if data.wapt.setup.url %}
                 <p>
-                    {% if data.wapt.signing_root_ca.url %}
-                    {{ _("When installing the server on Linux, install the publisher certificate above first, then install the WAPT client on an administration machine and run it from 'Start/All programs'.") }}
-                    {% else %}
                     {{ _("When installing the server on Linux, install the WAPT client on an administration machine and run it from 'Start/All programs'.") }}
-                    {% endif %}
                     <a href="{{ data.wapt.setup.url }}">{{ _("Download WAPTSetup") }}</a>
                 </p>
                 {% endif %}
