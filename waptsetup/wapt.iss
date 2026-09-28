@@ -121,9 +121,6 @@ Source: "{#wapt_base_dir}msvc*90.dll"; DestDir: "{app}";
 Source: "{#wapt_base_dir}Microsoft.VC90.CRT.manifest"; DestDir: "{app}";
 #endif
 
-; Embed the public Authenticode Root CA for early trust bootstrap.
-Source: "{#wapt_base_dir}signing\public\Thouet-Software-Signing-Root-CA.cer"; Flags: dontcopy
-
 ; Keep a public copy available for later dynamic waptagent.exe generation.
 Source: "{#wapt_base_dir}signing\public\Thouet-Software-Signing-Root-CA.cer"; DestDir: "{app}\signing\public"; Flags: ignoreversion
 
@@ -332,54 +329,6 @@ begin
     end;
 end;
 
-procedure InstallAuthenticodeRootCA();
-var
-  ResultCode: Integer;
-  CertFile: String;
-begin
-  ExtractTemporaryFile('Thouet-Software-Signing-Root-CA.cer');
-  CertFile := ExpandConstant('{tmp}\Thouet-Software-Signing-Root-CA.cer');
-
-  if not FileExists(CertFile) then
-  begin
-    MsgBox(
-      'WAPT Authenticode Root CA certificate could not be extracted:' + #13#10 +
-      CertFile,
-      mbError,
-      MB_OK
-    );
-    Abort;
-  end;
-
-  if not Exec(
-    ExpandConstant('{sys}\certutil.exe'),
-    '-addstore -f Root "' + CertFile + '"',
-    '',
-    SW_HIDE,
-    ewWaitUntilTerminated,
-    ResultCode
-  ) then
-  begin
-    MsgBox(
-      'Unable to start certutil.exe to install the WAPT Authenticode Root CA.',
-      mbError,
-      MB_OK
-    );
-    Abort;
-  end;
-
-  if ResultCode <> 0 then
-  begin
-    MsgBox(
-      'Unable to install the WAPT Authenticode Root CA.' + #13#10 +
-      'certutil.exe returned exit code ' + IntToStr(ResultCode) + '.',
-      mbError,
-      MB_OK
-    );
-    Abort;
-  end;
-end;
-
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Reply, ResultCode: Integer;
@@ -388,8 +337,6 @@ var
 begin
   if CurStep = ssInstall then
   begin
-    // Establish trust before any installed WAPT executable is used.
-    InstallAuthenticodeRootCA();
 
     // terminate waptconsole
     Exec('taskkill', '/t /im "waptconsole.exe" /f', '', SW_HIDE,
