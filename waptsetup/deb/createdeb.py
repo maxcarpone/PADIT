@@ -197,6 +197,8 @@ SETUP_UNIX=os.environ.get('SETUP_UNIX','FALSE')
 
 #########################################
 BDIR = './builddir/'
+public_files = []
+
 if SETUP_UNIX=='TRUE':
     dict_agent = {
         'WAPTAGENT_RPM7': 'waptagent_RHEL7.rpm',
@@ -215,6 +217,9 @@ else:
         'WAPTSETUP':'waptsetup-tis.exe',
         'WAPTDEPLOY':'waptdeploy.exe',
     }
+    public_files = [
+        'Thouet-Software-Signing-Root-CA.cer',
+    ]
 
 WAPTEDITION=os.environ.get('WAPTEDITION','community')
 
@@ -271,6 +276,10 @@ www_path = os.path.join(BDIR,'var/www/wapt/')
 for afile in dict_agent.keys():
     os.chmod(dict_agent[afile],0644)
     shutil.copy(dict_agent[afile],www_path)
+
+for public_file in public_files:
+    os.chmod(public_file,0644)
+    shutil.copy(public_file,www_path)
 
 # build
 if WAPTEDITION=='enterprise':
