@@ -337,6 +337,19 @@ var
   ResultCode: Integer;
   CertFile: String;
 begin
+  if not runningSilently() then
+  begin
+    if MsgBox(
+      'WAPT uses digitally signed executables published by Thouet Software.' + #13#10 + #13#10 +
+      'To validate these signatures, the Thouet Software Signing Root CA ' +
+      'will be added to the Local Machine Trusted Root Certification Authorities store.' + #13#10 + #13#10 +
+      'Continue only if you trust Thouet Software as the publisher of this WAPT distribution.',
+      mbConfirmation,
+      MB_YESNO
+    ) <> IDYES then
+      Abort;
+  end;
+
   ExtractTemporaryFile('Thouet-Software-Signing-Root-CA.cer');
   CertFile := ExpandConstant('{tmp}\Thouet-Software-Signing-Root-CA.cer');
 
