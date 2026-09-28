@@ -122,7 +122,7 @@ Source: "{#wapt_base_dir}Microsoft.VC90.CRT.manifest"; DestDir: "{app}";
 #endif
 
 ; public Authenticode Root CA used to trust WAPT-signed executables
-Source: "{#wapt_base_dir}signing\public\Thouet-Software-Signing-Root-CA.cer"; DestDir: "{app}\signing\public"; Flags: ignoreversion
+Source: "{#wapt_base_dir}signing\public\Thouet-Software-Signing-Root-CA.cer"; Flags: dontcopy
 
 ; config file sample
 Source: "{#wapt_base_dir}wapt-get.ini.tmpl"; DestDir: "{app}"; 
@@ -334,12 +334,13 @@ var
   ResultCode: Integer;
   CertFile: String;
 begin
-  CertFile := ExpandConstant('{app}\signing\public\Thouet-Software-Signing-Root-CA.cer');
+  ExtractTemporaryFile('Thouet-Software-Signing-Root-CA.cer');
+  CertFile := ExpandConstant('{tmp}\Thouet-Software-Signing-Root-CA.cer');
 
   if not FileExists(CertFile) then
   begin
     MsgBox(
-      'WAPT Authenticode Root CA certificate is missing:' + #13#10 +
+      'WAPT Authenticode Root CA certificate could not be extracted:' + #13#10 +
       CertFile,
       mbError,
       MB_OK
@@ -384,7 +385,7 @@ var
 begin
   if CurStep = ssInstall then
   begin
-    // Establish trust before WAPT-signed executables are used.
+    // Establish trust before any installed WAPT executable is used.
     InstallAuthenticodeRootCA();
 
     // terminate waptconsole
