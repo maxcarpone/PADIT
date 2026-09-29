@@ -169,7 +169,7 @@ def _db_close(error):
 def lang(language=None):
     if language in ('fr', 'en'):
         session['lang'] = language
-    return redirect('../../')
+    return index()
 
 
 @app.route('/')
@@ -2704,6 +2704,7 @@ if __name__ == '__main__':
 
     app.config['SECRET_KEY'] = app.conf.get('secret_key')
     app.config['APPLICATION_ROOT'] = app.conf.get('application_root','')
+    app.config['SESSION_COOKIE_PATH'] = '/'
     setup_logging(app.conf)
     logger.info(u'Using config file %s' % options.configfile)
 
@@ -2770,5 +2771,6 @@ else:
     setup_logging(app.conf)
     app.config['SECRET_KEY'] = app.conf.get('secret_key')
     app.config['APPLICATION_ROOT'] = app.conf.get('application_root','')
+    app.config['SESSION_COOKIE_PATH'] = '/'
     load_db_config(app.conf)
 

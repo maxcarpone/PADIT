@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-29 11:44+0200\n"
+"POT-Creation-Date: 2026-09-29 12:16+0200\n"
 "PO-Revision-Date: 2017-01-12 17:27+0100\n"
 "Last-Translator: \n"
 "Language: fr\n"
@@ -138,24 +138,24 @@ msgid "WAPT Community 1.8.2 is free software historically developed by"
 msgstr "WAPT Community 1.8.2 est un logiciel libre historiquement développé par"
 
 #: waptserver/templates/base.html:86
-msgid ""
-"This distribution is derived from that version and is maintained "
-"independently from Tranquil IT."
-msgstr ""
-"Cette distribution est issue de cette version et est maintenue "
-"indépendamment de Tranquil IT."
+msgid "This distribution is derived from that version"
+msgstr "Cette distribution est issue de cette version"
 
-#: waptserver/templates/base.html:89
-msgid ""
-"WAPT continues to be developed and commercially distributed by Tranquil "
-"IT in its current editions."
-msgstr ""
-"WAPT continue d'être développé et commercialisé par Tranquil IT dans ses "
-"éditions actuelles."
+#: waptserver/templates/base.html:87
+msgid "and is maintained independently from Tranquil IT Systems."
+msgstr "et est maintenue indépendamment de Tranquil IT Systems."
 
 #: waptserver/templates/base.html:90
-msgid "Discover the current WAPT product from Tranquil IT."
-msgstr "Découvrir le WAPT actuel de Tranquil IT."
+msgid ""
+"WAPT continues to be developed and commercially distributed by Tranquil "
+"IT Systems in its current editions."
+msgstr ""
+"WAPT continue d'être développé et commercialisé par Tranquil IT Systems "
+"dans ses éditions actuelles."
+
+#: waptserver/templates/base.html:91
+msgid "Discover the current WAPT product from Tranquil IT Systems."
+msgstr "Découvrir le WAPT actuel de Tranquil IT Systems."
 
 #: waptserver/templates/index.html:7
 msgid "WAPT server"
