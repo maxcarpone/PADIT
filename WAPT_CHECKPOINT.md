@@ -6414,7 +6414,7 @@ It belongs to the definitive SCRAB replacement phase.
 #### PKI documentation and open-source distribution requirements
 
 The 7468 validation exposed historical certificate-format requirements that
-must be documented before the consolidated `1.8.3.1` release is frozen.
+must be documented before the consolidated `1.8.3.xxxx` release is frozen.
 
 Two documentation levels are required.
 
@@ -6467,7 +6467,7 @@ The public workflow must never publish or commit private Root or Code Signing
 keys.
 
 This documentation/tooling work is a required consolidation item before the
-final autonomous `1.8.3.1` freeze.
+final autonomous `1.8.3.xxxx` freeze.
 
 #### Already validated and not to reopen without contradiction
 
@@ -6503,7 +6503,7 @@ final autonomous `1.8.3.1` freeze.
 - autonomous-distribution source audit;
 - SmartScreen behavior comparison with historical 7393.
 
-#### Still pending before consolidated 1.8.3.1 freeze
+#### Still pending before consolidated 1.8.3.xxxx freeze
 
 1. Produce the PKI documentation and supporting tooling described above:
    - internal Thouet operational procedure;
@@ -6527,9 +6527,9 @@ final autonomous `1.8.3.1` freeze.
    validation.
 
 7. Update this checkpoint and freeze/tag the consolidated autonomous release
-   as `1.8.3.1`.
+   as `1.8.3.xxxx`.
 
-8. Only after `1.8.3.1` is frozen, begin Debian 11 modernization.
+8. Only after `1.8.3.xxxx` is frozen, begin Debian 11 modernization.
 
 The historical package-signing certificate transition remains intentionally
 deferred to the definitive SCRAB replacement work and must not be confused
@@ -6868,7 +6868,7 @@ timestamping, installation and client/server mechanisms. The 7478 validation
 supersedes it as the current Windows release-candidate proof for Root bootstrap
 behavior.
 
-#### Still pending before consolidated 1.8.3.1 freeze
+#### Still pending before consolidated 1.8.3.xxxx freeze
 
 The Windows 7478 signing/bootstrap path itself does not require another redesign.
 
@@ -6899,9 +6899,9 @@ Remaining consolidation work includes:
 7. record final versions, hashes and Git lineage;
 
 8. update this checkpoint and freeze/tag the consolidated autonomous release as
-   `1.8.3.1`;
+   `1.8.3.xxxx`;
 
-9. only after `1.8.3.1` is frozen, begin Debian 11 modernization.
+9. only after `1.8.3.xxxx` is frozen, begin Debian 11 modernization.
 
 The historical WAPT package-signing certificate migration remains deferred to
 the definitive SCRAB replacement phase.
@@ -6932,121 +6932,137 @@ Do not reopen the validated Windows 7478 Authenticode, Root bootstrap or
 dynamic-agent mechanisms unless contradictory evidence appears.
 
 
+### 47.16 Debian 10 consolidation, DR and homepage validation (7480-7487)
+
+The post-7478 Debian 10 consolidation work is now validated.
+
+Git lineage:
+
+- `7479` - `a8aef553f` - `Document validated Windows 1.8.3.7478 trust bootstrap`;
+- `7480` - `297a72424` - `Preserve signing Root CA during WAPT DR restore`;
+- `7481` - `d80d1c122` - `Refresh WAPT server homepage and French translations`;
+- `7482` - `05c60ccc5` - `Fix homepage language switch and deployment guidance`;
+- `7483` - `3440d485a` - `Fix homepage language persistence and attribution`;
+- `7484` - `0e30c59e5` - `Fix homepage language redirect`;
+- `7485` - `a4b869ad0` - `Preserve HTTPS on homepage language switch`;
+- `7486` - `666af59e0` - `Keep language redirect relative under HTTPS`;
+- `7487` - `26405ec63` - `Document signing Root CA preservation in WAPT DR`.
+
+Debian 10 packaging/server validation:
+
+- the 1.8.3.7480 Debian server/setup packaging path was rebuilt and validated;
+- the current signed Windows setup/deployment artifacts and public
+  `Thouet-Software-Signing-Root-CA.cer` are integrated into the server
+  publication path;
+- the public signing Root CA metadata and SHA256 publication path were
+  validated;
+- the Windows executables remain at the validated 1.8.3.7478 milestone;
+  server-only changes do not require another Windows product rebuild.
+
+DR consolidation:
+
+- Restore V1.0.2 preserves the target `waptsetup-tis.exe`, `waptdeploy.exe`
+  and `Thouet-Software-Signing-Root-CA.cer` during historical repository
+  restoration;
+- their target SHA256 values are checked before and after repository restore;
+- commit `297a72424` contains the DR implementation;
+- `WAPT_DR_DEBIAN10.md` was aligned with this behavior by commit `26405ec63`;
+- the DR Root-preservation code and documentation are considered closed unless
+  contradictory evidence appears.
+
+Homepage consolidation:
+
+- the refreshed English/French homepage and deployment guidance were developed
+  through commits 7481-7486;
+- the historical Flask 1.1.1 / Werkzeug 0.16.0 stack autocorrected relative
+  redirect locations into absolute HTTP locations;
+- the final 7486 implementation disables location-header autocorrection for
+  the language redirect and preserves a relative `/` Location;
+- live HTTP validation confirmed `Location: /` and a session cookie with
+  `Path=/`;
+- final browser validation confirmed FR/EN switching while remaining on HTTPS,
+  return to the root URL, correct translated content, and working WAPTSetup and
+  WAPTDeploy downloads.
+
+The homepage is therefore frozen at the 7486 server milestone and must not be
+reopened without contradictory evidence.
+
+Current source HEAD after the DR documentation update is `26405ec63`, Git
+revision count `7487`.
+
+The remaining work is release consolidation/documentation. Do not begin Debian
+11 modernization until the consolidated `1.8.3.xxxx` baseline has been frozen.
+
 ## 48. Resume protocol for the next ChatGPT thread
 
 Gipity, resume the WAPT project from the attached checkpoint.
 Treat `WAPT_CHECKPOINT.md` as the authoritative technical state.
 Do not repeat already validated investigations unless a contradiction appears.
 
-The current authoritative Windows milestone is:
-
-`WAPT Community 1.8.3.7478`
-
 Current development branch:
 
 `release/1.8.3`
 
-Current validated source HEAD:
+Current source HEAD:
 
-`dcc35657` — `Align server signing guidance with setup trust bootstrap`
+`26405ec63` - `Document signing Root CA preservation in WAPT DR`
 
-Git revision count at the validated milestone:
+Git revision count:
 
-`7478`
+`7487`
 
-Authoritative WAPTSetup 7478:
+The authoritative Windows executable milestone remains:
 
-- FileVersion/ProductVersion: `1.8.3.7478`;
-- size: `26908768` bytes;
-- SHA256:
-  `956773B68918E48B48C5C2176F37DA1AD9C80E8224C8CDE666353E78BB5B9C7F`.
+`WAPT Community 1.8.3.7478`
 
-Authoritative dynamically generated WAPTAgent 7478 SHA256:
+Do not rebuild the Windows product merely because later server/documentation
+commits increased the Git revision count.
 
-`99B6E48284A72862846EF27B49CA72711D70BE7271C9964200D075CCA69D3CB8`
+Windows 7478 Authenticode, interactive Root bootstrap, console launch, dynamic
+WAPTAgent signing, RFC3161 timestamping and server/download identity are
+validated and frozen unless contradictory evidence appears.
 
-Definitive Windows Authenticode PKI:
+The definitive Windows Authenticode hierarchy remains:
 
-Root:
+    Thouet Software Signing Root CA
+    -> Thouet Software Code Signing
+    -> WAPT Windows executable
 
-`CN=Thouet Software Signing Root CA`
+This trust mechanism remains separate from WAPT package signing and HTTPS
+server-certificate verification.
 
-Root thumbprint:
+Debian 10 consolidation is validated through the 7480 packaging/server work.
+The current Windows setup/deployment artifacts and public signing Root CA are
+integrated into the server publication path.
 
-`DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
+DR Root CA preservation is implemented by `297a72424`. Restore V1.0.2
+preserves the target setup, deploy executable and public Authenticode Root CA
+during historical repository restoration and verifies their SHA256 values.
+The corresponding DR documentation is updated by `26405ec63`.
 
-Code Signing:
+The refreshed bilingual server homepage is validated and frozen at commit
+`666af59e0`, revision count `7486`. Final browser validation confirmed HTTPS
+FR/EN switching, return to `/`, correct translated content, and working
+WAPTSetup/WAPTDeploy downloads.
 
-`CN=Thouet Software Code Signing`
+Do not reopen the homepage, Windows 7478 signing/bootstrap path or DR Root
+preservation work without contradictory evidence.
 
-Code Signing thumbprint:
-
-`20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
-
-The 7478 validation proved:
-
-- controlled WAPTSetup build: PASS;
-- final WAPTSetup signing: PASS;
-- interactive Root trust prompt: PASS;
-- administrator `No` aborts installation: PASS;
-- administrator `Yes` installs Root and continues: PASS;
-- Root present in `LocalMachine\Root`: PASS;
-- WAPT Console launch after bootstrap: PASS;
-- no `"Une référence a été renvoyée par le serveur"` launch failure: PASS;
-- dynamic WAPTAgent generation: PASS;
-- dynamic SHA256 Authenticode signing: PASS;
-- dynamic RFC3161 timestamping: PASS;
-- definitive Thouet Code Signing identity: PASS;
-- generated WAPTAgent Authenticode: `Valid`;
-- Root -> Code Signing chain: PASS;
-- Sectigo timestamp: PASS;
-- server/download WAPTAgent SHA256 identity: PASS.
-
-The public Root CA is also now integrated into the Windows `tis-waptsetup`
-packaging/publication path and exposed through WAPT server metadata/homepage
-changes.
-
-Relevant post-7468 commits include:
-
-- `f01d3aa1e` — `Package public signing Root CA with Windows setup`;
-- `178683115` — `Expose public signing Root CA metadata`;
-- `fe42ac48b` — `Present public signing Root CA on server homepage`;
-- `ff5d62d80` — `Guide setup download through publisher trust`;
-- `dea2e150d` — `Require explicit trust of publisher Root CA`
-  (superseded/reverted);
-- `927bcac39` — `Clarify public signing Root CA handling`;
-- `85f04ba9e` — `Revert "Require explicit trust of publisher Root CA"`;
-- `b2560fd20` — `Confirm publisher Root CA trust during interactive setup`;
-- `dcc35657` — `Align server signing guidance with setup trust bootstrap`.
-
-The final design deliberately preserves autonomous/off-domain deployment:
-
-- the public Root is embedded;
-- interactive setup asks for explicit administrator consent;
-- acceptance installs the Root automatically;
-- rejection aborts installation;
-- silent deployment remains non-interactive;
-- no GPO is required;
-- no Root private key is distributed.
-
-Windows Authenticode trust and WAPT HTTPS server-certificate verification are
-separate mechanisms.
-
-Windows Authenticode trust and WAPT package-signing trust are also separate
-mechanisms.
-
-Do not reopen the validated 7478 Windows signing/bootstrap/dynamic-agent
-mechanisms without contradictory evidence.
+The historical WAPT package-signing certificate migration remains deferred to
+the definitive SCRAB replacement phase.
 
 Immediate next work:
 
-- commit this checkpoint;
-- move to the Debian 10 packaging/server side;
-- rebuild/update `tis-waptsetup` from the current source;
-- publish the current signed setup and public Root `.cer`;
-- validate server Root metadata/SHA256 and homepage guidance;
-- perform focused regression tests only;
-- then resume the remaining PKI documentation/tooling and final `1.8.3.1`
-  consolidation work.
+- finish the remaining release/PKI documentation and tooling consolidation;
+- record any final release metadata still required;
+- review the consolidated 1.8.3.xxxx baseline and freeze/tag it;
+- only after that freeze, begin the next modernization phase.
+
+An identified post-freeze modernization item is removal of the Debian build
+chain dependency on Wapster system Python 2.7.16; the controlled Python 2.7.18
+runtime remains the intended transitional compatibility runtime.
+
+Do not begin Debian 11 modernization before the consolidated 1.8.3.xxxx
+baseline is frozen.
 
 Keep answers concise and proceed one validated step at a time.
