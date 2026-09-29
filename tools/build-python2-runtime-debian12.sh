@@ -227,6 +227,15 @@ run "${PIP}" install \
     --no-cache-dir \
     -r "${REPO_ROOT}/requirements-server.txt"
 
+# Build-time dependencies required by Debian package creation.
+# Keep pinned to the versions validated with the controlled Python 2.7.18 runtime.
+run "${PIP}" install \
+    --no-cache-dir \
+    "GitPython==2.1.15" \
+    "gitdb2==2.0.6" \
+    "smmap2==3.0.1" \
+    "smmap==3.0.5"
+
 ###############################################################################
 # 10. Verify critical packages
 ###############################################################################
