@@ -52,7 +52,7 @@
                 {% if data.wapt.agent.sha256 %}
                 <pre>waptdeploy.exe --hash={{ data.wapt.agent.sha256|safe }} --minversion={{ data.wapt.agent.status }} --wait=15</pre>
                 {% endif %}
-                <p><a href="{{ data.wapt.deploy.url }}">{{ _("Download WAPTDeploy") }}</a></p>
+                <p>{{ _("Deployment tool:") }} <a href="{{ data.wapt.deploy.url }}">{{ _("Download WAPTDeploy") }}</a></p>
                 {% endif %}
             </div>
 

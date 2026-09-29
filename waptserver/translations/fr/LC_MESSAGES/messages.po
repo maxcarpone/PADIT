@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-29 11:12+0200\n"
+"POT-Creation-Date: 2026-09-29 11:44+0200\n"
 "PO-Revision-Date: 2017-01-12 17:27+0100\n"
 "Last-Translator: \n"
 "Language: fr\n"
@@ -110,8 +110,16 @@ msgid "Local repository"
 msgstr "Dépôt local"
 
 #: waptserver/templates/base.html:56
-msgid "WAPT Agent"
-msgstr "Agent WAPT"
+msgid "WAPT Agent (for deployment to workstations)"
+msgstr "Agent WAPT (pour le déploiement sur les postes)"
+
+#: waptserver/templates/base.html:57
+msgid "WAPTSetup (for installing the administration console)"
+msgstr "WAPTSetup (pour installer la console d'administration)"
+
+#: waptserver/templates/base.html:58
+msgid "WAPTDeploy (for deployment by GPO)"
+msgstr "WAPTDeploy (pour le déploiement par GPO)"
 
 #: waptserver/templates/base.html:62
 msgid "Bug tracker (GitHub)"
@@ -261,6 +269,10 @@ msgid ""
 msgstr ""
 "La commande ci-dessous utilise la version et l'empreinte SHA256 de "
 "l'agent actuellement publié par ce serveur :"
+
+#: waptserver/templates/index.html:55
+msgid "Deployment tool:"
+msgstr "Outil de déploiement :"
 
 #: waptserver/templates/index.html:55
 msgid "Download WAPTDeploy"

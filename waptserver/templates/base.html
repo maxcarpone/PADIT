@@ -53,9 +53,9 @@
                     {% if data %}
                     <li> <a class="dropdown-toggle" data-toggle="dropdown" href="#">WAPTServer<span class="caret"></span></a>
                         <ul class="dropdown-menu">
-                            <li><a href="/wapt/waptagent.exe">{{ _("WAPT Agent") }}</a></li>
-                            {% if data.wapt.setup.url %}<li><a href="{{data.wapt.setup.url}}">WAPTSetup</a></li>{% endif %}
-                            {% if data.wapt.deploy.url %}<li><a href="{{data.wapt.deploy.url}}">WAPTDeploy</a></li>{% endif %}
+                            <li><a href="/wapt/waptagent.exe">{{ _("WAPT Agent (for deployment to workstations)") }}</a></li>
+                            {% if data.wapt.setup.url %}<li><a href="{{data.wapt.setup.url}}">{{ _("WAPTSetup (for installing the administration console)") }}</a></li>{% endif %}
+                            {% if data.wapt.deploy.url %}<li><a href="{{data.wapt.deploy.url}}">{{ _("WAPTDeploy (for deployment by GPO)") }}</a></li>{% endif %}
                         </ul>
                     </li>
                     {% endif %}
