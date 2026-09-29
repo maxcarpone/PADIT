@@ -400,6 +400,7 @@ tls_key = $(basename "$TLS_KEY")
 nginx_historical_config_reference_only = yes
 preserve_target_waptsetup = yes
 preserve_target_waptdeploy = yes
+preserve_target_signing_root_ca = yes
 regenerate_waptagent_after_restore = yes
 EOF
 

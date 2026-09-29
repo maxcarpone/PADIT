@@ -1,7 +1,7 @@
 #!/bin/bash
 set -u
 
-SCRIPT_VERSION="1.0.1"
+SCRIPT_VERSION="1.0.2"
 
 ok()   { echo "[ OK ] $*"; }
 warn() { echo "[WARN] $*" >&2; }
@@ -53,7 +53,7 @@ create_target_safety_backup() {
             fail "Unable to save target nginx WAPT configuration"
     fi
 
-    for f in /var/www/wapt/waptsetup-tis.exe /var/www/wapt/waptdeploy.exe; do
+    for f in /var/www/wapt/waptsetup-tis.exe /var/www/wapt/waptdeploy.exe /var/www/wapt/Thouet-Software-Signing-Root-CA.cer; do
         if [ -f "$f" ]; then
             cp -a "$f" "$SAFETY_WORK/package-owned/" || \
                 fail "Unable to save target package-owned artifact: $f"
@@ -420,11 +420,14 @@ restore_target_repository() {
 
     PRESERVE_SETUP="$TARGET_REPO/waptsetup-tis.exe"
     PRESERVE_DEPLOY="$TARGET_REPO/waptdeploy.exe"
+    PRESERVE_SIGNING_ROOT="$TARGET_REPO/Thouet-Software-Signing-Root-CA.cer"
     [ -f "$PRESERVE_SETUP" ] || fail "Target waptsetup-tis.exe is missing; refusing repository replacement"
     [ -f "$PRESERVE_DEPLOY" ] || fail "Target waptdeploy.exe is missing; refusing repository replacement"
+    [ -f "$PRESERVE_SIGNING_ROOT" ] || fail "Target signing Root CA is missing; refusing repository replacement"
 
     SETUP_SHA_BEFORE="$(sha256sum "$PRESERVE_SETUP" | awk '{print $1}')"
     DEPLOY_SHA_BEFORE="$(sha256sum "$PRESERVE_DEPLOY" | awk '{print $1}')"
+    SIGNING_ROOT_SHA_BEFORE="$(sha256sum "$PRESERVE_SIGNING_ROOT" | awk '{print $1}')"
 
     FILTERED_REPO_MANIFEST="$WORKDIR/repository-manifest.final.sha256"
     awk '
@@ -432,27 +435,55 @@ restore_target_repository() {
             path=$NF
             sub(/^\*/, "", path)
             sub(/^\.\//, "", path)
-            if (path != "waptsetup-tis.exe" && path != "waptdeploy.exe")
+            if (path != "waptsetup-tis.exe" && path != "waptdeploy.exe" && path != "Thouet-Software-Signing-Root-CA.cer")
                 print $0
         }
     ' "$REPO_MANIFEST" > "$FILTERED_REPO_MANIFEST" || \
         fail "Unable to build final repository validation manifest"
 
-    SOURCE_PRESERVED_ENTRIES="$(awk '
+    SOURCE_SETUP_ENTRIES="$(awk '
         {
             path=$NF
             sub(/^\*/, "", path)
             sub(/^\.\//, "", path)
-            if (path == "waptsetup-tis.exe" || path == "waptdeploy.exe")
+            if (path == "waptsetup-tis.exe")
                 n++
         }
         END { print n+0 }
     ' "$REPO_MANIFEST")"
-    [ "$SOURCE_PRESERVED_ENTRIES" = "2" ] || \
-        fail "Expected exactly 2 setup/deploy entries in source repository manifest, got $SOURCE_PRESERVED_ENTRIES"
+    SOURCE_DEPLOY_ENTRIES="$(awk '
+        {
+            path=$NF
+            sub(/^\*/, "", path)
+            sub(/^\.\//, "", path)
+            if (path == "waptdeploy.exe")
+                n++
+        }
+        END { print n+0 }
+    ' "$REPO_MANIFEST")"
+    SOURCE_SIGNING_ROOT_ENTRIES="$(awk '
+        {
+            path=$NF
+            sub(/^\*/, "", path)
+            sub(/^\.\//, "", path)
+            if (path == "Thouet-Software-Signing-Root-CA.cer")
+                n++
+        }
+        END { print n+0 }
+    ' "$REPO_MANIFEST")"
+
+    [ "$SOURCE_SETUP_ENTRIES" = "1" ] || \
+        fail "Expected exactly one waptsetup-tis.exe entry in source repository manifest, got $SOURCE_SETUP_ENTRIES"
+    [ "$SOURCE_DEPLOY_ENTRIES" = "1" ] || \
+        fail "Expected exactly one waptdeploy.exe entry in source repository manifest, got $SOURCE_DEPLOY_ENTRIES"
+    [ "$SOURCE_SIGNING_ROOT_ENTRIES" -le 1 ] || \
+        fail "Expected at most one signing Root CA entry in source repository manifest, got $SOURCE_SIGNING_ROOT_ENTRIES"
+
+    SOURCE_PRESERVED_ENTRIES=$((SOURCE_SETUP_ENTRIES + SOURCE_DEPLOY_ENTRIES + SOURCE_SIGNING_ROOT_ENTRIES))
 
     echo "Preserved waptsetup-tis.exe SHA256: $SETUP_SHA_BEFORE"
     echo "Preserved waptdeploy.exe SHA256:    $DEPLOY_SHA_BEFORE"
+    echo "Preserved signing Root CA SHA256:   $SIGNING_ROOT_SHA_BEFORE"
 
     REPOSITORY_ALREADY_RESTORED="no"
     if (
@@ -472,6 +503,7 @@ restore_target_repository() {
         find "$TARGET_REPO" -mindepth 1 -maxdepth 1 \
             ! -name 'waptsetup-tis.exe' \
             ! -name 'waptdeploy.exe' \
+            ! -name 'Thouet-Software-Signing-Root-CA.cer' \
             -exec rm -rf -- {} + || fail "Unable to clear target repository payload"
 
         COPY_FIFO="$WORKDIR/repository-copy.fifo"
@@ -488,6 +520,7 @@ restore_target_repository() {
             tar \
                 --exclude='./waptsetup-tis.exe' \
                 --exclude='./waptdeploy.exe' \
+                --exclude='./Thouet-Software-Signing-Root-CA.cer' \
                 -cf "$COPY_FIFO" .
         )
         REPO_CREATE_RC=$?
@@ -502,11 +535,14 @@ restore_target_repository() {
 
     [ -f "$PRESERVE_SETUP" ] || fail "Preserved waptsetup-tis.exe disappeared during repository restore"
     [ -f "$PRESERVE_DEPLOY" ] || fail "Preserved waptdeploy.exe disappeared during repository restore"
+    [ -f "$PRESERVE_SIGNING_ROOT" ] || fail "Preserved signing Root CA disappeared during repository restore"
 
     SETUP_SHA_AFTER="$(sha256sum "$PRESERVE_SETUP" | awk '{print $1}')"
     DEPLOY_SHA_AFTER="$(sha256sum "$PRESERVE_DEPLOY" | awk '{print $1}')"
+    SIGNING_ROOT_SHA_AFTER="$(sha256sum "$PRESERVE_SIGNING_ROOT" | awk '{print $1}')"
     [ "$SETUP_SHA_AFTER" = "$SETUP_SHA_BEFORE" ] || fail "waptsetup-tis.exe changed during repository restore"
     [ "$DEPLOY_SHA_AFTER" = "$DEPLOY_SHA_BEFORE" ] || fail "waptdeploy.exe changed during repository restore"
+    [ "$SIGNING_ROOT_SHA_AFTER" = "$SIGNING_ROOT_SHA_BEFORE" ] || fail "Signing Root CA changed during repository restore"
 
     chown -R wapt:www-data "$TARGET_REPO" || fail "Unable to set repository ownership"
     find "$TARGET_REPO" -type d -exec chmod 0750 {} + || fail "Unable to set repository directory permissions"
@@ -520,11 +556,13 @@ restore_target_repository() {
 
     SETUP_SHA_FINAL="$(sha256sum "$PRESERVE_SETUP" | awk '{print $1}')"
     DEPLOY_SHA_FINAL="$(sha256sum "$PRESERVE_DEPLOY" | awk '{print $1}')"
+    SIGNING_ROOT_SHA_FINAL="$(sha256sum "$PRESERVE_SIGNING_ROOT" | awk '{print $1}')"
     [ "$SETUP_SHA_FINAL" = "$SETUP_SHA_BEFORE" ] || fail "Final waptsetup-tis.exe SHA256 mismatch"
     [ "$DEPLOY_SHA_FINAL" = "$DEPLOY_SHA_BEFORE" ] || fail "Final waptdeploy.exe SHA256 mismatch"
+    [ "$SIGNING_ROOT_SHA_FINAL" = "$SIGNING_ROOT_SHA_BEFORE" ] || fail "Final signing Root CA SHA256 mismatch"
 
     FINAL_REPO_FILES="$(find "$TARGET_REPO" -type f | wc -l)"
-    EXPECTED_FINAL_REPO_FILES=$((REPO_FILES - SOURCE_PRESERVED_ENTRIES + 2))
+    EXPECTED_FINAL_REPO_FILES=$((REPO_FILES - SOURCE_PRESERVED_ENTRIES + 3))
     [ "$FINAL_REPO_FILES" = "$EXPECTED_FINAL_REPO_FILES" ] || \
         fail "Final repository file count mismatch: expected $EXPECTED_FINAL_REPO_FILES, got $FINAL_REPO_FILES"
 
@@ -542,7 +580,8 @@ restore_target_repository() {
     echo "Packages SHA256:              $PACKAGES_SHA"
     echo "Preserved waptsetup SHA256:   $SETUP_SHA_FINAL"
     echo "Preserved waptdeploy SHA256:  $DEPLOY_SHA_FINAL"
-    ok "Historical repository restored and validated; target setup/deploy executables preserved"
+    echo "Preserved signing Root SHA256: $SIGNING_ROOT_SHA_FINAL"
+    ok "Historical repository restored and validated; target setup/deploy executables and signing Root CA preserved"
 }
 
 
