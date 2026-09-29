@@ -134,9 +134,7 @@ try:
 
     @babel.localeselector
     def get_locale():
-        browser_lang = request.accept_languages.best_match(['en', 'fr'])
-        user_lang = session.get('lang', browser_lang)
-        return user_lang
+        return session.get('lang', 'fr')
 
 except ImportError:
     gettext = (lambda s: s)
@@ -169,7 +167,8 @@ def _db_close(error):
 
 @app.route('/lang/<language>')
 def lang(language=None):
-    session['lang'] = language
+    if language in ('fr', 'en'):
+        session['lang'] = language
     return redirect('/')
 
 

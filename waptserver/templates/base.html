@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ session.get('lang', 'fr') }}">
 
 <head>
     <meta charset="utf-8">
@@ -26,14 +26,12 @@
         <div class="container">
             <div class="row">
                 <div class="col-md-2 col-sx-12" id="logo">
-                    <a href="https://www.tranquil.it/" title="Tranquil IT Systems" rel="home"><img src="{{ url_for('static', filename='img/tis_new.png') }}"></a>
+                    <img src="{{ url_for('static', filename='img/tis_new.png') }}" alt="Tranquil IT Systems">
                 </div>
                 <div class="col-md-8 col-sx-12">
                     <h1>{{ _("WAPT Server") }}</h1> </div>
-                <div class="col-md-2 col-sx-12" id="btn-contact">
-                    <a target="_blank" href="https://www.tranquil.it/page/contactus" title="Contactez-nous !">
-                        <p class="btn btn-primary btn-block">{{ _("Contact Us") }}</p>
-                    </a>
+                <div class="col-md-2 col-sx-12 text-right" id="language-selector">
+                    <a href="/lang/fr">FR</a> | <a href="/lang/en">EN</a>
                 </div>
             </div>
         </div>
@@ -47,7 +45,7 @@
             <!-- Collect the nav links, forms, and other content for toggling -->
             <div class="collapse navbar-collapse" id="menu">
                 <ul class="nav navbar-nav">
-                    <li class="dropdown"> <a class="dropdown-toggle" data-toggle="dropdown" href="#">Repository<span class="caret"></span></a>
+                    <li class="dropdown"> <a class="dropdown-toggle" data-toggle="dropdown" href="#">{{ _("Repository") }}<span class="caret"></span></a>
                         <ul class="dropdown-menu">
                             <li><a href="/store">{{ _("Local repository") }}</a></li>
                         </ul>
@@ -55,25 +53,17 @@
                     {% if data %}
                     <li> <a class="dropdown-toggle" data-toggle="dropdown" href="#">WAPTServer<span class="caret"></span></a>
                         <ul class="dropdown-menu">
-                            <li><a href="/wapt/waptagent.exe">{{ _("WAPT Agent (for deploying onto user desktop)") }}</a></li>
-                            {% if data.wapt.setup.url %}<li><a href="{{data.wapt.setup.url}}">{{ _("WAPTSetup (for installing on management machine)") }}</a></li>{% endif %}
-                            {% if data.wapt.deploy.url %}<li><a href="{{data.wapt.deploy.url}}">{{ _("WAPTDeploy (for setting up deployment GPO)") }}</a></li>{% endif %}
+                            <li><a href="/wapt/waptagent.exe">{{ _("WAPT Agent") }}</a></li>
+                            {% if data.wapt.setup.url %}<li><a href="{{data.wapt.setup.url}}">WAPTSetup</a></li>{% endif %}
+                            {% if data.wapt.deploy.url %}<li><a href="{{data.wapt.deploy.url}}">WAPTDeploy</a></li>{% endif %}
                         </ul>
                     </li>
                     {% endif %}
-                    <li> <a class="dropdown-toggle" data-toggle="dropdown" href="#">Mailing List<span class="caret"></span></a>
-                        <ul class="dropdown-menu">
-                            <li><a href="http://lists.tranquil.it/pipermail/wapt/">Archives</a></li>
-                            <li><a href="http://lists.tranquil.it/listinfo/wapt">{{ _("Subscribe") }}</a></li>
-                        </ul>
-                    </li>
-                    <li> <a href="https://github.com/tranquilit/WAPT/issues">Gestion de Bugs (GitHub)</a> </li>
+                    <li><a target="_blank" href="https://github.com/maxcarpone/WAPT/issues">{{ _("Bug tracker (GitHub)") }}</a></li>
                     <li> <a class="dropdown-toggle" data-toggle="dropdown" href="#">{{ _("Help") }}<span class="caret"></span></a>
-						<ul class="dropdown-menu">
-							<li><a target="_blank" href="https://www.wapt.fr/">Homepage WAPT</a></li>
-							<li><a target="_blank" href="https://www.wapt.fr/fr/doc/">Documentation</a></li>
-							<li><a target="_blank" href="https://forum.tranquil.it/">Forum</a></li>
-						</ul>
+                        <ul class="dropdown-menu">
+                            <li><a target="_blank" href="https://github.com/maxcarpone/WAPT">{{ _("Documentation") }}</a></li>
+                        </ul>
                     </li>
                 </ul>
             </div>
@@ -86,28 +76,22 @@
     <p>Content</p>
     {% endblock content %}
 
-	<footer>
-		<div>
-			<div class="contact">
-				<div class="container">
-					<div class="col-md-6">
-						<h4>Contact</h4>
-						<p><a target="_blank" href="https://www.tranquil.it/page/contactus">Contactez-nous</a></p>
-						<p>Réferences</p>
-						<p>Actualité</p>
-						<p>Nos équipes</p>
-					</div>
-					<div>
-						<h4>Tranquil IT</h4>
-						<p>We are a team of passionate people whose life purpose is to be useful to others. We make our products with the aim to resolving your IT problems and optimizing your daily work.</p>
-					</div>
-				</div>
-				<div class="container text-muted copyright">
-					<p>Copyright Tranquil IT Systems | © 2012-2017</p>
-				</div>
-			</div>
-		</div>
-	</footer>
+    <footer>
+        <div class="contact">
+            <div class="container">
+                <h4>WAPT Community — GPLv3</h4>
+                <p>
+                    {{ _("WAPT Community 1.8.2 is free software historically developed by") }}
+                    <a target="_blank" href="https://www.tranquil.it/">Tranquil IT Systems</a>.
+                    {{ _("This distribution is derived from that version and is maintained independently from Tranquil IT.") }}
+                </p>
+                <p>
+                    {{ _("WAPT continues to be developed and commercially distributed by Tranquil IT in its current editions.") }}
+                    <a target="_blank" href="https://www.wapt.fr/">{{ _("Discover the current WAPT product from Tranquil IT.") }}</a>
+                </p>
+            </div>
+        </div>
+    </footer>
     <!-- jQuery Version 1.11.1 -->
     <script src="{{ url_for('static', filename='js/jquery.js') }}"></script>
     <!-- Bootstrap Core JavaScript -->

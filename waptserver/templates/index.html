@@ -5,12 +5,21 @@
         <div class="row">
             <div class="col-md-9 col-sx-12">
                 <h2>{{ _("WAPT server") }}</h2>
-                <p>{{ _(""" WAPT server is managed through a WAPT console installed on a Windows system. When installing the WAPT server on Windows, the console is installed by default and can be found under the start menu. """) }}</p>
+
+                {% if data.wapt.setup.url %}
+                <p>
+                    {{ _("The WAPT server is administered from the WAPT console installed on a Windows workstation.") }}
+                    {{ _("To install the administration console, download WAPTSetup and run the installer on the workstation from which you want to administer the server.") }}
+                    <a href="{{ data.wapt.setup.url }}">{{ _("Download WAPTSetup") }}</a>
+                </p>
+                {% endif %}
+
                 {% if data.wapt.signing_root_ca.url %}
                 <div class="alert alert-warning">
                     <strong>{{ _("WAPT publisher certificate") }}</strong>
                     <p>
-                        {{ _("WAPT executables are digitally signed by Thouet Software. During installation, WAPTSetup will ask for confirmation before adding the Thouet Software Signing Root CA to the Local Machine Trusted Root Certification Authorities store.") }}
+                        {{ _("The WAPT executables in this distribution are digitally signed by Thouet Software.") }}
+                        {{ _("During installation, WAPTSetup asks for confirmation before adding the Thouet Software Signing Root CA to the Local Machine Trusted Root Certification Authorities store.") }}
                     </p>
                     <p>
                         <a href="{{ data.wapt.signing_root_ca.url }}">
@@ -18,31 +27,35 @@
                         </a>
                     </p>
                     <p>
-                        <strong>SHA256:</strong>
+                        <strong>{{ _("SHA256:") }}</strong>
                         <code>{{ data.wapt.signing_root_ca.sha256 }}</code>
                     </p>
                     <p>
-                        {{ _("The public Root CA is also available here for verification or manual deployment. Install it only if you choose to trust Thouet Software as the publisher of this WAPT distribution.") }}
+                        {{ _("The public certificate is also available here for verification or manual deployment. Installing it means that you choose to trust Thouet Software as the publisher of this WAPT distribution.") }}
                     </p>
                 </div>
                 {% endif %}
-                {% if data.wapt.setup.url %}
-                <p>
-                    {{ _("When installing the server on Linux, install the WAPT client on an administration machine and run it from 'Start/All programs'.") }}
-                    <a href="{{ data.wapt.setup.url }}">{{ _("Download WAPTSetup") }}</a>
-                </p>
-                {% endif %}
-                <p>{{ _(""" To manually add a new host to the WAPT server, download the <a href=\"/wapt/waptagent.exe\">WAPT agent</a> from the menu to the right. The agent has been properly configured by the server so the default parameters should work. Once the WAPT client has been installed, you can find it in your console. """) }} </p>
-                {% if data.wapt.deploy.url %}
-                <p>You can deploy the WAPT agent using a GPO and the <strong><a href="{{data.wapt.deploy.url}}">WAPT deploy</a></strong> downloader.
-                  See <a href=https://www.wapt.fr/fr/doc/Installation/wapt_deploy/index.html?highlight=gpo#creation-de-la-gpo-de-deploiement-avec-waptdeploy>Deployment GPO creation for WAPTdeploy</a></p>
-                {% endif %}
-                  {% if data.wapt.agent.sha256 %}
-                  <pre>waptdeploy.exe --hash={{ data.wapt.agent.sha256|safe }} --minversion={{ data.wapt.agent.status }} --wait=15</pre>
-                  {% endif %}
 
-                <p>{{ _(""" For further information, be sure to check the documentation at <a href=\"https://www.wapt.fr/\">wapt.fr</a> or on mailing-list. """) }} </p>
+                <h3>{{ _("Installing the WAPT agent") }}</h3>
+                <p>
+                    {{ _("To manually add a workstation to this WAPT server, download and run the WAPT agent on the Windows workstation.") }}
+                    {{ _("The agent published by this server is already configured with the settings required to connect to it. Once installation is complete and the workstation is registered, it will appear in the WAPT console.") }}
+                    <a href="/wapt/waptagent.exe">{{ _("Download the WAPT agent") }}</a>
+                </p>
+
+                {% if data.wapt.deploy.url %}
+                <h3>{{ _("Deploying the agent by GPO") }}</h3>
+                <p>
+                    {{ _("WAPTDeploy can automatically deploy the WAPT agent to Windows workstations using a Group Policy Object (GPO).") }}
+                    {{ _("The command below uses the version and SHA256 fingerprint of the agent currently published by this server:") }}
+                </p>
+                {% if data.wapt.agent.sha256 %}
+                <pre>waptdeploy.exe --hash={{ data.wapt.agent.sha256|safe }} --minversion={{ data.wapt.agent.status }} --wait=15</pre>
+                {% endif %}
+                <p><a href="{{ data.wapt.deploy.url }}">{{ _("Download WAPTDeploy") }}</a></p>
+                {% endif %}
             </div>
+
             <div class="col-md-3 col-sx-12">
                 <div id="home" class="widget-area span-3 last" role="complementary">
                     <ul>
@@ -53,35 +66,31 @@
                         <li><strong>{{ _("DB status:") }} {{ data.wapt.db.status }}</strong></li>
                         <li><strong {{ data.wapt.disk_space.style|safe }}>{{ _("Disk space:") }} {{ data.wapt.disk_space.status }}</strong></li>
                         <br/>
+
                         {% if data.wapt.setup.url %}
-                        <a href="{{data.wapt.setup.url}}" {{ data.wapt.setup.style|safe }}>
-                          <img src="{{ url_for('static', filename='img/waptsetup.png') }}" height="25px" style = "float :left">
-                          <p>&nbsp;WAPTSetup</p  class ="text-nav" >
-                          <p class="text-muted">{{ _("For creation of the Wapt agent") }}</p><!---->
-                        </a>{% endif %}
-                        {% if data.wapt.deploy.url %}
-                        <a href="{{data.wapt.deploy.url}}" {{ data.wapt.deploy.style|safe }}>
-                          <img src="{{ url_for('static', filename='img/waptdeploy.png') }}" height="25px" class = "ico-nav">
-                          <p>&nbsp;WAPTDeploy</p class ="text-nav">
-                          <p class="text-muted">{{ _("For setting up deployment GPO") }}</p>
+                        <a href="{{ data.wapt.setup.url }}" {{ data.wapt.setup.style|safe }}>
+                            <img src="{{ url_for('static', filename='img/waptsetup.png') }}" height="25px" style="float: left">
+                            <p>&nbsp;WAPTSetup</p>
+                            <p class="text-muted">{{ _("Administration console") }}</p>
                         </a>
                         {% endif %}
-                        </ul>
-                    </div>
+
+                        {% if data.wapt.deploy.url %}
+                        <a href="{{ data.wapt.deploy.url }}" {{ data.wapt.deploy.style|safe }}>
+                            <img src="{{ url_for('static', filename='img/waptdeploy.png') }}" height="25px" class="ico-nav">
+                            <p>&nbsp;WAPTDeploy</p>
+                            <p class="text-muted">{{ _("Deployment by GPO") }}</p>
+                        </a>
+                        {% endif %}
+
+                        <a href="/wapt/waptagent.exe" {{ data.wapt.agent.style|safe }}>
+                            <img src="{{ url_for('static', filename='img/waptagent.png') }}" height="25px" class="ico-nav">
+                            <p>&nbsp;WAPT Agent</p>
+                            <p class="text-muted">{{ _("Installation on workstations") }}</p>
+                        </a>
+                    </ul>
                 </div>
-            </div>
-            <div class="row text-center">
-              <div class="row">
-                  <div class="col-md-9">
-                  <a href="/wapt/waptagent.exe" {{ data.wapt.agent.style|safe }}>
-                  <img src="{{ url_for('static', filename='img/waptagent.png') }}" height="100px">
-                      <h4>Agent WAPT</h4>
-                      <p class="text-muted">{{ _("For deploying onto user desktop") }}</p>
-                </a>
-                </div>
-              </div>
-              </div>
             </div>
         </div>
+    </div>
 {% endblock %}
-
