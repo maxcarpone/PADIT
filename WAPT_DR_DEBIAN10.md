@@ -383,16 +383,19 @@ The historical repository is restored into:
 /var/www/wapt
 ```
 
-Two target package-owned artifacts are deliberately preserved instead of
-being replaced by their historical copies:
+Three target package-owned distribution artifacts are deliberately preserved
+instead of being replaced by their historical copies:
 
 ```text
 /var/www/wapt/waptsetup-tis.exe
 /var/www/wapt/waptdeploy.exe
+/var/www/wapt/Thouet-Software-Signing-Root-CA.cer
 ```
 
 Their SHA256 values are recorded before repository replacement and verified
-again afterwards.
+again afterwards. Preserving the public Authenticode Root CA ensures that a
+historical repository restore cannot replace or remove the trust anchor
+belonging to the installed target WAPT distribution.
 
 All other repository content is validated against the per-file SHA256
 manifest stored in the DR backup.
@@ -406,16 +409,16 @@ files:       0640 wapt:www-data
 
 The `Packages` index must be present after restore.
 
-If the repository already matches the historical source, except for the two
-intentionally preserved target executables, the tool accepts that resume state
-and skips copying the repository payload again.
+If the repository already matches the historical source, except for the three
+intentionally preserved target distribution artifacts, the tool accepts that
+resume state and skips copying the repository payload again.
 
 A successful phase reports:
 
 ```text
 REPOSITORY RESTORE PASSED
 Historical repository payload and Packages index have been restored.
-Target waptsetup-tis.exe and waptdeploy.exe were preserved in place and SHA256-validated.
+Target waptsetup-tis.exe, waptdeploy.exe and signing Root CA were preserved in place and SHA256-validated.
 ```
 
 At this point `waptserver` and `wapttasks` intentionally remain stopped. The
@@ -598,13 +601,27 @@ building and signing the current `<prefix>-waptupgrade` package.
 Windows Authenticode signing is a separate trust mechanism from WAPT package
 signing.
 
-The validated WAPT 1.8.2.7402 Windows reconstruction used a temporary
-self-signed laboratory Authenticode certificate. That certificate is suitable
-for the validated laboratory milestone only and is not the final production
-distribution-signing strategy.
+The current validated Windows distribution uses the private Authenticode
+hierarchy:
 
-The production Authenticode strategy must be explicitly reviewed before the
-consolidated autonomous release.
+    Thouet Software Signing Root CA
+    -> Thouet Software Code Signing
+    -> WAPT Windows executable
+
+The public certificate `Thouet-Software-Signing-Root-CA.cer` is a target
+distribution artifact. Restore V1.0.2 deliberately preserves this target
+Root CA during historical repository restoration and verifies that its SHA256
+remains unchanged.
+
+The Root private key is never part of the WAPT server repository or DR backup.
+
+WAPTSetup performs the validated Windows Root bootstrap. Interactive
+installation requires explicit administrator consent before adding the Root to
+the Local Machine Trusted Root Certification Authorities store. Silent managed
+installation retains the non-interactive bootstrap behavior.
+
+This Authenticode hierarchy is separate from both WAPT package-signing trust
+and HTTPS server-certificate trust.
 
 ## 10. Known limitations and operational notes
 
@@ -625,8 +642,10 @@ The following operational constraints apply:
   validation of the repository payload.
 - The target nginx WAPT configuration remains authoritative. The historical
   nginx configuration stored in the backup is retained as a reference only.
-- Target `waptsetup-tis.exe` and `waptdeploy.exe` are deliberately preserved
-  during historical repository restoration.
+- Target `waptsetup-tis.exe`, `waptdeploy.exe` and
+  `Thouet-Software-Signing-Root-CA.cer` are deliberately preserved during
+  historical repository restoration. Restore V1.0.2 verifies that all three
+  target artifacts remain unchanged by SHA256.
 - Historical `waptagent.exe` must not be treated as the final agent for the
   restored target. Regenerate it from the current target console with the
   intended authorized certificate(s).
