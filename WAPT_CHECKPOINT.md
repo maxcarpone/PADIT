@@ -6993,6 +6993,73 @@ revision count `7487`.
 The remaining work is release consolidation/documentation. Do not begin Debian
 11 modernization until the consolidated `1.8.3.xxxx` baseline has been frozen.
 
+### 47.17 PKI renewal tooling and operational documentation (7488-7490)
+
+The final Windows Authenticode PKI consolidation work is complete.
+
+Git lineage:
+
+- `7488` - `5a85b1abb` - `Document consolidated WAPT 1.8.3 validation state`;
+- `7489` - `159d23196` - `Add Code Signing certificate renewal`;
+- `7490` - `e73071abb` - `Document Windows signing PKI operations`.
+
+PKI renewal tooling:
+
+- `tools/create-windows-signing-pki.ps1` now supports explicit
+  `Create` and `RenewCodeSigning` actions;
+- `Create` retains the original new-PKI behavior;
+- `RenewCodeSigning` keeps the existing long-lived Root CA and issues a new
+  annual RSA 3072 / SHA-256 Code Signing certificate;
+- the Root CA PFX is imported temporarily into `CurrentUser\My` without making
+  its private key exportable;
+- the imported Root identity is checked against the controlled public Root CA
+  certificate before renewal;
+- the current Code Signing certificate issuer is checked against the Root
+  subject;
+- new certificate material is staged before promotion;
+- the previous Code Signing generation is retained as N-1 using
+  `archive\previous.cer` and `archive\previous.pfx`;
+- retention is deliberately limited to current N plus previous N-1;
+- temporary certificates and `.new` files are removed after the operation.
+
+The renewal workflow was validated using a disposable PKI, including multiple
+successive renewals. The tests confirmed Root CA continuity, N/N-1 rotation and
+successful renewal while the temporarily imported Root private key was
+non-exportable.
+
+No production Root CA renewal was performed during these tests.
+
+Operational PKI documentation is now provided by:
+
+`WAPT_WINDOWS_SIGNING_PKI.md`
+
+It documents:
+
+- the current Thouet Software Authenticode hierarchy;
+- strict separation between Authenticode, WAPT package signing and HTTPS;
+- initial PKI creation;
+- normal Windows build signing;
+- annual Code Signing renewal;
+- N/N-1 retention;
+- Root CA offline handling;
+- secure transfer to another authorized build workstation;
+- public Root CA bootstrap and distribution;
+- DR considerations;
+- validation and security rules;
+- future generic/BYO-PKI considerations.
+
+The Root CA private PFX remains offline-only and is never part of Git, the
+normal build kit, WAPT distribution artifacts or the WAPT server DR backup.
+
+Current source HEAD after PKI documentation is `e73071abb`, Git revision count
+`7490`.
+
+The PKI tooling and operational documentation are now considered complete for
+the consolidated 1.8.3.xxxx baseline unless contradictory evidence appears.
+
+The next phase is final release consolidation and freeze/tag. Do not begin
+Debian 11 modernization before that baseline is frozen.
+
 ## 48. Resume protocol for the next ChatGPT thread
 
 Gipity, resume the WAPT project from the attached checkpoint.
@@ -7005,11 +7072,11 @@ Current development branch:
 
 Current source HEAD:
 
-`26405ec63` - `Document signing Root CA preservation in WAPT DR`
+`e73071abb` - `Document Windows signing PKI operations`
 
 Git revision count:
 
-`7487`
+`7490`
 
 The authoritative Windows executable milestone remains:
 
@@ -7051,11 +7118,20 @@ preservation work without contradictory evidence.
 The historical WAPT package-signing certificate migration remains deferred to
 the definitive SCRAB replacement phase.
 
+Windows Authenticode PKI renewal tooling is implemented and validated by
+`159d23196`, revision count `7489`.
+
+Operational PKI procedures are documented in `WAPT_WINDOWS_SIGNING_PKI.md` by
+`e73071abb`, revision count `7490`.
+
+The PKI renewal tooling and documentation are frozen unless contradictory
+evidence appears.
+
 Immediate next work:
 
-- finish the remaining release/PKI documentation and tooling consolidation;
 - record any final release metadata still required;
-- review the consolidated 1.8.3.xxxx baseline and freeze/tag it;
+- review the consolidated 1.8.3.xxxx baseline;
+- freeze and tag the consolidated 1.8.3.xxxx release;
 - only after that freeze, begin the next modernization phase.
 
 An identified post-freeze modernization item is removal of the Debian build
