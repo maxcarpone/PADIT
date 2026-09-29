@@ -169,7 +169,9 @@ def _db_close(error):
 def lang(language=None):
     if language in ('fr', 'en'):
         session['lang'] = language
-    return Response('', 302, {'Location': '/'})
+    response = Response('', 302, {'Location': '/'})
+    response.autocorrect_location_header = False
+    return response
 
 
 @app.route('/')
