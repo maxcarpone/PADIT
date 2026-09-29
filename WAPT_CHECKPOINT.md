@@ -7072,11 +7072,11 @@ Current development branch:
 
 Current source HEAD:
 
-`e73071abb` - `Document Windows signing PKI operations`
+`534cc2129` - `Add GitPython to controlled Python 2 build runtimes`
 
 Git revision count:
 
-`7490`
+`7492`
 
 The authoritative Windows executable milestone remains:
 
@@ -7127,16 +7127,44 @@ Operational PKI procedures are documented in `WAPT_WINDOWS_SIGNING_PKI.md` by
 The PKI renewal tooling and documentation are frozen unless contradictory
 evidence appears.
 
+The remaining Debian package build-time dependency on the Wapster system
+Python 2.7.16 has been removed before the consolidated release freeze.
+
+Commit `534cc2129`, revision count `7492`, adds the pinned GitPython dependency
+chain required by the Debian package builders to both controlled Python 2.7.18
+runtime builders:
+
+    GitPython==2.1.15
+    gitdb2==2.0.6
+    smmap2==3.0.1
+    smmap==3.0.5
+
+These versions match the previously validated Debian 12 controlled runtime.
+No change was made to `createdeb.py` or `requirements-server.txt`; GitPython
+remains a build-time dependency rather than a WAPT server runtime dependency.
+
+On Debian 10 Wapster, both package builders were then successfully executed
+with `build/python2-runtime-server-buster/bin/python`, confirmed as Python
+2.7.18 with GitPython 2.1.15.
+
+Validated packages:
+
+    tis-waptsetup-windows-1.8.3.7492-534cc212.deb
+    tis-waptserver-1.8.3.7492-534cc212-debian-10-amd64.deb
+
+Package metadata confirms that neither package depends on the Debian system
+Python package. The server package dependencies remain nginx, dialog,
+cabextract, PostgreSQL, postgresql-contrib and sudo.
+
+The Wapster system Python 2.7.16 is therefore no longer required by the
+validated Debian package build path.
+
 Immediate next work:
 
 - record any final release metadata still required;
 - review the consolidated 1.8.3.xxxx baseline;
 - freeze and tag the consolidated 1.8.3.xxxx release;
 - only after that freeze, begin the next modernization phase.
-
-An identified post-freeze modernization item is removal of the Debian build
-chain dependency on Wapster system Python 2.7.16; the controlled Python 2.7.18
-runtime remains the intended transitional compatibility runtime.
 
 Do not begin Debian 11 modernization before the consolidated 1.8.3.xxxx
 baseline is frozen.
