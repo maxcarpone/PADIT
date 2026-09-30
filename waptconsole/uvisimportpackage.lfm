@@ -599,7 +599,7 @@ object VisImportPackage: TVisImportPackage
       OnExecute = ActRepositoriesSettingsExecute
     end
     object ActWAPTSettings: TAction
-      Caption = 'Waptconsole settings'
+      Caption = 'PADIT Console settings'
       ImageIndex = 1
       OnExecute = ActWAPTLocalConfigExecute
     end

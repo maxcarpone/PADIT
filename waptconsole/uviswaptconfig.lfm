@@ -115,7 +115,7 @@ object VisWAPTConfig: TVisWAPTConfig
         EditLabel.Height = 15
         EditLabel.Top = 10
         EditLabel.Width = 157
-        EditLabel.Caption = 'WAPT Server address or name'
+        EditLabel.Caption = 'PADIT Server address or name'
         EditLabel.ParentColor = False
         LabelPosition = lpLeft
         TabOrder = 0
@@ -202,7 +202,7 @@ object VisWAPTConfig: TVisWAPTConfig
         EditLabel.Height = 15
         EditLabel.Top = 81
         EditLabel.Width = 91
-        EditLabel.Caption = 'WAPT Server URL'
+        EditLabel.Caption = 'PADIT Server URL'
         EditLabel.ParentColor = False
         Enabled = False
         LabelPosition = lpLeft
@@ -292,7 +292,7 @@ object VisWAPTConfig: TVisWAPTConfig
       object CBVerifyCert: TCheckBox
         Left = 167
         Height = 19
-        Hint = 'Check to enable the check of https server certificates'#13#10'(Main repository access and wapt server)'
+        Hint = 'Check to enable the check of https server certificates'#13#10'(Main repository access and PADIT server)'
         Top = 106
         Width = 169
         Caption = 'Verify https server certificate'
@@ -449,7 +449,7 @@ object VisWAPTConfig: TVisWAPTConfig
         Alignment = taRightJustify
         Anchors = [akTop, akRight]
         BorderSpacing.Right = 3
-        Caption = 'Activate proxy when accessing the WAPT server'
+        Caption = 'Activate proxy when accessing the PADIT server'
         ParentColor = False
       end
       object cbUseProxyForRepo: TCheckBox
@@ -470,7 +470,7 @@ object VisWAPTConfig: TVisWAPTConfig
         AnchorSideTop.Side = asrBottom
         Left = 296
         Height = 19
-        Hint = 'Activate proxy when accessing the WAPT server'
+        Hint = 'Activate proxy when accessing the PADIT server'
         Top = 99
         Width = 20
         BorderSpacing.Top = 6

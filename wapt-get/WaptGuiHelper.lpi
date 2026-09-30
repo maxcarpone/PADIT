@@ -17,8 +17,8 @@
       <UseXPManifest Value="True"/>
       <XPManifest>
         <DpiAware Value="True"/>
-        <TextName Value="Tranquil IT Systems WAPT"/>
-        <TextDesc Value="Helper for GUI dialogs in Wapt"/>
+        <TextName Value="PADIT GUI Helper"/>
+        <TextDesc Value="Helper for PADIT GUI dialogs"/>
       </XPManifest>
       <Icon Value="0"/>
     </General>

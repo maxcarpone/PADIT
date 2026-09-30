@@ -585,7 +585,7 @@ object VisCreateKey: TVisCreateKey
       object edOrganization: TEdit
         Left = 164
         Height = 21
-        Hint = 'E.g. : Tranquil It Systems'
+        Hint = 'E.g. : PADIT Project'
         Top = 220
         Width = 218
         TabOrder = 9

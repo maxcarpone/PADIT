@@ -445,7 +445,7 @@ begin
         // http mode
         isTemporary := True;
         waptsetupPath := IncludeTrailingPathDelimiter(GetTempDir)+'waptagent.exe';
-        Writeln('Wapt agent path: ' + waptsetupPath);
+        Writeln('PADIT Agent path: ' + waptsetupPath);
         writeln('Wget new waptagent from ' + waptsetupurl);
         wget_retry(waptsetupurl, waptsetupPath);
       end
@@ -457,7 +457,7 @@ begin
         else
           waptsetupPath := ExpandFileName(IncludeTrailingPathDelimiter(ExtractFileDir(paramstr(0)))+waptsetupurl);
 
-        Writeln('Wapt agent local path: ' + waptsetupPath);
+        Writeln('PADIT Agent local path: ' + waptsetupPath);
       end;
 
       if (hashString='') and FileExists(WaptGuessBaseDir+'\waptupgrade\waptagent.sha256') then

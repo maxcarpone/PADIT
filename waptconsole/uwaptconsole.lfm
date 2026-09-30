@@ -9814,7 +9814,7 @@ object VisWaptGUI: TVisWaptGUI
     end
     object ActCreateWaptSetup: TAction
       Category = 'Tools'
-      Caption = 'Build WAPT Agent'
+      Caption = 'Build PADIT Agent'
       ImageIndex = 8
       OnExecute = ActCreateWaptSetupExecute
       OnUpdate = ActCreateWaptSetupUpdate
@@ -9862,7 +9862,7 @@ object VisWaptGUI: TVisWaptGUI
     object ActCleanCache: TAction
       Category = 'Tools'
       Caption = 'Clean local cache'
-      Hint = 'Remove all packages local cached by WaptConsole'
+      Hint = 'Remove all packages local cached by PADIT Console'
       OnExecute = ActCleanCacheExecute
     end
     object ActRefreshHostInventory: TAction

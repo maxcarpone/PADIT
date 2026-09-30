@@ -3,7 +3,7 @@ object VisWaptSelf: TVisWaptSelf
   Height = 761
   Top = 171
   Width = 1298
-  Caption = 'WAPT Self-service'
+  Caption = 'PADIT Self Service'
   ClientHeight = 761
   ClientWidth = 1298
   Constraints.MinHeight = 602

@@ -46,13 +46,13 @@ resourcestring
         'Do you want to pick or create one now in preferences ?';
 
   rsBuildInProgress = 'Build in progress.';
-  rsUploadInProgressTitle = 'Started uploading to WAPT server...';  // TODO more meaningful var name
-  rsWaptSetupUploadSuccess = 'WAPT agent and upgrade package successfully created and uploaded to the main repository'#13#10'Don''t forget to change the hash of waptagent.exe in your GPO';
-  rsWaptUploadError = 'Error while uploading WAPT agent to the repository : %s';
+  rsUploadInProgressTitle = 'Started uploading to PADIT server...';  // TODO more meaningful var name
+  rsWaptSetupUploadSuccess = 'PADIT Agent and upgrade package successfully created and uploaded to the main repository'#13#10'Don''t forget to change the hash of waptagent.exe in your GPO';
+  rsWaptUploadError = 'Error while uploading PADIT Agent to the repository : %s';
   rsWaptSetupError = 'Error while creating agent : %s';
 
-  rsWaptUpgradePackageBuilt = 'WAPT Upgrade package built and uploaded successfully';
-  rsWaptUpgradePackageBuildError = 'Unable to create WAPT Upgrade package';
+  rsWaptUpgradePackageBuilt = 'PADIT Upgrade package built and uploaded successfully';
+  rsWaptUpgradePackageBuildError = 'Unable to create PADIT Upgrade package';
 
   rsCleanupTemporaryFiles = 'Remove temporary files';
   rsWaptSetupfileNotFound = 'WAPTSetup file %s has not been found';
@@ -70,7 +70,7 @@ resourcestring
   rsPasswordChangeSuccess = 'Password successfully updated !';
   rsPasswordChangeError = 'Error : %s';
 
-  rsWaptServerError = 'Error on WAPT server:'#13#10'%s';
+  rsWaptServerError = 'Error on PADIT server:'#13#10'%s';
   rsWaptServerOldVersion =
         'Warning, the version of the server is too old.'#13#10+
         'Current server version: %s'#13#10+
@@ -87,17 +87,17 @@ resourcestring
           'Do you want to rebuild a waptagent.exe installer now ?';
   rsWaptAgentNotPresent = 'waptagent.exe installer is not present on server'#13#10+
           #13#10+
-          'Do you want to build waptagent.exe installer for the deployment of Wapt on client hosts ?';
+          'Do you want to build waptagent.exe installer for the deployment of PADIT on client hosts ?';
   rsWaptAgentUnableToCheck = 'Warning, unable to check waptagent.exe installer on server'#13#10+
           'Error: %s';
-  rsWaptSetupUpgrade = 'Your current wapt installation needs to be upgraded'#13#10+
-          'Current wapt version: %s'#13#10+
+  rsWaptSetupUpgrade = 'Your current PADIT installation needs to be upgraded'#13#10+
+          'Current PADIT version: %s'#13#10+
           'Available version on server: %s'#13#10+
           #13#10+
           'Do you want to run waptsetup installer now ?';
 
-  rsWaptAgentUploadSuccess = 'Successfully uploaded WAPT agent !';
-  rsWaptAgentUploadError = 'Error while uploading WAPT agent : %s';
+  rsWaptAgentUploadSuccess = 'Successfully uploaded PADIT Agent !';
+  rsWaptAgentUploadError = 'Error while uploading PADIT Agent : %s';
   rsWaptAgentSetupSuccess = 'waptagent.exe successfully built : %s';
   rsWaptAgentSetupError = 'Error while creating waptagent.exe: %s';
 
@@ -141,8 +141,8 @@ resourcestring
 
   rsPrivateKeyDoesntExist = 'Private key doesn''t exist : %s';
 
-  rsNotRunningAsAdmin = 'Waptconsole is not running with Admin priviledges. Please restart with elevated rights';
-  rsNotRunningAsAdminCanNotSSL = 'Waptconsole is not running with Admin priviledges. Will not be able to copy certificate to %s';
+  rsNotRunningAsAdmin = 'PADIT Console is not running with Admin priviledges. Please restart with elevated rights';
+  rsNotRunningAsAdminCanNotSSL = 'PADIT Console is not running with Admin priviledges. Will not be able to copy certificate to %s';
 
   rsConfirmImportCaption = 'Confirm import';
   rsConfirmImport =
@@ -150,12 +150,12 @@ resourcestring
           '%s'#13#10+
           ' to your repository ?';
   rsImportingFile = 'Importing %s';
-  rsUploadingPackagesToWaptSrv = 'Uploading %s packages to WAPT server...';
+  rsUploadingPackagesToWaptSrv = 'Uploading %s packages to PADIT server...';
   rsSuccessfullyImported = '%s successfully imported.';
   rsFailedImport = 'Error during import.';
   rsFailedExternalRepoUpdate = 'Unable to get Packages index from %';
 
-  rsWaptAgentCheck = 'WaptAgent version check';
+  rsWaptAgentCheck = 'PADIT Agent version check';
 
   rsWaptPackagePrefix = 'Package prefix';
   rsWaptPackagePrefixMissing = 'You must first define the Package prefix in preferences';
@@ -186,7 +186,7 @@ resourcestring
 
   rsNoBundle = 'There is no package bundle.'; // 'Il n''y a aucun groupe.'; TODO : pas assez explicite ?
 
-  rsWaptClientUpdateOnHosts = 'Updating WAPT client on the hosts';
+  rsWaptClientUpdateOnHosts = 'Updating PADIT Agent on the hosts';
 
   rsTriggerHostsUpdate = 'Trigger packages list update on the hosts';
   rsTriggerHostsUpgrade = 'Trigger installed packages upgrade on the hosts';
@@ -207,7 +207,7 @@ resourcestring
   rsCreateNewRule = 'Create new rule';
 
   rsAddADSGroups = 'This will get the Active Directory groups of each selected host and '+LineEnding+
-        'add the matching Wapt packages to dependencies of the host'+LineEnding+
+        'add the matching PADIT packages to dependencies of the host'+LineEnding+
         'if the package exists.'+LineEnding+''+LineEnding+
         'Are you sure to continue ?';
 
@@ -222,7 +222,7 @@ resourcestring
   rsInputCommonName = 'Please input a Common Name to identify signer';
   rsKeyAlreadyExists = 'Key %s already exists, please pick another name.';
 
-  rsReloadWaptconsoleConfig = 'Reloading WaptConsole configuration';
+  rsReloadWaptconsoleConfig = 'Reloading PADIT Console configuration';
   rsReloadWaptserviceConfig = 'Reloading WaptService configuration';
 
   { Messages dans uVisEditPackage.pas }
@@ -273,7 +273,7 @@ resourcestring
   rsIncorrectOldPwError = 'Old password is incorrect.';
 
   { Messages dans uVisApropos }
-  rsVersion = 'Waptconsole version : %s'#13#10'Wapt-get version: %s';
+  rsVersion = 'PADIT Console version : %s'#13#10'Wapt-get version: %s';
 
   { Messages dans uVisApropos }
   rsUrl = 'Url : %s';

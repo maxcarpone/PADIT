@@ -6,7 +6,7 @@ object VisCreateWaptSetup: TVisCreateWaptSetup
   AllowDropFiles = True
   AutoSize = True
   BorderStyle = bsDialog
-  Caption = 'Create WAPT agent'
+  Caption = 'Create PADIT Agent'
   ClientHeight = 677
   ClientWidth = 657
   OnCloseQuery = FormCloseQuery
@@ -60,14 +60,14 @@ object VisCreateWaptSetup: TVisCreateWaptSetup
       Top = 224
       Width = 167
       Alignment = taRightJustify
-      Caption = 'Main WAPT repository address :'
+      Caption = 'Main PADIT repository address :'
       ParentColor = False
     end
     object edOrgName: TEdit
       AnchorSideRight.Side = asrBottom
       Left = 255
       Height = 23
-      Hint = 'E.g. : Tranquil IT Systems.'
+      Hint = 'E.g. : PADIT Project.'
       Top = 335
       Width = 343
       Anchors = [akTop, akLeft, akRight]
@@ -95,11 +95,11 @@ object VisCreateWaptSetup: TVisCreateWaptSetup
     object Label5: TLabel
       Left = 0
       Height = 15
-      Hint = 'Your WAPT server address (http://wapt:8080).'
+      Hint = 'Your PADIT server address (http://wapt:8080).'
       Top = 248
       Width = 115
       Alignment = taRightJustify
-      Caption = 'WAPT server address :'
+      Caption = 'PADIT server address :'
       ParentColor = False
     end
     object Label6: TLabel
@@ -273,7 +273,7 @@ object VisCreateWaptSetup: TVisCreateWaptSetup
       Top = 43
       Width = 447
       BorderSpacing.Top = 1
-      Caption = 'Authorized packages certificates which will be bundled with the WAPT agent installer'
+      Caption = 'Authorized packages certificates which will be bundled with the PADIT Agent installer'
       ParentColor = False
     end
     object CBForceRepoURL: TCheckBox
@@ -311,7 +311,7 @@ object VisCreateWaptSetup: TVisCreateWaptSetup
     object CBUseFQDNAsUUID: TCheckBox
       Left = 255
       Height = 19
-      Hint = 'Ask Wapt agent to use the computer Fully Qualified Domain Name (name.domaine.lan) instead of BIOD unique ID.'#13#10'This can be useful if Wapt is not used as asset management, but only as a deployment solutioN.'
+      Hint = 'Ask PADIT Agent to use the computer Fully Qualified Domain Name (name.domaine.lan) instead of BIOD unique ID.'#13#10'This can be useful if PADIT is not used as asset management, but only as a deployment solution.'
       Top = 380
       Width = 177
       Caption = 'Use computer FQDN for UUID'
@@ -321,7 +321,7 @@ object VisCreateWaptSetup: TVisCreateWaptSetup
     object CBUseRandomUUID: TCheckBox
       Left = 255
       Height = 19
-      Hint = 'Ask Wapt agent to generate a random UUID instead of BIOS unique ID.'#13#10'This can be useful if BIOS returns non unique UUID'
+      Hint = 'Ask PADIT Agent to generate a random UUID instead of BIOS unique ID.'#13#10'This can be useful if BIOS returns non unique UUID'
       Top = 399
       Width = 231
       Caption = 'Use random host UUID (for buggy BIOS)'

@@ -887,7 +887,7 @@ end;
 {$else}
 function TDMPython.CheckLicence(domain: String; var LicencesLog: String): Integer;
 begin
-  LicencesLog := 'WAPT Community Edition';
+  LicencesLog := 'PADIT Community Edition';
   if domain <> '' then
      LicencesLog := LicencesLog + ' for ' + domain;
   Result := -1;

@@ -101,7 +101,7 @@ object VisOptionIniFile: TVisOptionIniFile
     Height = 17
     Top = 136
     Width = 266
-    Caption = 'Auto-scan WAPT server after upload'
+    Caption = 'Auto-scan PADIT server after upload'
     TabOrder = 7
   end
 end
