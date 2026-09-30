@@ -7440,6 +7440,43 @@ untracked SHA256SUMS and the three known setup build outputs. Do not add these
 incidentally to the checkpoint commit. A later tag cleanup may be considered
 after an inventory; no tag deletion was authorized or performed.
 
+### 47.21 Post-publication verification — September 30, 2026
+
+The published GitHub pre-release v1.8.3.7494 was independently verified after
+publication.
+
+All ten published release assets were downloaded from GitHub into the separate
+directory /tmp/wapt-github-7494. The downloaded set contained the nine payload
+files documented in section 47.20 plus SHA256SUMS.
+
+Running:
+
+    sha256sum -c SHA256SUMS
+
+against the downloaded files completed successfully for all nine payload files.
+This closes the verification gap recorded in section 47.20: integrity has now
+been confirmed on the actual files downloaded from the published GitHub
+release, not only on the pre-publication staging directory.
+
+VM106 was also synchronized after publication. Its release/1.8.3 working tree
+was clean at a54e8ac31 before synchronization. A git pull --ff-only completed
+as a clean fast-forward from a54e8ac31 to 1211f3204, synchronizing
+WAPT_BUSTER_RELEASE.md and WAPT_CHECKPOINT.md without merge or conflict.
+
+Post-publication verification status:
+
+- GitHub release asset download: PASS;
+- downloaded asset count: 10 (nine payload files plus SHA256SUMS);
+- downloaded SHA256 verification: PASS;
+- VM106 branch: release/1.8.3;
+- VM106 synchronization to 1211f3204: PASS;
+- merge/conflict during synchronization: none.
+
+The Debian 10 / Buster 7494 pilot publication and post-publication integrity
+verification are therefore complete. Colleague pilot feedback remains the next
+operational Buster activity. Debian 11 modernization remains a separate future
+project phase.
+
 ## 48. Resume protocol for the next ChatGPT thread
 
 Gipity, resume from sections 47.19 and 47.20. Treat this checkpoint as the
