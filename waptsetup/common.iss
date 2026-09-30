@@ -220,7 +220,7 @@ Filename: "{app}\wapt-get.exe"; Parameters: "--direct update"; Flags: runhidden;
 #endif
 
 [Icons]
-Name: "{commonstartup}\WAPT session setup"; Filename: "{app}\wapt-get.exe"; Parameters: "session-setup ALL"; Flags: runminimized excludefromshowinnewinstall;
+Name: "{commonstartup}\PADIT session setup"; Filename: "{app}\wapt-get.exe"; Parameters: "session-setup ALL"; Flags: runminimized excludefromshowinnewinstall;
 
 #if edition != "waptstarter"
 Name: "{group}\{cm:WAPTConsole}"; Filename: "{app}\waptconsole.exe"; WorkingDir: "{app}"; Check: Not IsWaptAgent();
@@ -230,24 +230,24 @@ Name: "{group}\{cm:WAPTSelf}"; Filename: "{app}\waptself.exe"; WorkingDir: "{app
 
 [CustomMessages]
 ;English translations here
-en.StartAfterSetup=Launch WAPT setup session upon session opening
-en.RegisterHostOnServer=Register this computer onto WAPT server
+en.StartAfterSetup=Launch PADIT setup session upon session opening
+en.RegisterHostOnServer=Register this computer onto PADIT server
 en.UpdateAvailablePkg=Update the list of packages available on the main repository
 en.UpdatePkgUponShutdown=Update packages upon shutdown                                   
-en.EnableCheckCertificate=Get and enable the check of WaptServer https certificate
-en.UseWaptServer=Report computer status to a waptserver and enable remote management
+en.EnableCheckCertificate=Get and enable the check of PADIT server https certificate
+en.UseWaptServer=Report computer status to a PADIT server and enable remote management
 en.InstallSSLCertificates=Install the certificates provided by this installer
 en.InstallStartPackages=Install right now the packages {#set_start_packages}
-en.UseKerberosForRegister=Use machine kerberos account for registration on WaptServer
+en.UseKerberosForRegister=Use machine kerberos account for registration on PADIT server
 en.VerifyServerCertificates=Verify https server certificates
 en.DisableHiberBoot=Disable hiberboot, and increase shudown GPO timeout (recommended)
-en.RemoveAllFiles=Do you want to delete all remaining files in WAPT directory {app} ?
+en.RemoveAllFiles=Do you want to delete all remaining files in PADIT installation directory {app} ?
 en.UseWizard=Use Wizard to complete initial configuration steps
 en.DontChangeServerSetup=Don't change current setup
-en.StaticURLS=Static WAPT Informations
+en.StaticURLS=Static PADIT information
 en.RunConfigTool=Run congifuration tool
-en.WAPTConsole=WAPT Management console
-en.WAPTSelf=WAPT Softwares self service
+en.WAPTConsole=PADIT Management console
+en.WAPTSelf=PADIT Software self service
 en.UseRandomUUID=Use a random UUID to identify the computer instead of BIOS
 en.InstallationOptions=Installation options
 en.RepoURL=Repository URL:
@@ -256,24 +256,24 @@ en.Example=Example
 en.Advanced=Advanced
 
 ;French translations here
-fr.StartAfterSetup=Lancer WAPT session setup à l'ouverture de session
-fr.RegisterHostOnServer=Enregistre l'ordinateur sur le serveur WAPT
+fr.StartAfterSetup=Lancer PADIT session setup à l'ouverture de session
+fr.RegisterHostOnServer=Enregistre l'ordinateur sur le serveur PADIT
 fr.UpdateAvailablePkg=Mise à jour des paquets disponibles sur le dépôt principal
 fr.UpdatePkgUponShutdown=Mise à jour des paquets à l'extinction du poste
-fr.EnableCheckCertificate=Activer la vérification du certificat https du serveur Wapt
-fr.UseWaptServer=Activer l'utilisation d'un serveur Wapt et la gestion centralisée de cet ordinateur
+fr.EnableCheckCertificate=Activer la vérification du certificat https du serveur PADIT
+fr.UseWaptServer=Activer l'utilisation d'un serveur PADIT et la gestion centralisée de cet ordinateur
 fr.InstallSSLCertificates=Installer les certificats fournis par cet installeur.
 fr.InstallStartPackages=Installer maintenant les paquets {#set_start_packages}
-fr.UseKerberosForRegister=Utiliser le compte Kerberos de la machine pour l'enregistrement sur le WaptServer
+fr.UseKerberosForRegister=Utiliser le compte Kerberos de la machine pour l'enregistrement sur le serveur PADIT
 fr.VerifyServerCertificates=Vérifier les certificats https
 fr.DisableHiberBoot=Désactiver l'hiberboot, et augmenter le temps pour les GPO (recommandé)
 fr.RemoveAllFiles=Des fichiers restent présents dans votre répertoire {app} Souhaitez-vous le supprimer ainsi que tous les fichiers qu'il contient ?
 fr.UseWizard=Utiliser l'assistant pour achever la phase de configuration initiale.
 fr.DontChangeServerSetup=Ne pas modifier la configuration actuelle
-fr.StaticURLS=URLS WAPT statiques
+fr.StaticURLS=URLS PADIT statiques
 fr.RunConfigTool=Exécuter l'assistant de configuration
-fr.WAPTConsole=Console WAPT
-fr.WAPTSelf=Self service logiciels WAPT
+fr.WAPTConsole=Console PADIT
+fr.WAPTSelf=Self service logiciels PADIT
 fr.UseRandomUUID=Utiliser un UUID aléatoire pour identifier l'ordinateur au lieu du BIOS
 fr.InstallationOptions=Options d'installation
 fr.RepoURL=URL du dépôt :
@@ -282,8 +282,8 @@ fr.Example=Exemple
 fr.Advanced=Avancé
 
 ;German translation here
-de.StartAfterSetup=WAPT Setup-Sitzung bei Sitzungseröffnung starten
-de.RegisterHostOnServer=Diesen Computer auf WAPT Server speichern
+de.StartAfterSetup=PADIT Setup-Sitzung bei Sitzungseröffnung starten
+de.RegisterHostOnServer=Diesen Computer auf PADIT Server speichern
 de.UpdateAvailablePkg=Liste der verfügbaren Pakete auf Main Repostitory aktualisieren
 de.UpdatePkgUponShutdown=Packete aktualisieren beim herunterfahren
 de.RunConfigTool=Führen Sie das Konfigurationstool aus

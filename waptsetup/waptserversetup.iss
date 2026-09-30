@@ -1,6 +1,6 @@
 #define waptserver
 #define edition "waptserversetup"
-#define AppName "WAPT Server"
+#define AppName "PADITServer"
 #define default_repo_url "http://127.0.0.1/wapt/"
 #define default_wapt_server "http://127.0.0.1"
 
@@ -8,7 +8,7 @@
 #define wapt_server ""
 #define wapt_base_dir "..\"
 #define output_dir "."
-#define Company "Tranquil IT Systems"
+#define Company "PADIT Project"
 
 #define send_usage_report "1"
 
@@ -166,9 +166,9 @@ Filename: {cm:InstallDocURL}; Flags: postinstall skipifsilent shellexec; StatusM
 
 [Tasks]
 #ifdef choose_components
-Name: InstallNGINX; Description: "{cm:InstallNGINX}"; GroupDescription: "WAPT Server"
-Name: InstallPostgreSQL; Description: "{cm:InstallPostgreSQL}"; GroupDescription: "WAPT Server"
-Name: InstallWaptserver; Description: "{cm:InstallWaptServer}"; GroupDescription: "WAPT Server"
+Name: InstallNGINX; Description: "{cm:InstallNGINX}"; GroupDescription: "PADIT Server"
+Name: InstallPostgreSQL; Description: "{cm:InstallPostgreSQL}"; GroupDescription: "PADIT Server"
+Name: InstallWaptserver; Description: "{cm:InstallWaptServer}"; GroupDescription: "PADIT Server"
 #endif
 Name: RegisterComputerOnLocalServer; Description: "{cm:SetupRegisterThisComputer}";
 Name: AllowUnauthenticatedRegistration; Description: "{cm:AllowUnauthenticatedRegistration}";
@@ -193,30 +193,30 @@ Filename: "sc";  Parameters: "delete waptpostgresql"; Flags: runhidden; StatusMs
 #endif
 
 [CustomMessages]
-fr.RegisteringService=Mise en place du service WaptServer
+fr.RegisteringService=Mise en place du service PADIT Server
 fr.InstallMSVC2013=Installation de MSVC++ 2013 Redistribuable
 fr.LaunchingPostconf=Lancement de la post-configuration du serveur
 fr.InstallNGINX=Installer le serveur http NGINX (utlise les ports 80 et 443)
 fr.InstallPostgreSQL=Installer le serveur PostgreSQL
-fr.InstallWaptServer=Installer le serveur Wapt
+fr.InstallWaptServer=Installer le serveur PADIT
 fr.ScanPackages=Scan des paquets actuels
 fr.InstallingServerServices=Installation des services Serveur
-fr.SpecifyServerPassword=Choisissez un mot de passe pour le compte admin Wapt
+fr.SpecifyServerPassword=Choisissez un mot de passe pour le compte admin PADIT
 fr.BothPasswordsDontMatch=Les mots de passe saisis ne correspondent pas
-fr.WaptAdminPassword=Mot de passe Admin du serveur WAPT
+fr.WaptAdminPassword=Mot de passe Admin du serveur PADIT
 fr.ConfirmPassword=Confirmer le mot de passe
 fr.OpenWaptDocumentation=Afficher la documentation d'installation
-fr.InstallDocURL=https://doc.wapt.fr
-fr.SetupRegisterThisComputer=Enregistrer cette machine sur ce nouveau serveur Wapt
+fr.InstallDocURL=https://github.com/maxcarpone/WAPT
+fr.SetupRegisterThisComputer=Enregistrer cette machine sur ce nouveau serveur PADIT
 fr.CreatePackageRSAKeyCert=Créer une clé et un certificat pour les paquets
-fr.CreateWaptAgentInstaller=Compilation d'un installeur WaptAgent personnalisé pour les postes clients (peut durer quelques minutes...)
-fr.WaptServerHostName=Nom d'hôte du serveur WAPT
+fr.CreateWaptAgentInstaller=Compilation d'un installeur PADIT Agent personnalisé pour les postes clients (peut durer quelques minutes...)
+fr.WaptServerHostName=Nom d'hôte du serveur PADIT
 fr.PackagesPrefix=Préfixe de paquets
 fr.PersonalKeyname=Nom de clé personnelle
 fr.PersonalEmail=Courriel à intégrer au certificat
 fr.PersonalKeyPassword=Mot de passe de la clé privée
 fr.PersonalKeyConfirmPassword=Confirmer le mot de passe
-fr.StartWaptconsole=Lancer Waptconsole
+fr.StartWaptconsole=Lancer PADIT Console
 fr.MustSpecifyServerPassword=Vous devez spécifier un mot de passe pour le serveur
 fr.MustSpecifyAServerName=Vous devez spécifier un nom ou une IP pour le serveur
 fr.PasswordsDontMatch=Les mots de passe serveur ne correspondent pas
@@ -224,8 +224,8 @@ fr.SpecifyKeyName=Vous devez spécifier un nom pour la clé/certificat personnel
 fr.SpecifyPrivateKeyPassword=Merci de spécifier un mot de passe pour chiffrer la clé
 fr.KeyPasswordsDontMatch=les mots de passe ne correspondent pas
 fr.KeyExists=Une clé avec ce nom existe dans c:\private. Merci de choisir un autre nom.
-fr.WaptParameters=Paramètres WAPT
-fr.SpecifyWaptInstallParameters=Merci de spécifier vos paramètres de serveur Wapt puis cliquer sur suivant.
+fr.WaptParameters=Paramètres PADIT
+fr.SpecifyWaptInstallParameters=Merci de spécifier vos paramètres de serveur PADIT puis cliquer sur suivant.
 fr.Skip=Ne rien faire
 fr.PickCertificate=Sélectionner un certificat existant (.crt)
 fr.CreateNewCert=Créer une nouvelle clé / certificat personnel
@@ -238,40 +238,40 @@ fr.PackageDesignParams=Paramètres de création des paquets
 fr.PackageDesignParamsDesc=Paramètres utilisés lors de la création et l'import de paquets.
 ; fr.PackageDesignParamsRequest=Le préfixe de paquet est une chaîne simple (comme test) qui est présente au début de vos noms de paquets pour les identifier visuellement%nLe mot de passe de la clé sera utilisé pour signer un paquet de mises à jour Wapt
 fr.PackageDesignParamsRequest=Le préfixe de paquet est une chaîne simple (comme test) qui est présente au début de vos noms de paquets pour les identifier visuellement
-fr.WaptAgentBuild=Compilation de Waptagent
-fr.WaptAgentBuildChoice=Spécifier si vous voulez (re)créer un installeur personnalisé waptagent pour cette version de Wapt
-fr.WaptAgentDoBuild=Compiler un nouveau waptagent.exe
-fr.ShowWaptServerHomePage=Ouvre la page d'accueil du serveur Wapt dans votre navigateur (Vous devrez vraisemblement accepter le certificat https auto-signé)
+fr.WaptAgentBuild=Compilation de PADIT Agent
+fr.WaptAgentBuildChoice=Spécifier si vous voulez (re)créer un installeur personnalisé PADIT Agent pour cette version de PADIT
+fr.WaptAgentDoBuild=Compiler un nouveau PADIT Agent (waptagent.exe)
+fr.ShowWaptServerHomePage=Ouvre la page d'accueil du serveur PADIT dans votre navigateur (Vous devrez vraisemblement accepter le certificat https auto-signé)
 fr.MustSpecifyPackagePrefix=Vous devez spécifier un préfixe de paquet
 fr.MustSpecifyPrivateKeyPassword=Vous devez fournir le mot de passe de la clé privée pour signer le paquet waptupgrade
 fr.OpenFirewallPort443=Autorise les connections TCP sur les port 80 et 443
 fr.AllowUnauthenticatedRegistration=Autoriser les machines à s'enregistrer sur le serveur sans authentification
 fr.CreateDHparam=Creation d'une clé DH param si elle n'existe pas
 
-en.RegisteringService=Setup WaptServer Service
+en.RegisteringService=Setup PADIT Server Service
 en.InstallMSVC2013=Installing MSVC++ 2013 Redistribuable
 en.LaunchingPostconf=Launch server post-configuration
 en.InstallNGINX=Install NGINX http server(will use ports 80 and 443)
 en.InstallPostgreSQL=Install PostgreSQL Server
-en.InstallWaptServer=Install Wapt server
+en.InstallWaptServer=Install PADIT server
 en.ScanPackages=Scan packages
 en.InstallingServerServices=Installing Server services...
-en.SpecifyServerPassword=Please specify a password for the Wapt admin account
+en.SpecifyServerPassword=Please specify a password for the PADIT admin account
 en.BothPasswordsDontMatch=Passwords entries are not matching
-en.WaptAdminPassword=WAPT Server Admin password
+en.WaptAdminPassword=PADIT Server Admin password
 en.ConfirmPassword=Confirm password
 en.OpenWaptDocumentation=Show installation documentation
-en.InstallDocURL=https://doc.wapt.fr
-en.SetupRegisterThisComputer=Register this computer on this new Wapt server
+en.InstallDocURL=https://github.com/maxcarpone/WAPT
+en.SetupRegisterThisComputer=Register this computer on this new PADIT server
 en.CreatePackageRSAKeyCert=Build a key and a certificate for packages signature
-en.CreateWaptAgentInstaller=Building a customized WaptAgent installer for client computers (may need several minutes to complete...)
-en.WaptServerHostName=WAPT Server Hostname
+en.CreateWaptAgentInstaller=Building a customized PADIT Agent installer for client computers (may need several minutes to complete...)
+en.WaptServerHostName=PADIT Server Hostname
 en.PackagesPrefix=Packages prefix
 en.PersonalKeyname=Personal key name
 en.PersonalEmail=Personal Email to embed in certificate
 en.PersonalKeyPassword=Personal key password
 en.PersonalKeyConfirmPassword=Confirm password
-en.StartWaptconsole=Run Waptconsole
+en.StartWaptconsole=Run PADIT Console
 en.MustSpecifyServerPassword=You must specify a server password
 en.MustSpecifyAServerName=You must specify a server name or IP
 en.PasswordsDontMatch=Server passwords don't match
@@ -279,8 +279,8 @@ en.SpecifyKeyName=Please specify a keyname
 en.SpecifyPrivateKeyPassword=Please specify a password to encrypt the personal key
 en.KeyPasswordsDontMatch=Both passwords don't match
 en.KeyExists=A private key with this name already exists in c:\private, please choose another name.
-en.WaptParameters=WAPT parameters
-en.SpecifyWaptInstallParameters=Please specify the parameters for your Wapt install, then click Next.
+en.WaptParameters=PADIT parameters
+en.SpecifyWaptInstallParameters=Please specify the parameters for your PADIT installation, then click Next.
 en.Skip=Skip
 en.PickCertificate=Pick an existing certificate (.crt)
 en.CreateNewCert=Create a new self signed certificate / private key
@@ -293,39 +293,39 @@ en.PackageDesignParams=Packages design parameters
 en.PackageDesignParamsDesc=Parameters used when creating / importing packages and for upgrade package.
 ;en.PackageDesignParamsRequest=Packages prefix is a simple string (like test) which is appended in front of packages name to identify the source%nKey password will be tested and used in next step to build an upgrade package
 en.PackageDesignParamsRequest=Packages prefix is a simple string (like test) which is appended in front of packages name to identify the source
-en.WaptAgentBuild=Waptagent build
-en.WaptAgentBuildChoice=Choose weither you want to (re)create the waptagent installer for this version of Wapt
-en.WaptAgentDoBuild=Compile a customized waptagent installer and waptupgrade package
-en.ShowWaptServerHomePage=Open WaptServer homepage in Web browser (You may need to accept self signed https certificate)
+en.WaptAgentBuild=PADIT Agent build
+en.WaptAgentBuildChoice=Choose weither you want to (re)create the PADIT Agent installer for this version of PADIT
+en.WaptAgentDoBuild=Compile a customized PADIT Agent installer and waptupgrade package
+en.ShowWaptServerHomePage=Open PADIT Server homepage in Web browser (You may need to accept self signed https certificate)
 en.MustSpecifyPackagePrefix=You must specify a packages prefix
 en.MustSpecifyPrivateKeyPassword=You must specify the private key's password to sign the waptupgrade package
 en.OpenFirewallPort443=Enable TCP inbound on port 443 and 80 for https connections
-en.AllowUnauthenticatedRegistration=Allow computers to register themselves on wapt server without authentication
+en.AllowUnauthenticatedRegistration=Allow computers to register themselves on PADIT server without authentication
 en.CreateDHparam=Creating a DH param key if not exist
 
-de.RegisteringService=Setup WaptServer Service
+de.RegisteringService=Setup PADIT Server Service
 de.InstallMSVC2013=MSVC++ 2013 Redistribuable installieren
 de.LaunchingPostconf=Server Post-Konfiguration starten
 de.InstallNGINX=NGINX installieren http Server
 de.InstallPostgreSQL=PostgreSQL Server installieren
-de.InstallWaptServer=Wapt server installieren
+de.InstallWaptServer=PADIT server installieren
 de.ScanPackages=Scan packages
-de.SpecifyServerPassword=Please specify a password for the Wapt admin account
+de.SpecifyServerPassword=Please specify a password for the PADIT admin account
 de.BothPasswordsDontMatch=Passwords entries are not matching
-de.WaptAdminPassword=WAPT Server Admin password (leave blank to not change password)
+de.WaptAdminPassword=PADIT Server Admin password (leave blank to not change password)
 de.ConfirmPassword=Confirm password
 de.OpenWaptDocumentation=Show installation documentation
-de.InstallDocURL=https://doc.wapt.fr
-de.SetupRegisterThisComputer=Register this computer on this new Wapt server
+de.InstallDocURL=https://github.com/maxcarpone/WAPT
+de.SetupRegisterThisComputer=Register this computer on this new PADIT server
 de.CreatePackageRSAKeyCert=Build a key and a certificate for packages signature
-de.CreateWaptAgentInstaller=Build a customized WaptAgent installer for client computers
-de.WaptServerHostName=WAPT Server Hostname
+de.CreateWaptAgentInstaller=Build a customized PADIT Agent installer for client computers
+de.WaptServerHostName=PADIT Server Hostname
 de.PackagesPrefix=Packages prefix
 de.PersonalKeyname=Personal key name
 de.PersonalEmail=Personal Email to embed in certificate
 de.PersonalKeyPassword=Personal key password
 de.PersonalKeyConfirmPassword=Confirm password
-de.StartWaptconsole=Run Waptconsole
+de.StartWaptconsole=Run PADIT Console
 
 [InstallDelete]
 Type: files; Name: "{app}\waptserver\waptserver.py*"

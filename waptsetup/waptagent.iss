@@ -4,11 +4,11 @@
 #define default_wapt_server ""
 #define repo_url ""
 #define wapt_server ""
-#define AppName "WAPTAgent"
+#define AppName "PADITAgent"
 #define AppId "WAPT"
 #define output_dir "."
 #define wapt_base_dir "..\"
-#define Company "Thouet Software"
+#define Company "PADIT Project"
 #define send_usage_report 1
 ; if not empty, set value 0 or 1 will be defined in wapt-get.ini
 #define set_use_kerberos "0"

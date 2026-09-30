@@ -4,10 +4,10 @@
 #define repo_url ""
 #define wapt_server ""
 #define AppId "WAPT"
-#define AppName "WAPTSetup"
+#define AppName "PADITSetup"
 #define wapt_base_dir "..\"
 #define output_dir "."
-#define Company "Thouet Software"
+#define Company "PADIT Project"
 #define send_usage_report 1
 
 ; if not empty, set value 0 or 1 will be defined in wapt-get.ini
@@ -85,9 +85,9 @@ fr.LaunchingPostConf=Lancement de la post-configuration de la console
 en.LaunchingPostConf=Launch console post-configuration
 de.LaunchingPostconf=Konsole Post-Konfiguration starten
 fr.OpenWaptDocumentation=Afficher la documentation d'installation
-fr.InstallDocURL=https://doc.wapt.fr
+fr.InstallDocURL=https://github.com/maxcarpone/WAPT
 en.OpenWaptDocumentation=Show installation documentation
-en.InstallDocURL=https://doc.wapt.fr
+en.InstallDocURL=https://github.com/maxcarpone/WAPT
 
 
 [Code]

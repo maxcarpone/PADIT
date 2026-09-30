@@ -631,7 +631,7 @@ Write-Host "Verifying Lazarus artifact metadata..."
 
 $ExpectedFileVersion = "1.8.3.$BuildNumber"
 $ExpectedProductVersion = '1.8.3'
-$ExpectedProductName = 'WAPT Community Edition'
+$ExpectedProductName = 'PADIT Community Edition'
 
 foreach ($artifact in $LazarusArtifacts) {
     $artifactPath = Join-Path $Worktree $artifact
@@ -1081,8 +1081,8 @@ if ($SetupVersionInfo.ProductVersion.Trim() -ne $ExpectedFileVersion) {
     throw "Setup ProductVersion mismatch.`nExpected: $ExpectedFileVersion`nActual:   $($SetupVersionInfo.ProductVersion)"
 }
 
-if ($SetupVersionInfo.ProductName.Trim() -ne 'WAPTSetup') {
-    throw "Setup ProductName mismatch.`nExpected: WAPTSetup`nActual:   $($SetupVersionInfo.ProductName)"
+if ($SetupVersionInfo.ProductName.Trim() -ne 'PADITSetup') {
+    throw "Setup ProductName mismatch.`nExpected: PADITSetup`nActual:   $($SetupVersionInfo.ProductName)"
 }
 
 $SetupHash = (Get-FileHash -LiteralPath $SetupExe -Algorithm SHA256).Hash

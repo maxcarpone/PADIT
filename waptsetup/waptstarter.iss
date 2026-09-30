@@ -3,10 +3,10 @@
 #define default_wapt_server ""
 #define repo_url ""
 #define wapt_server ""
-#define AppName "WAPTSetup"
+#define AppName "PADITStarter"
 #define wapt_base_dir "..\"
 #define output_dir "."
-#define Company "Tranquil IT Systems"
+#define Company "PADIT Project"
 #define send_usage_report 0
 
 ; if not empty, set value 0 or 1 will be defined in wapt-get.ini

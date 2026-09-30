@@ -161,10 +161,8 @@ ChangesEnvironment=True
 AppPublisher={#Company}
 OutputDir={#output_dir}
 SolidCompression=True
-AppPublisherURL=https://www.tranquil.it
-AppSupportURL=https://www.wapt.fr
-AppContact=wapt@lists.tranquil.it
-AppSupportPhone=+33 2 40 97 57 55
+AppPublisherURL=https://github.com/maxcarpone/WAPT
+AppSupportURL=https://github.com/maxcarpone/WAPT/issues
 CloseApplications=Yes
 RestartApplications=No
 PrivilegesRequired=admin
@@ -211,7 +209,7 @@ Filename: "cmd"; Parameters: "/C {app}\vc_redist\icacls.exe ""{app}\private"" /i
 
 ; if waptservice
 Filename: "{app}\waptpython.exe"; Parameters: """{app}\waptservice\service.py"" install"; Tasks:installService ; Flags: runhidden; StatusMsg: "{cm:InstallingWAPTservice}"; Description: "{cm:InstallingWAPTservice}";
-Filename: "sc"; Parameters: "delete waptservice"; Flags: runhidden; Tasks: not installService; WorkingDir: "{tmp}"; StatusMsg: "{cm:UnregisterWaptService}"; Description: "Suppression du service wapt..."
+Filename: "sc"; Parameters: "delete waptservice"; Flags: runhidden; Tasks: not installService; WorkingDir: "{tmp}"; StatusMsg: "{cm:UnregisterWaptService}"; Description: "Suppression du service PADIT..."
 Filename: "{app}\wapttray.exe"; Tasks: autorunTray; Flags: runminimized nowait runasoriginaluser skipifsilent postinstall; StatusMsg: "{cm:RunWaptTray}"; Description: "{cm:RunWaptTray}"; 
 
 
@@ -248,46 +246,46 @@ Filename: "taskkill"; Parameters: "/t /im ""waptself.exe"" /f"; Flags: runhidden
 Filename: "taskkill"; Parameters: "/t /im ""waptmessage.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptmessage"
 Filename: "taskkill"; Parameters: "/t /im ""waptconsole.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptconsole"
 Filename: "taskkill"; Parameters: "/t /im ""wapttray.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de l'icône de notification"
-Filename: "net"; Parameters: "stop waptservice"; Flags: runhidden; StatusMsg: "Arrêt du service WAPT"
-Filename: "sc"; Parameters: "delete waptservice"; Flags: runhidden; StatusMsg: "Désinstallation du service WAPT"
+Filename: "net"; Parameters: "stop waptservice"; Flags: runhidden; StatusMsg: "Arrêt du service PADIT"
+Filename: "sc"; Parameters: "delete waptservice"; Flags: runhidden; StatusMsg: "Désinstallation du service PADIT"
 Filename: "taskkill"; Parameters: "/t /im ""waptpython.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptpython"
 
 [CustomMessages]
 ;French translations here
-fr.InstallWAPTservice=Installer le service WAPT
-fr.InstallingWAPTservice=Installation du service WAPT...
+fr.InstallWAPTservice=Installer le service PADIT
+fr.InstallingWAPTservice=Installation du service PADIT...
 fr.LaunchIcon=Lancer l'icône de notification lors de l'ouverture de session
 fr.InstallVCpp=Installer les redistribuables VC++ 2008 (pour openssl)
 fr.ForceVCppReinstall=Forcer la réinstallation des redistribuables VC++ 2008 (pour openssl)
 fr.UpdatePkgUponShutdown=Proposer la mise à  jour des paquets à  l'extinction du poste
-fr.LaunchSession=Lancer WAPT session setup à  l'ouverture de session
+fr.LaunchSession=Lancer PADIT session setup à  l'ouverture de session
 fr.InstallingVCpp=Installation des librairies MS VC++
-fr.SetupACL=Mise en place des droits sur le répertoire wapt
+fr.SetupACL=Mise en place des droits sur le répertoire d'installation PADIT
 fr.RunWaptTray=Lancement de l'icône de notification
-fr.UnregisterWaptService=Suppression du service waptservice
-fr.EnableWaptServiceNoPassword=Ne pas demander de mot de passe pour l'installation et la désinstallation des paquets Wapt.
+fr.UnregisterWaptService=Suppression du service PADIT
+fr.EnableWaptServiceNoPassword=Ne pas demander de mot de passe pour l'installation et la désinstallation des paquets PADIT.
 
 ;English translations here
-en.InstallWAPTservice=Install WAPT service
-en.InstallingWAPTservice=Installing WAPT service...
+en.InstallWAPTservice=Install PADIT service
+en.InstallingWAPTservice=Installing PADIT service...
 en.LaunchIcon=Launch notification icon upon session opening
 en.InstallVCpp=Install VC++ 2008 redistributables (for openssl)
 en.ForceVCppReinstall=Force-reinstall VC++ 2008 redistributables (for openssl)
 en.UpdatePkgUponShutdown=Ask to update packages upon shutdown
-en.LaunchSession=Launch WAPT setup session upon session opening
+en.LaunchSession=Launch PADIT setup session upon session opening
 en.InstallingVCpp=Installing librairies MS VC++
-en.SetupACL=Setup ACL rights on wapt directory
+en.SetupACL=Setup ACL rights on PADIT installation directory
 en.RunWaptTray=Launching notification tray icon
-en.UnregisterWaptService=Removal of service waptservice
-en.EnableWaptServiceNoPassword=Don't ask password for installation and removal of Wapt packages for local user
+en.UnregisterWaptService=Removal of PADIT service
+en.EnableWaptServiceNoPassword=Don't ask password for installation and removal of PADIT packages for local user
 
 ;German translations here
-de.InstallWAPTservice=WAPT service installieren
+de.InstallWAPTservice=PADIT service installieren
 de.LaunchIcon=Benachrichtigungssymbol bei Sitzungseröffnung  starten
 de.InstallVCpp=VC++ 2008 die Redistributables (für openssl) installieren
 de.ForceVCppReinstall=Force- VC++ 2008 redistributables (für openssl) deinstallieren
 de.UpdatePkgUponShutdown=Bitten, die Packete beim herunterfahren zu aktualisieren
-de.LaunchSession=WAPT setup Sitzung bei eröffnung der Sitzung starten
+de.LaunchSession=PADIT setup Sitzung bei eröffnung der Sitzung starten
 
 
 [Code]
@@ -340,10 +338,10 @@ begin
   if not runningSilently() then
   begin
     if MsgBox(
-      'WAPT uses digitally signed executables published by Thouet Software.' + #13#10 + #13#10 +
+      'PADIT uses digitally signed executables.' + #13#10 + #13#10 +
       'To validate these signatures, the Thouet Software Signing Root CA ' +
       'will be added to the Local Machine Trusted Root Certification Authorities store.' + #13#10 + #13#10 +
-      'Continue only if you trust Thouet Software as the publisher of this WAPT distribution.',
+      'Continue only if you trust the Thouet Software Signing Root CA used to sign this PADIT distribution.',
       mbConfirmation,
       MB_YESNO
     ) <> IDYES then
@@ -356,7 +354,7 @@ begin
   if not FileExists(CertFile) then
   begin
     MsgBox(
-      'WAPT Authenticode Root CA certificate could not be extracted:' + #13#10 +
+      'Thouet Software Signing Root CA certificate could not be extracted:' + #13#10 +
       CertFile,
       mbError,
       MB_OK
@@ -374,7 +372,7 @@ begin
   ) then
   begin
     MsgBox(
-      'Unable to start certutil.exe to install the WAPT Authenticode Root CA.',
+      'Unable to start certutil.exe to install the Thouet Software Signing Root CA.',
       mbError,
       MB_OK
     );
@@ -384,7 +382,7 @@ begin
   if ResultCode <> 0 then
   begin
     MsgBox(
-      'Unable to install the WAPT Authenticode Root CA.' + #13#10 +
+      'Unable to install the Thouet Software Signing Root CA.' + #13#10 +
       'certutil.exe returned exit code ' + IntToStr(ResultCode) + '.',
       mbError,
       MB_OK
