@@ -474,7 +474,7 @@ ul.item ul li a:hover {
 }
 
 .homepage {
-    min-height: calc(100vh - 370px);
+    min-height: calc(100vh - 350px);
 }
 
 @media screen and (max-width: 991px) {
