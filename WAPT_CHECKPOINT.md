@@ -7060,7 +7060,11 @@ the consolidated 1.8.3.xxxx baseline unless contradictory evidence appears.
 The next phase is final release consolidation and freeze/tag. Do not begin
 Debian 11 modernization before that baseline is frozen.
 
-## 48. Resume protocol for the next ChatGPT thread
+### 47.18 Historical resume state at revision 7492 (superseded)
+
+The following resume text is preserved as historical evidence. Its HEAD,
+artifact versions and next-action instructions are superseded by sections
+47.19 and 48 below; they are not the current execution plan.
 
 Gipity, resume the WAPT project from the attached checkpoint.
 Treat `WAPT_CHECKPOINT.md` as the authoritative technical state.
@@ -7170,3 +7174,251 @@ Do not begin Debian 11 modernization before the consolidated 1.8.3.xxxx
 baseline is frozen.
 
 Keep answers concise and proceed one validated step at a time.
+
+### 47.19 Frozen baseline and paired Buster migration validation (7493-7494)
+
+Validated on 2026-09-29 (manual procedure) and 2026-09-30 (migration script).
+
+#### Source lineage and artifact provenance
+
+- Historical frozen baseline: tag v1.8.3.7493, commit
+  98e16ad6000bd025a1f40a5c45b8ff60186240ee,
+  "Document autonomous Debian package build", revision count 7493.
+- Paired migration implementation: commit
+  85a5bee5550f5ab4763ee3e7c0dbcc128b08ca81,
+  "Prepare Buster migration for paired 1.8.3 packages", revision count 7494.
+- The migration script takes a separate release.manifest and validates both
+  tis-waptserver and tis-waptsetup. Historical 7398-specific script logic was
+  removed; its earlier validation remains historical documentation.
+- Debian 10 retains the tis- package names.
+- This documentation/promotion change sets SCRIPT_VERSION to 1.1. The actual
+  migration was tested with 1.1-rc1; the only shell-script change for promotion
+  is the version declaration. The backup format remains version 1.
+- Documentation and script-promotion commits do not rebuild or relabel the
+  validated 7494 binaries. Their source provenance remains commit 85a5bee5.
+- The historical v1.8.3.7493 tag remains unchanged. The public release is
+  pending; no new release tag or GitHub publication is recorded here.
+
+#### Rebuilt Windows product and Debian packages
+
+VM106 rebuilt the signed Windows product from source revision 7494 using the
+controlled C:\wapt-runtime-1.8.3 runtime and isolated build worktree.
+The output directory was C:\wapt-product-1.8.3-7494.
+WAPTSetup and WAPTDeploy signatures were Valid on the signing workstation,
+with signer CN=Thouet Software Code Signing.
+
+Wapster built both Debian packages with the controlled Python 2.7.18 runtime
+build/python2-runtime-server-buster/bin/python. The Windows payload hashes
+matched after transfer and after extraction from the setup Debian package.
+The server package does not contain /opt/wapt/conf/waptserver.ini.
+
+Validated artifacts and SHA256 values:
+
+- tis-waptserver-1.8.3.7494-85a5bee5-debian-10-amd64.deb
+  c2222beeabef1b0858a38f3f600e9ff815be3a0200cc128d5356300279908c47
+- tis-waptsetup-windows-1.8.3.7494-85a5bee5.deb
+  0c059501866d30fb61e71f76dfe7c436db16796321d1c7b8cd018456371b2785
+- waptsetup-tis.exe (Windows build output: waptsetup\waptsetup.exe)
+  2a68c508854dc156e0e6b816f8aad3fc05471289bdd6b23d7ba5e2ac59a2ccde
+- waptdeploy.exe
+  adb887faedb94135ee8b832aabdf8ac4b5bce0345a60e0067df3314dd60b1c0a
+- Thouet-Software-Signing-Root-CA.cer
+  5bb7881d601856f1ee55c7a7b88e988751751779dee1ab08d21dd319b1690e7a
+
+The external release.manifest records target build 7494, both package versions,
+architectures and SHA256 values, plus the three published Windows/Root hashes.
+The server package version is 1.8.3.7494-85a5bee5-debian-10-amd64 (amd64).
+The setup package version is 1.8.3.7494 (all).
+
+#### Authentic historical source and isolated test network
+
+The test target is scrab-clone, an isolated clone of the historical SCRAB
+server; after rollback its guest hostname is scrab. This is not the production
+server. It runs Debian 10.13 with:
+
+- tis-waptserver 1.8.2.7393-75a5de09-debian-10-amd64;
+- tis-waptsetup 1.8.2.7393;
+- WAPT database on PostgreSQL 9.6/main, port 5432;
+- separate PostgreSQL 11/main cluster on port 5433;
+- initial database marker "1.8.2.1";
+- historical WAPT package prefix 0790007d.
+
+scrab-clone uses 10.99.99.2/24 on vmbr999 without a default route.
+VM108 uses 10.99.99.3 on the same isolated network. Its hosts file maps
+scrab.genevoix-signoret-vinci.fr.lan to 10.99.99.2.
+The clone TLS certificate CN is scrab.genevoix-signoret-vinci.fr.lan.
+
+Initial /opt/wapt/conf/waptserver.ini SHA256:
+9d8091aa2927176517fe7b8ce4f916fa034fc10bc8108556eb13188b4d745acd
+
+The six baseline counts were unchanged immediately after each migration:
+
+    hostgroups=3623
+    hostpackagesstatus=25099
+    hosts=675
+    hostsoftwares=105247
+    packages=1056
+    waptusers=1
+
+The historical repository contained 847 files, approximately 13.25 GB.
+The full DR backup passed, including repository copy and SHA256 validation:
+
+    /var/www/wapt-backups/wapt-dr-scrab-20260916-100106.tar
+    SHA256 99540a3dd201ba63ef43a537c78b69cae4e4ddb2d53da10a926f7387be1daad7
+
+Its September 16 filename reflects the stale guest clock restored from the
+snapshot; it was created during the September 29 validation session.
+The RTC was checked and the guest clock corrected using
+hwclock --hctosys --utc --noadjfile. Snapshot selection and clock correction
+were repeated before the September 30 script test.
+
+#### Scenario 1: manual paired package upgrade - PASS
+
+The APT simulation planned only the two WAPT package upgrades, with no package
+removal or new dependency installation. A pre-upgrade snapshot was taken.
+Both local Debian packages were installed together with dpkg -i; exit code 0.
+
+Post-upgrade checks confirmed:
+
+- both target packages installed and configured;
+- waptserver.ini SHA256 unchanged;
+- PostgreSQL, nginx, waptserver and wapttasks active;
+- database marker migrated to "1.8.3.0" and all six counts unchanged;
+- all three published Windows/Root hashes matched the release manifest;
+- HTTPS localhost returned HTTP 200;
+- no waptserver/wapttasks error entries in the inspected journal window;
+- restarting waptserver/wapttasks preserved active state and schema marker.
+
+postconf.sh was not run for this existing configured server. The package's
+generic postconfiguration message is not evidence that this validated upgrade
+requires reconfiguration.
+
+#### VM108 console, agent generation and waptupgrade - PASS
+
+The published WAPTSetup download hash matched the built artifact.
+Before the internal Root CA was imported, Windows reported an untrusted
+certificate chain while identifying CN=Thouet Software Code Signing.
+After verifying the public Root file SHA256 and importing it into
+LocalMachine\Root, the downloaded setup signature became Valid.
+The installer's separate Root-consent dialog still appeared as designed.
+
+WAPTSetup was installed over VM108's existing client, with static URLs for the
+isolated clone. Installed waptconsole.exe and wapt-get.exe both report
+1.8.3.7494; WAPTService is Running. The global configuration uses:
+
+    repo_url=https://scrab.genevoix-signoret-vinci.fr.lan/wapt
+    wapt_server=https://scrab.genevoix-signoret-vinci.fr.lan/
+
+The separate wapt-templates section still uses https://store.wapt.fr/wapt;
+it is not the global private repository URL.
+
+Max transferred the current historical WAPT package-signing certificate/key
+to VM108 and configured prefix 0790007d. No new package-signing identity was
+created. This identity is separate from the Thouet Authenticode PKI.
+
+The 7494 console built and published waptagent.exe 1.8.3.7494 on the clone.
+The homepage then displayed agent/setup/deploy 1.8.3.7494 and DB OK (1.8.3.0),
+and its WAPTDeploy command updated the agent hash and --minversion to 7494.
+
+0790007d-waptupgrade 1.8.3.7494-17 was assigned to VM108 and installation was
+forced through WAPT. The console closed during installation. On September 30,
+wapt-get list confirmed the upgrade package OK (installed September 29 18:52)
+and host package 720D8BC9-F6D1-42C7-B881-6B2A815B75EB version 1 OK (18:53).
+Both local executable versions remained 1.8.3.7494.
+
+Limit: WAPTSetup had already put VM108's executables in 7494 before this
+waptupgrade execution. This validates generated-package installation, not a
+fresh 7393-to-7494 binary transition specifically through waptupgrade.
+Earlier authentic historical-client migration proofs remain authoritative.
+
+The 7494 generated agent's final Authenticode signature and its standalone
+SHA256 were not separately captured in this session. The console preferences
+showed HTTPS server-certificate verification unchecked; enabling and checking
+it remains a distinct pending task. Do not claim these checks passed solely
+from successful compilation or from the signed WAPTSetup result.
+The earlier frozen 7478 signing/timestamp/bootstrap proofs are not reopened.
+
+#### Scenario 2: scripted paired package migration - PASS
+
+On September 30, scrab-clone was restored to the correct pre-manual-upgrade
+snapshot with both source packages in 7393 and release files present.
+VM108 was retained in 7494 and its WAPTService stopped during the server test.
+
+The commit-7494 migration script, version 1.1-rc1, passed bash -n and:
+
+    precheck
+    check-package release.manifest server.deb setup.deb
+    backup release.manifest
+
+Database/configuration backup passed, including pg_restore listing, archive
+validation and checksums. This migration backup does not copy the repository
+and does not replace the full DR backup:
+
+    /var/www/wapt-backups/migration-7393-7494-20260930-090920
+
+A further snapshot was taken before the upgrade.
+The upgrade command finished with POST-UPGRADE RESULT: PASS and
+UPGRADE RESULT: PASS (7393 -> 7494).
+The checks confirmed both installed package versions, public Root/setup/deploy
+hashes, configuration preservation, active services, schema migration
+"1.8.2.1" -> "1.8.3.0", and all six unchanged baseline counts.
+
+After restarting WAPTService on VM108, the console accessed the historical
+inventory and VM108 was reachable, last seen September 30 09:19.
+The two packages installed on VM108 the previous evening appeared again with
+their original install dates. VM108 retained its local installed-package state
+and reported it back to the rolled-back/migrated server; this does not restore
+lost server repository artifacts or server-side package assignments.
+
+The migration is validated for this authentic Debian 10/7393 source and the
+paired 7494 artifacts. Neither Debian 11 nor other source versions are claimed
+validated by this test. Both manual and scripted server upgrade scenarios PASS.
+
+## 48. Resume protocol for the next ChatGPT thread
+
+Gipity, resume from section 47.19. WAPT_CHECKPOINT.md is the technical reference.
+Proceed one validated step at a time; do not repeat closed investigations
+unless concrete contradictory evidence appears.
+
+Branch: release/1.8.3.
+Validated artifact source: 85a5bee5550f5ab4763ee3e7c0dbcc128b08ca81 (7494).
+Historical frozen tag: v1.8.3.7493 at 98e16ad6000bd025a1f40a5c45b8ff60186240ee.
+Migration script promoted to 1.1 with only its version declaration changed
+since the 1.1-rc1 code tested on September 30.
+This checkpoint accompanies a later promotion/documentation commit; inspect
+Git for the current HEAD/count rather than relabelling the built 7494 artifacts.
+
+Both Debian 10 server upgrade modes, manual and scripted, are validated from
+authentic 1.8.2.7393 to the paired 1.8.3.7494 packages. Config, data counts,
+published hashes, services, console access and VM108 reconnection passed.
+VM108's generated waptupgrade package installation passed with the limit
+documented in section 47.19. Production SCRAB was not modified.
+
+Current test topology: VM106 Windows build/sign; Wapster Debian 10 build;
+VM107/VM104 Windows tests; VM108 console/client test at 10.99.99.3;
+scrab-clone isolated on vmbr999 at 10.99.99.2; wapt-deb10 separate server test.
+The clone is currently migrated to 7494; VM108 is 7494 and connected.
+After the server rollback, the previous agent publication/repository changes
+must not be assumed present merely because VM108 reports installed packages.
+
+Retain the tis- Debian package names. Keep the historical WAPT package-signing
+identity/prefix for this migration; its future replacement remains deferred.
+Authenticode, WAPT package signing and HTTPS trust remain separate mechanisms.
+The frozen Windows 7478 PKI/signing/bootstrap, homepage, controlled runtime,
+PKI renewal and DR Root-preservation investigations remain closed.
+
+Immediate next work:
+
+- commit/review the script promotion and checkpoint update;
+- capture the generated 7494 agent's actual final Authenticode/signature and
+  SHA256 evidence without repeating the earlier signing implementation work;
+- resolve and validate HTTPS certificate verification for the intended client
+  configuration; keep its status separate from migration success;
+- prepare a reviewable Buster pilot release: exact artifact provenance,
+  release.manifest, checksums, manual/script instructions, Root bootstrap,
+  backup/rollback requirements and site-specific agent regeneration;
+- choose the final release/tag policy before publishing to colleagues.
+
+The public release is not yet published. Do not rebuild validated binaries
+merely for documentation/script-version commits, do not move historical tags,
+and do not begin Debian 11 modernization before Buster release consolidation.
