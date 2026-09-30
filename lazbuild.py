@@ -155,9 +155,13 @@ def set_lpi_options(lpi_fn,waptedition,waptversion,buildnr=None):
     else:
         build = et_build.attrib['Value'] = buildnr
     st = lpi.find('ProjectOptions/VersionInfo/StringTable')
-    st.attrib['ProductName'] = 'WAPT %s Edition' % waptedition.capitalize()
+    if waptedition.lower() == 'community':
+        st.attrib['ProductName'] = 'PADIT Community Edition'
+        st.attrib['LegalCopyright'] = 'PADIT contributors; based on WAPT Community by Tranquil IT'
+    else:
+        st.attrib['ProductName'] = 'WAPT %s Edition' % waptedition.capitalize()
+        st.attrib['LegalCopyright'] = 'Tranquil IT Systems 2012-%s' % (datetime.now().year)
     st.attrib['ProductVersion'] = '%s.%s.%s' % (major, minor, revision)
-    st.attrib['LegalCopyright'] = 'Tranquil IT Systems 2012-%s' % (datetime.now().year)
     compiler_custom_options = lpi.find('CompilerOptions/Other/CustomOptions')
     if compiler_custom_options is not None:
         compiler_custom_options.attrib['Value'] = "-dUseCThreads -d%s" % waptedition.upper()
