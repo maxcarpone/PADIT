@@ -1,7 +1,10 @@
-WAPT Community is licensed under GPLv3. It ships with free and open source
-software packages with their respective FOSS licenses, and MS VC++
-redistributable from Microsoft(r) . For more information, please go to
-http://dev.tranquil.it/wiki/WAPT_-_Licences
+WAPT Community is licensed under the GNU General Public License,
+version 3 or (at your option) any later version.
+
+WAPT also includes third-party free and open-source components under their
+respective licenses, as well as Microsoft components used by the Windows
+client and Authenticode tooling. Third-party components remain subject to
+their respective license terms.
 
                      GNU GENERAL PUBLIC LICENSE
 

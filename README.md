@@ -1,17 +1,35 @@
-**Warning : WAPT 1.8.2 Community is not maintained anymore by Tranquil IT since April the 30th 2022. 
-This repo is kept here as an archive for historical reasons. The code is covered by the GPLv3 license,
-so if you want to take over the project and care for the maintenance, feel free to fork the repo and 
-work from there.**
+# WAPT Community
 
+WAPT is a software deployment and lifecycle management solution for Windows environments.
 
-WAPT
-====
+This repository is a community-maintained fork of WAPT Community 1.8.2, originally developed by Tranquil IT. The original WAPT Community 1.8.2 project was discontinued by Tranquil IT on April 30, 2022.
 
-WAPT is a software deployment tool whose core set of features is licensed under the GPLv3.
+The purpose of this fork is to preserve the Community Edition, maintain its existing deployments and upgrade paths, and progressively modernize the project for current operating systems and environments.
 
-* Official Site : https://wapt.fr/
-* Documentation : https://wapt.fr/en/doc/
-* Official git repo : https://github.com/tranquilit/WAPT
+The project is undergoing incremental modernization. Compatibility and migration are prioritized so that existing WAPT Community installations can be upgraded without requiring a complete replacement of their infrastructure.
+
+## Project status
+
+The project is actively maintained. Modernization is performed incrementally, with each platform migration and compatibility change validated before moving to the next stage.
+
+Stable historical milestones and pilot releases are published through the GitHub Releases section of this repository.
+
+## Licensing
+
+WAPT Community is licensed under the GNU General Public License, version 3 or (at your option) any later version.
+
+See `COPYING.txt` for the complete license text and information about third-party components.
+
+## Project history
+
+This project is derived from the original WAPT Community project developed by Tranquil IT.
+
+Historical upstream resources:
+
+- Original project: https://github.com/tranquilit/WAPT
+- WAPT website: https://www.wapt.fr/
+- Historical documentation: https://www.wapt.fr/en/doc/
+
 
 Main features
 =============
@@ -30,20 +48,14 @@ For IT Security Officers
 ------------------------
 
 * pilot the software installed base to converge to a security standard acceptable to the Organization;
-* prepare your enterprise for the coming GDPR and help your DPO keep his register of data processing, because you two will become close colleages;
 * to no more tolerate machines operating in “Administrator” mode;
 * reduce the level of exposure to software vulnerabilities and lateral movement attacks;
 * bring up audit indicators for a better knowledge of the state of installed IT devices and their global security;
-* be prompt to deploy updates to react to cyber attacks like Wannacry or notPetya
+* be prompt to deploy updates to react to cyber attacks
 
 For End-Users
 -------------
 
 * have your software configured to work well in the context of your Organization and trust that they will work correctly;
-* reduce your need for support by your IT teams, whose reaction times are often long becuase of their workloads;
+* reduce your need for support by your IT teams, whose reaction times are often long because of their workloads;
 * to build a better contact with your IT support teams because IT works better as malfunctions happen less often because of standard, better managed and more predictable software configurations;
-
-How to contribute?
-==================
-
-You may want to have a look at our contribution guide: https://www.wapt.fr/en/doc/wapt-contribute/index.html
