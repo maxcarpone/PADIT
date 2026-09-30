@@ -27,7 +27,13 @@ It is not included in the server DR backup.
 
 ## 2. Validated DR tooling
 
-The Debian 10 DR procedure is frozen around the following validated tools:
+The release distributes Backup V1.0 and Restore V1.0.2. Verify the distributed
+files with the release SHA256SUMS. The references below retain the original
+validated milestones; the Restore V1.0 checksum applies only to that
+historical version, not to the distributed Restore V1.0.2.
+
+Restore V1.0.2 also preserves the target public Authenticode Root CA during
+repository restoration, as described in sections 5.3 and 9.4.
 
 ### Backup V1.0
 
@@ -40,7 +46,7 @@ The Debian 10 DR procedure is frozen around the following validated tools:
 A normal full backup includes the PostgreSQL database, WAPT configuration,
 certificates, repository and validation metadata.
 
-### Restore V1.0
+### Historical Restore V1.0 milestone
 
 - script: `tools/waptserver-restore.sh`
 - version: `1.0`
@@ -54,15 +60,17 @@ functional change to the restore logic.
 
 ## 3. Source server backup
 
-Run the backup tool as `root` on the source WAPT server.
+Run the backup tool with `sudo` on the source WAPT server. The example
+directory below contains the downloaded release files; adjust it to your
+installation.
 
 ### 3.1 Precheck
 
 A standalone non-destructive precheck can be run first:
 
 ```bash
-cd /git/waptdev
-tools/waptserver-backup.sh precheck
+cd /var/www/wapt-release-7494
+sudo bash ./waptserver-backup.sh precheck
 ```
 
 Do not continue if the result is not:
@@ -79,8 +87,8 @@ automatically and abort on a blocking failure.
 The normal and preferred DR backup is:
 
 ```bash
-cd /git/waptdev
-tools/waptserver-backup.sh backup
+cd /var/www/wapt-release-7494
+sudo bash ./waptserver-backup.sh backup
 ```
 
 The backup root is:
@@ -98,6 +106,18 @@ required free space = 2 * repository size + 2 GiB
 ```
 
 Temporary staging is created on the backup filesystem itself, not in `/tmp`.
+Transferred DR archives should also be kept on a filesystem with enough free
+space; the examples below use `/var/www/wapt-backups/dr-transfer`.
+Check the actual mount layout rather than assuming that all directories under
+`/var/www` share the repository filesystem. A mount at `/var/www/wapt` alone
+does not include its sibling `/var/www/wapt-backups`.
+
+Once the backup directory exists, compare the available space and filesystems:
+
+```bash
+df -h /var/www/wapt
+sudo df -h /var/www/wapt-backups
+```
 
 A successful run ends with:
 
@@ -123,8 +143,8 @@ been created and validated.
 If the repository payload must be transferred separately:
 
 ```bash
-cd /git/waptdev
-tools/waptserver-backup.sh backup-no-repository
+cd /var/www/wapt-release-7494
+sudo bash ./waptserver-backup.sh backup-no-repository
 ```
 
 This mode does not include the repository files in the archive. It still
@@ -163,11 +183,13 @@ wapt-dr-<hostname>-<timestamp>/
 The bundle is normalized to `root:root`, with directories mode `0700` and
 files mode `0600`. The final `.tar` and `.tar.sha256` are also mode `0600`.
 
-Before transferring or using a DR archive, verify its external checksum:
+Before transferring or using a DR archive, verify its external checksum.
+The command below assumes the archive and checksum file have been copied to
+a protected directory accessible through `sudo`. Substitute
+the actual filename:
 
 ```bash
-cd /var/www/wapt-backups
-sha256sum -c wapt-dr-<hostname>-<timestamp>.tar.sha256
+sudo bash -c 'cd /var/www/wapt-backups/dr-transfer && sha256sum -c wapt-dr-source-server-YYYYMMDD-HHMMSS.tar.sha256'
 ```
 
 The result must report `OK`. A checksum failure is a STOP condition: do not
@@ -213,11 +235,13 @@ cutover requirements described later in this procedure.
 
 ### 4.1 Validate the DR archive
 
-Before starting a restore, run the non-destructive archive check as `root`:
+Before starting a restore, run the non-destructive archive check with `sudo`.
+Set backup_archive to the actual archive path:
 
 ```bash
-cd /git/waptdev
-tools/waptserver-restore.sh --check /path/to/wapt-dr-<hostname>-<timestamp>.tar
+cd /var/www/wapt-release-7494
+backup_archive='/var/www/wapt-backups/dr-transfer/wapt-dr-source-server-YYYYMMDD-HHMMSS.tar'
+sudo bash ./waptserver-restore.sh --check "$backup_archive"
 ```
 
 The corresponding `.tar.sha256` file must be present beside the archive.
@@ -262,11 +286,12 @@ The restore operation is destructive. An explicit `--check` is recommended
 first as a non-destructive preflight. The `--restore` mode repeats the archive
 validations itself before validating or modifying the target.
 
-Start the restore with:
+Using the same backup_archive variable (set it again if you opened another
+shell), start the restore with:
 
 ```bash
-cd /git/waptdev
-tools/waptserver-restore.sh --restore /path/to/wapt-dr-<hostname>-<timestamp>.tar
+cd /var/www/wapt-release-7494
+sudo bash ./waptserver-restore.sh --restore "$backup_archive"
 ```
 
 The restore tool first validates the target and creates the lightweight target
@@ -449,7 +474,7 @@ the isolated DR validation. The restore tool does not modify DNS.
 The target nginx configuration is validated with:
 
 ```bash
-nginx -t
+sudo nginx -t
 ```
 
 PostgreSQL and nginx must be active before the WAPT application services are
@@ -517,9 +542,9 @@ Before production cutover, explicitly validate all of the following:
 The restore tool does not change production DNS and must not be used as an
 implicit authorization to reconnect clients.
 
-For the validated historical environment, the restored TLS certificate for
-the WAPT service FQDN expires on 2027-12-03. Its renewal or replacement must
-be planned before that date while preserving the WAPT service FQDN semantics.
+Check the restored site's actual TLS certificate expiry date and plan its
+renewal or replacement before expiry while preserving the WAPT service FQDN
+semantics.
 
 ## 8. Client reconnection and upgrade
 
@@ -569,8 +594,8 @@ matching pair before the restored service is accepted.
 The TLS certificate identifies the historical WAPT service FQDN used by
 clients. Its lifecycle is independent from WAPT package signing.
 
-For the validated historical environment, the restored TLS certificate
-expires on 2027-12-03 and must be renewed or replaced before that date.
+Check the actual restored TLS certificate expiry date and renew or replace
+it before expiry.
 
 ### 9.2 WAPT client CA identity
 
@@ -654,7 +679,7 @@ The following operational constraints apply:
 - Restore V1.0 derives the historical WAPT service FQDN from the restored TLS
   certificate CN. A future backup/restore format should record the service
   FQDN explicitly instead of relying on this derivation.
-- The validated historical TLS certificate expires on 2027-12-03.
+- Review the actual restored TLS certificate expiry date and renewal plan.
 - The successful restore exit status `3` is intentional and represents a
   completed technical restore that remains behind the pre-production cutover
   barrier.
