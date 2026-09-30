@@ -156,6 +156,7 @@ def set_lpi_options(lpi_fn,waptedition,waptversion,buildnr=None):
         build = et_build.attrib['Value'] = buildnr
     st = lpi.find('ProjectOptions/VersionInfo/StringTable')
     if waptedition.lower() == 'community':
+        st.attrib['CompanyName'] = 'PADIT Project'
         st.attrib['ProductName'] = 'PADIT Community Edition'
         st.attrib['LegalCopyright'] = 'PADIT contributors; based on WAPT Community by Tranquil IT'
     else:
