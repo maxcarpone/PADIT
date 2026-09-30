@@ -1,6 +1,6 @@
 # WAPT Community 1.8.3.7494 — Debian 10 Buster
 
-Draft guide for the first Debian 10 pilot release. The release has not yet been published; the new release tag and its target remain to be selected.
+Upgrade guide for the Debian 10 Buster pilot release, identified by tag `v1.8.3.7494`.
 
 ## GitHub release notes
 
@@ -30,11 +30,14 @@ Debian 11, other starting versions and installation on a new server are outside 
 
 | Component | Reference |
 | --- | --- |
+| Release tag | `v1.8.3.7494` |
 | Source of both Debian packages and Windows product 7494 | `85a5bee5550f5ab4763ee3e7c0dbcc128b08ca81` |
 | Migration script 1.1 promotion and validation checkpoint | `e2b65b26c2af18f71bb4ebf1f8af2fa52058f608` |
 | Retained historical tag | `v1.8.3.7493`, commit `98e16ad6000bd025a1f40a5c45b8ff60186240ee` |
 
 The migration script was tested as `1.1-rc1`. Promotion to `1.1` changes only its version declaration. Documentation and promotion commits do not change the version or provenance of the 7494 binaries.
+
+The release tag points to the binary source commit. The attached migration script 1.1 and documentation include subsequent promotion and documentation changes. GitHub-generated source archives represent the tagged commit; use the attached release files for the procedures in this guide.
 
 ### Release files
 
@@ -46,7 +49,7 @@ The migration script was tested as `1.1-rc1`. Promotion to `1.1` changes only it
 - `waptserver-restore.sh`, version 1.0.2
 - `WAPT_DR_DEBIAN10.md`, the associated disaster recovery documentation
 - `Thouet-Software-Signing-Root-CA.cer`, the public certificate also included in the setup package
-- this guide, in its final version
+- `WAPT_BUSTER_RELEASE.md`, this upgrade guide
 - `SHA256SUMS`, generated from the final assembled release files
 
 The restore script is documented in `WAPT_DR_DEBIAN10.md`; it is not used by the upgrade commands below. Public release files must not contain private keys, private `.pem`, `.p12` or `.pfx` files, passwords, site backups or a site-specific agent.
@@ -188,8 +191,8 @@ The historical automatic agent-generation path looks for SignTool at `utils/sign
 
 The upgrade test retained the historical package-signing identity and produced an unsigned 7494 agent. This is documented behavior of that generation path, not a migration regression. The public release does not include an agent customized for the test site's identity or configuration.
 
-## Finalization before publication
+## Pilot deployment
 
-This draft must accompany the actual release files. Before publication, assemble the release directory, verify the disaster recovery script/document versions, generate `SHA256SUMS`, choose the release tag and retain a copy outside the build VMs.
+Keep the release files and `SHA256SUMS` together, and retain a copy outside the build VMs. Validate the upgrade on an isolated clone before deploying it to a production server. Record the starting package versions, backup location and post-upgrade results.
 
 The GitHub release notes section provides the release description; the complete guide provides commands and validation limits. This first publication targets Debian 10 Buster pilot upgrades. Debian 11 modernization and a new-VM installation/restore workflow will be addressed separately.
