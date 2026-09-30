@@ -114,7 +114,7 @@ end;
 
 procedure TVisLogin.Image1Click(Sender: TObject);
 begin
-  OpenDocument('https://www.tranquil.it');
+  OpenDocument('https://github.com/maxcarpone/WAPT');
 end;
 
 

@@ -25,7 +25,7 @@ text-align: right;
 }
 
 #logo {
-    transform: translateY(15%);
+    transform: none;
 }
 
 #btn-contact {
@@ -474,7 +474,7 @@ ul.item ul li a:hover {
 }
 
 .homepage {
-    min-height: calc( 100vh - 302px);
+    min-height: calc(100vh - 370px);
 }
 
 @media screen and (max-width: 991px) {

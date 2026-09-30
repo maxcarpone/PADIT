@@ -5,7 +5,7 @@ object VisLogin: TVisLogin
   Width = 469
   AutoSize = True
   BorderStyle = bsDialog
-  Caption = 'WAPT authentication'
+  Caption = 'PADIT authentication'
   ClientHeight = 151
   ClientWidth = 469
   Color = clWhite

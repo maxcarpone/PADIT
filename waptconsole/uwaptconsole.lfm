@@ -4,7 +4,7 @@ object VisWaptGUI: TVisWaptGUI
   Top = 100
   Width = 1388
   AllowDropFiles = True
-  Caption = 'WAPT console'
+  Caption = 'PADIT Console'
   ClientHeight = 854
   ClientWidth = 1388
   Constraints.MinHeight = 600

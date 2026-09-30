@@ -94,8 +94,8 @@ msgid "Anomnymous usage statistics"
 msgstr "Statistiques anonymes"
 
 #: waptserver/templates/base.html:10
-msgid "WAPT - Apt-get for Windows"
-msgstr "WAPT - Apt-get pour Windows"
+msgid "PADIT - Pack And Deploy"
+msgstr "PADIT - Pack And Deploy"
 
 #: waptserver/templates/base.html:32
 msgid "WAPT Server"
@@ -110,16 +110,16 @@ msgid "Local repository"
 msgstr "Dépôt local"
 
 #: waptserver/templates/base.html:56
-msgid "WAPT Agent (for deployment to workstations)"
-msgstr "Agent WAPT (pour le déploiement sur les postes)"
+msgid "PADIT Agent (for deployment to workstations)"
+msgstr "Agent PADIT (pour le déploiement sur les postes)"
 
 #: waptserver/templates/base.html:57
-msgid "WAPTSetup (for installing the administration console)"
-msgstr "WAPTSetup (pour installer la console d'administration)"
+msgid "PADIT Setup (for installing the administration console)"
+msgstr "PADIT Setup (pour installer la console d'administration)"
 
 #: waptserver/templates/base.html:58
-msgid "WAPTDeploy (for deployment by GPO)"
-msgstr "WAPTDeploy (pour le déploiement par GPO)"
+msgid "PADIT Deploy (for deployment by GPO)"
+msgstr "PADIT Deploy (pour le déploiement par GPO)"
 
 #: waptserver/templates/base.html:62
 msgid "Bug tracker (GitHub)"
@@ -158,50 +158,50 @@ msgid "Discover the current WAPT product from Tranquil IT Systems."
 msgstr "Découvrir le WAPT actuel de Tranquil IT Systems."
 
 #: waptserver/templates/index.html:7
-msgid "WAPT server"
-msgstr "Serveur WAPT"
+msgid "PADIT server"
+msgstr "Serveur PADIT"
 
 #: waptserver/templates/index.html:11
 msgid ""
-"The WAPT server is administered from the WAPT console installed on a "
+"The PADIT server is administered from the PADIT console installed on a "
 "Windows workstation."
 msgstr ""
-"L'administration du serveur WAPT s'effectue depuis la console WAPT "
+"L'administration du serveur PADIT s'effectue depuis la console PADIT "
 "installée sur un poste Windows."
 
 #: waptserver/templates/index.html:12
 msgid ""
-"To install the administration console, download WAPTSetup and run the "
+"To install the administration console, download PADIT Setup and run the "
 "installer on the workstation from which you want to administer the "
 "server."
 msgstr ""
-"Pour installer la console d'administration, téléchargez WAPTSetup puis "
+"Pour installer la console d'administration, téléchargez PADIT Setup puis "
 "lancez l'installation sur le poste depuis lequel vous souhaitez "
 "administrer le serveur."
 
 #: waptserver/templates/index.html:13
-msgid "Download WAPTSetup"
-msgstr "Télécharger WAPTSetup"
+msgid "Download PADIT Setup"
+msgstr "Télécharger PADIT Setup"
 
 #: waptserver/templates/index.html:19
-msgid "WAPT publisher certificate"
-msgstr "Certificat de l'éditeur WAPT"
+msgid "PADIT publisher certificate"
+msgstr "Certificat de l'éditeur PADIT"
 
 #: waptserver/templates/index.html:21
 msgid ""
-"The WAPT executables in this distribution are digitally signed by Thouet "
+"The PADIT executables in this distribution are digitally signed by Thouet "
 "Software."
 msgstr ""
-"Les exécutables WAPT de cette distribution sont signés numériquement par "
+"Les exécutables PADIT de cette distribution sont signés numériquement par "
 "Thouet Software."
 
 #: waptserver/templates/index.html:22
 msgid ""
-"During installation, WAPTSetup asks for confirmation before adding the "
+"During installation, PADIT Setup asks for confirmation before adding the "
 "Thouet Software Signing Root CA to the Local Machine Trusted Root "
 "Certification Authorities store."
 msgstr ""
-"Lors de l'installation, WAPTSetup demande confirmation avant d'ajouter "
+"Lors de l'installation, PADIT Setup demande confirmation avant d'ajouter "
 "l'autorité de certification Thouet Software Signing Root CA au magasin "
 "Autorités de certification racines de confiance de l'ordinateur Windows."
 
@@ -217,49 +217,49 @@ msgstr "SHA256 :"
 msgid ""
 "The public certificate is also available here for verification or manual "
 "deployment. Installing it means that you choose to trust Thouet Software "
-"as the publisher of this WAPT distribution."
+"as the publisher of this PADIT distribution."
 msgstr ""
 "Le certificat public est également disponible ici pour vérification ou "
 "déploiement manuel. Son installation signifie que vous choisissez de "
 "faire confiance à Thouet Software comme éditeur de cette distribution "
-"WAPT."
+"PADIT."
 
 #: waptserver/templates/index.html:39
-msgid "Installing the WAPT agent"
-msgstr "Installation de l'agent WAPT"
+msgid "Installing the PADIT agent"
+msgstr "Installation de l'agent PADIT"
 
 #: waptserver/templates/index.html:41
 msgid ""
-"To manually add a workstation to this WAPT server, download and run the "
-"WAPT agent on the Windows workstation."
+"To manually add a workstation to this PADIT server, download and run the "
+"PADIT agent on the Windows workstation."
 msgstr ""
-"Pour ajouter manuellement un poste à ce serveur WAPT, téléchargez et "
-"exécutez l'agent WAPT sur le poste Windows concerné."
+"Pour ajouter manuellement un poste à ce serveur PADIT, téléchargez et "
+"exécutez l'agent PADIT sur le poste Windows concerné."
 
 #: waptserver/templates/index.html:42
 msgid ""
 "The agent published by this server is already configured with the "
 "settings required to connect to it. Once installation is complete and the"
-" workstation is registered, it will appear in the WAPT console."
+" workstation is registered, it will appear in the PADIT console."
 msgstr ""
 "L'agent publié par ce serveur est déjà configuré avec les paramètres "
 "nécessaires pour s'y connecter. Une fois l'installation terminée et le "
-"poste enregistré, celui-ci apparaîtra dans la console WAPT."
+"poste enregistré, celui-ci apparaîtra dans la console PADIT."
 
 #: waptserver/templates/index.html:43
-msgid "Download the WAPT agent"
-msgstr "Télécharger l'agent WAPT"
+msgid "Download the PADIT agent"
+msgstr "Télécharger l'agent PADIT"
 
 #: waptserver/templates/index.html:47
-msgid "Deploying the agent by GPO"
-msgstr "Déploiement de l'agent par GPO"
+msgid "Deploying the PADIT agent by GPO"
+msgstr "Déploiement de l'agent PADIT par GPO"
 
 #: waptserver/templates/index.html:49
 msgid ""
-"WAPTDeploy can automatically deploy the WAPT agent to Windows "
+"PADIT Deploy can automatically deploy the PADIT agent to Windows "
 "workstations using a Group Policy Object (GPO)."
 msgstr ""
-"WAPTDeploy permet de déployer automatiquement l'agent WAPT sur les postes"
+"PADIT Deploy permet de déployer automatiquement l'agent PADIT sur les postes"
 " Windows à l'aide d'une stratégie de groupe (GPO)."
 
 #: waptserver/templates/index.html:50
@@ -275,8 +275,8 @@ msgid "Deployment tool:"
 msgstr "Outil de déploiement :"
 
 #: waptserver/templates/index.html:55
-msgid "Download WAPTDeploy"
-msgstr "Télécharger WAPTDeploy"
+msgid "Download PADIT Deploy"
+msgstr "Télécharger PADIT Deploy"
 
 #: waptserver/templates/index.html:62
 msgid "WAPT Server version:"

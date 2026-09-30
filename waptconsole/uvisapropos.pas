@@ -49,9 +49,9 @@ begin
   Image1.Picture.LoadFromResourceName(HINSTANCE,'WAPT_PNG',TPortableNetworkGraphic);
 
   {$IFDEF WINDOWS}
-  LabInfos.Caption := ApplicationName+' '+GetApplicationVersion+' (c) 2012-2020 Tranquil IT Systems.';
+  LabInfos.Caption := ApplicationName+' '+GetApplicationVersion+' - derived from WAPT Community, originally developed by Tranquil IT.';
   {$ELSE}
-  LabInfos.Caption := ApplicationName+' (c) 2012-2020 Tranquil IT Systems.'; // TODO change
+  LabInfos.Caption := ApplicationName+' - derived from WAPT Community, originally developed by Tranquil IT.'; // TODO change
   {$ENDIF}
 
   if FileExistsUTF8(ExtractFilePath(ParamStr(0))+'revision.txt') then
@@ -69,7 +69,7 @@ end;
 
 procedure TVisApropos.Image1Click(Sender: TObject);
 begin
-  OpenDocument('http://www.tranquil.it');
+  OpenDocument('https://github.com/maxcarpone/WAPT');
 end;
 
 end.

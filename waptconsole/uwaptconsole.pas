@@ -4903,6 +4903,7 @@ end;
 
 procedure TVisWaptGUI.FormCreate(Sender: TObject);
 begin
+  Image1.Picture.LoadFromResourceName(HINSTANCE,'WAPT_PNG',TPortableNetworkGraphic);
   WaptServerUser := IniReadString(Appuserinipath,self.name,'lastwaptserveruser','admin');
   HostsLimit := 2000;
   DMPython.PythonOutput.OnSendData := @PythonOutputSendData;
@@ -5203,7 +5204,7 @@ begin
         DeleteFileUTF8(Appuserinipath);
 
     plStatusBar1.Caption := WaptServerUser+' on '+ApplicationName+' '+
-      GetApplicationVersion+' WAPT '+WaptEdition+' Edition, (c) 2012-2020 Tranquil IT. (Conf:'+
+      GetApplicationVersion+' PADIT '+WaptEdition+' Edition, based on WAPT Community. (Conf:'+
       AppIniFilename+')';
     {$ifdef ENTERPRISE}
     plStatusBar1.Caption := plStatusBar1.Caption + ' ' + Format(rsLicencedTo,[dmPython.LicensedTo]);
@@ -6178,7 +6179,7 @@ end;
 
 procedure TVisWaptGUI.Image1Click(Sender: TObject);
 begin
-  OpenDocument('https://www.tranquil.it');
+  OpenDocument('https://github.com/maxcarpone/WAPT');
 
 end;
 

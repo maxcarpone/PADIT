@@ -4,7 +4,7 @@ object VisWAPTConfig: TVisWAPTConfig
   Top = 452
   Width = 614
   BorderStyle = bsDialog
-  Caption = 'WAPTConsole configuration'
+  Caption = 'PADIT Console configuration'
   ClientHeight = 368
   ClientWidth = 614
   Menu = MainMenu1

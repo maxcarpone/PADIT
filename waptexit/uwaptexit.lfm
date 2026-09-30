@@ -6,7 +6,7 @@ object VisWaptExit: TVisWaptExit
   Anchors = [akTop, akRight]
   AutoSize = True
   BorderIcons = [biSystemMenu, biMinimize]
-  Caption = 'WAPT Softwares Updates'
+  Caption = 'PADIT Software Updates'
   ClientHeight = 451
   ClientWidth = 500
   Constraints.MinHeight = 100

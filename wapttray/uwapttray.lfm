@@ -3,7 +3,7 @@ object VisWAPTTray: TVisWAPTTray
   Height = 449
   Top = 374
   Width = 553
-  Caption = 'WAPT Software Manager'
+  Caption = 'PADIT Software Manager'
   ClientHeight = 449
   ClientWidth = 553
   Icon.Data = {

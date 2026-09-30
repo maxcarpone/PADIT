@@ -5,7 +5,7 @@ object VisApropos: TVisApropos
   Width = 316
   AutoSize = True
   BorderStyle = bsDialog
-  Caption = 'About WAPTConsole'
+  Caption = 'About PADIT Console'
   ClientHeight = 324
   ClientWidth = 316
   OnCreate = FormCreate

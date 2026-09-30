@@ -4,22 +4,22 @@
     <div class="container homepage">
         <div class="row">
             <div class="col-md-9 col-sx-12">
-                <h2>{{ _("WAPT server") }}</h2>
+                <h2>{{ _("PADIT server") }}</h2>
 
                 {% if data.wapt.setup.url %}
                 <p>
-                    {{ _("The WAPT server is administered from the WAPT console installed on a Windows workstation.") }}
-                    {{ _("To install the administration console, download WAPTSetup and run the installer on the workstation from which you want to administer the server.") }}
-                    <a href="{{ data.wapt.setup.url }}">{{ _("Download WAPTSetup") }}</a>
+                    {{ _("The PADIT server is administered from the PADIT console installed on a Windows workstation.") }}
+                    {{ _("To install the administration console, download PADIT Setup and run the installer on the workstation from which you want to administer the server.") }}
+                    <a href="{{ data.wapt.setup.url }}">{{ _("Download PADIT Setup") }}</a>
                 </p>
                 {% endif %}
 
                 {% if data.wapt.signing_root_ca.url %}
                 <div class="alert alert-warning">
-                    <strong>{{ _("WAPT publisher certificate") }}</strong>
+                    <strong>{{ _("PADIT publisher certificate") }}</strong>
                     <p>
-                        {{ _("The WAPT executables in this distribution are digitally signed by Thouet Software.") }}
-                        {{ _("During installation, WAPTSetup asks for confirmation before adding the Thouet Software Signing Root CA to the Local Machine Trusted Root Certification Authorities store.") }}
+                        {{ _("The PADIT executables in this distribution are digitally signed by Thouet Software.") }}
+                        {{ _("During installation, PADIT Setup asks for confirmation before adding the Thouet Software Signing Root CA to the Local Machine Trusted Root Certification Authorities store.") }}
                     </p>
                     <p>
                         <a href="{{ data.wapt.signing_root_ca.url }}">
@@ -31,38 +31,38 @@
                         <code>{{ data.wapt.signing_root_ca.sha256 }}</code>
                     </p>
                     <p>
-                        {{ _("The public certificate is also available here for verification or manual deployment. Installing it means that you choose to trust Thouet Software as the publisher of this WAPT distribution.") }}
+                        {{ _("The public certificate is also available here for verification or manual deployment. Installing it means that you choose to trust Thouet Software as the publisher of this PADIT distribution.") }}
                     </p>
                 </div>
                 {% endif %}
 
-                <h3>{{ _("Installing the WAPT agent") }}</h3>
+                <h3>{{ _("Installing the PADIT agent") }}</h3>
                 <p>
-                    {{ _("To manually add a workstation to this WAPT server, download and run the WAPT agent on the Windows workstation.") }}
-                    {{ _("The agent published by this server is already configured with the settings required to connect to it. Once installation is complete and the workstation is registered, it will appear in the WAPT console.") }}
-                    <a href="/wapt/waptagent.exe">{{ _("Download the WAPT agent") }}</a>
+                    {{ _("To manually add a workstation to this PADIT server, download and run the PADIT agent on the Windows workstation.") }}
+                    {{ _("The agent published by this server is already configured with the settings required to connect to it. Once installation is complete and the workstation is registered, it will appear in the PADIT console.") }}
+                    <a href="/wapt/waptagent.exe">{{ _("Download the PADIT agent") }}</a>
                 </p>
 
                 {% if data.wapt.deploy.url %}
-                <h3>{{ _("Deploying the agent by GPO") }}</h3>
+                <h3>{{ _("Deploying the PADIT agent by GPO") }}</h3>
                 <p>
-                    {{ _("WAPTDeploy can automatically deploy the WAPT agent to Windows workstations using a Group Policy Object (GPO).") }}
+                    {{ _("PADIT Deploy can automatically deploy the PADIT agent to Windows workstations using a Group Policy Object (GPO).") }}
                     {{ _("The command below uses the version and SHA256 fingerprint of the agent currently published by this server:") }}
                 </p>
                 {% if data.wapt.agent.sha256 %}
                 <pre>waptdeploy.exe --hash={{ data.wapt.agent.sha256|safe }} --minversion={{ data.wapt.agent.status }} --wait=15</pre>
                 {% endif %}
-                <p>{{ _("Deployment tool:") }} <a href="{{ data.wapt.deploy.url }}">{{ _("Download WAPTDeploy") }}</a></p>
+                <p>{{ _("Deployment tool:") }} <a href="{{ data.wapt.deploy.url }}">{{ _("Download PADIT Deploy") }}</a></p>
                 {% endif %}
             </div>
 
             <div class="col-md-3 col-sx-12">
                 <div id="home" class="widget-area span-3 last" role="complementary">
                     <ul>
-                        <li><strong>{{ _("WAPT Server version:") }} {{ data.wapt.server.status }}</strong></li>
-                        <li><strong>{{ _("WAPT Agent version:") }} {{ data.wapt.agent.status }}</strong></li>
-                        <li><strong>{{ _("WAPT Setup version:") }} {{ data.wapt.setup.status }}</strong></li>
-                        <li><strong>{{ _("WAPT Deploy version:") }} {{ data.wapt.deploy.status }}</strong></li>
+                        <li><strong>PADIT Server: {{ data.wapt.server.status }}</strong></li>
+                        <li><strong>PADIT Agent: {{ data.wapt.agent.status }}</strong></li>
+                        <li><strong>PADIT Setup: {{ data.wapt.setup.status }}</strong></li>
+                        <li><strong>PADIT Deploy: {{ data.wapt.deploy.status }}</strong></li>
                         <li><strong>{{ _("DB status:") }} {{ data.wapt.db.status }}</strong></li>
                         <li><strong {{ data.wapt.disk_space.style|safe }}>{{ _("Disk space:") }} {{ data.wapt.disk_space.status }}</strong></li>
                         <br/>
@@ -70,7 +70,7 @@
                         {% if data.wapt.setup.url %}
                         <a href="{{ data.wapt.setup.url }}" {{ data.wapt.setup.style|safe }}>
                             <img src="{{ url_for('static', filename='img/waptsetup.png') }}" height="25px" style="float: left">
-                            <p>&nbsp;WAPTSetup</p>
+                            <p>&nbsp;PADIT Setup</p>
                             <p class="text-muted">{{ _("Administration console") }}</p>
                         </a>
                         {% endif %}
@@ -78,14 +78,14 @@
                         {% if data.wapt.deploy.url %}
                         <a href="{{ data.wapt.deploy.url }}" {{ data.wapt.deploy.style|safe }}>
                             <img src="{{ url_for('static', filename='img/waptdeploy.png') }}" height="25px" class="ico-nav">
-                            <p>&nbsp;WAPTDeploy</p>
+                            <p>&nbsp;PADIT Deploy</p>
                             <p class="text-muted">{{ _("Deployment by GPO") }}</p>
                         </a>
                         {% endif %}
 
                         <a href="/wapt/waptagent.exe" {{ data.wapt.agent.style|safe }}>
                             <img src="{{ url_for('static', filename='img/waptagent.png') }}" height="25px" class="ico-nav">
-                            <p>&nbsp;WAPT Agent</p>
+                            <p>&nbsp;PADIT Agent</p>
                             <p class="text-muted">{{ _("Installation on workstations") }}</p>
                         </a>
                     </ul>

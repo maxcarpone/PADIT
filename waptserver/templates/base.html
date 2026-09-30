@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="">
     <meta name="author" content="">
-    <title>{{ _("WAPT - Apt-get for Windows") }}</title>
+    <title>{{ _("PADIT - Pack And Deploy") }}</title>
     <!-- Bootstrap Core CSS -->
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}", rel="stylesheet" type='text/css'>
     <link href="{{ url_for('static', filename='css/style.css') }}", rel="stylesheet" type='text/css'>
@@ -24,13 +24,11 @@
 <body>
     <div class="banner">
         <div class="container">
-            <div class="row">
-                <div class="col-md-2 col-sx-12" id="logo">
-                    <img src="{{ url_for('static', filename='img/tis_new.png') }}" alt="Tranquil IT Systems">
+            <div class="row" style="position:relative;">
+                <div class="col-md-12 col-sx-12 text-center" id="logo">
+                    <img src="{{ url_for('static', filename='img/padit-header.png') }}" alt="PADIT" style="width:600px;height:200px;">
                 </div>
-                <div class="col-md-8 col-sx-12">
-                    <h1>{{ _("WAPT Server") }}</h1> </div>
-                <div class="col-md-2 col-sx-12 text-right" id="language-selector">
+                <div id="language-selector" style="position:absolute;right:15px;top:10px;">
                     <a href="/lang/fr">FR</a> | <a href="/lang/en">EN</a>
                 </div>
             </div>
@@ -41,7 +39,7 @@
         <div class="container">
             <!-- Brand and toggle get grouped for better mobile display -->
             <div class="navbar-header">
-                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#menu"> <span class="sr-only">Toggle navigation</span> <span class="icon-bar"></span> <span class="icon-bar"></span> <span class="icon-bar"></span> </button> <img class="navbar-brand" src="{{ url_for('static', filename='img/Logo-wapt.png') }}" /> </div>
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#menu"> <span class="sr-only">Toggle navigation</span> <span class="icon-bar"></span> <span class="icon-bar"></span> <span class="icon-bar"></span> </button> <img class="navbar-brand" src="{{ url_for('static', filename='img/padit-navbar.png') }}" style="width:48px;height:48px;padding:0;margin-top:1px;" alt="PADIT" /> </div>
             <!-- Collect the nav links, forms, and other content for toggling -->
             <div class="collapse navbar-collapse" id="menu">
                 <ul class="nav navbar-nav">
@@ -51,11 +49,11 @@
                         </ul>
                     </li>
                     {% if data %}
-                    <li> <a class="dropdown-toggle" data-toggle="dropdown" href="#">WAPTServer<span class="caret"></span></a>
+                    <li> <a class="dropdown-toggle" data-toggle="dropdown" href="#">PADIT Server<span class="caret"></span></a>
                         <ul class="dropdown-menu">
-                            <li><a href="/wapt/waptagent.exe">{{ _("WAPT Agent (for deployment to workstations)") }}</a></li>
-                            {% if data.wapt.setup.url %}<li><a href="{{data.wapt.setup.url}}">{{ _("WAPTSetup (for installing the administration console)") }}</a></li>{% endif %}
-                            {% if data.wapt.deploy.url %}<li><a href="{{data.wapt.deploy.url}}">{{ _("WAPTDeploy (for deployment by GPO)") }}</a></li>{% endif %}
+                            <li><a href="/wapt/waptagent.exe">{{ _("PADIT Agent (for deployment to workstations)") }}</a></li>
+                            {% if data.wapt.setup.url %}<li><a href="{{data.wapt.setup.url}}">{{ _("PADIT Setup (for installing the administration console)") }}</a></li>{% endif %}
+                            {% if data.wapt.deploy.url %}<li><a href="{{data.wapt.deploy.url}}">{{ _("PADIT Deploy (for deployment by GPO)") }}</a></li>{% endif %}
                         </ul>
                     </li>
                     {% endif %}
@@ -79,7 +77,7 @@
     <footer>
         <div class="contact">
             <div class="container">
-                <h4>WAPT Community — GPLv3</h4>
+                <h4>PADIT Community — GPLv3</h4>
                 <p>
                     {{ _("WAPT Community 1.8.2 is free software historically developed by") }}
                     <a target="_blank" href="https://www.tranquil.it/">Tranquil IT Systems</a>.

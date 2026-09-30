@@ -14,8 +14,8 @@
       <XPManifest>
         <DpiAware Value="True"/>
         <UIAccess Value="True"/>
-        <TextName Value="Tranquil IT Systems"/>
-        <TextDesc Value="Lancement des tâches Wapt en attente"/>
+        <TextName Value="PADIT Project"/>
+        <TextDesc Value="PADIT Package Update Launcher"/>
       </XPManifest>
       <Icon Value="0"/>
     </General>
@@ -31,7 +31,7 @@
       <RevisionNr Value="4"/>
       <BuildNr Value="6144"/>
       <Language Value="040C"/>
-      <StringTable CompanyName="Tranquil IT Systems" FileDescription="check and launch packages upgrades at Windows Shutdown" InternalName="waptexit" LegalCopyright="Tranquil IT Systems 2012-2020" OriginalFilename="waptexit.exe" ProductName="WAPT Enterprise Edition" ProductVersion="1.8.2"/>
+      <StringTable CompanyName="PADIT Project" FileDescription="PADIT Package Update Launcher" InternalName="waptexit" LegalCopyright="PADIT contributors; based on WAPT Community by Tranquil IT" OriginalFilename="waptexit.exe" ProductName="PADIT Community Edition" ProductVersion="1.8.2"/>
     </VersionInfo>
     <BuildModes Count="1">
       <Item1 Name="Default" Default="True"/>

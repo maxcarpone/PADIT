@@ -13,8 +13,8 @@
       <UseXPManifest Value="True"/>
       <XPManifest>
         <DpiAware Value="True"/>
-        <TextName Value="Tranquil IT Systems"/>
-        <TextDesc Value="Tray application for Wapt notifications"/>
+        <TextName Value="PADIT Project"/>
+        <TextDesc Value="PADIT Tray Application"/>
       </XPManifest>
       <Icon Value="0"/>
     </General>
@@ -29,7 +29,7 @@
       <MinorVersionNr Value="7"/>
       <RevisionNr Value="4"/>
       <BuildNr Value="6143"/>
-      <StringTable CompanyName="Tranquil IT Systems" FileDescription="WAPT Tray Icon" LegalCopyright="Tranquil IT Systems 2012-2019" ProductName="WAPT Enterprise Edition" ProductVersion="1.7.4"/>
+      <StringTable CompanyName="PADIT Project" FileDescription="PADIT Tray Application" LegalCopyright="PADIT contributors; based on WAPT Community by Tranquil IT" ProductName="PADIT Community Edition" ProductVersion="1.7.4"/>
     </VersionInfo>
     <BuildModes Count="1">
       <Item1 Name="Default" Default="True"/>

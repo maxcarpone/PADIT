@@ -165,7 +165,7 @@ object DMWaptTray: TDMWaptTray
       OnExecute = ActConfigureExecute
     end
     object ActLaunchWaptConsole: TAction
-      Caption = 'Run WAPT Console'
+      Caption = 'Run PADIT Console'
       OnExecute = ActLaunchWaptConsoleExecute
     end
     object ActWaptUpgrade: TAction
