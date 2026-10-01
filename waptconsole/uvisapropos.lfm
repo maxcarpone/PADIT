@@ -1,12 +1,12 @@
 object VisApropos: TVisApropos
   Left = 427
-  Height = 324
+  Height = 280
   Top = 239
   Width = 316
   AutoSize = False
   BorderStyle = bsDialog
   Caption = 'About PADIT Console'
-  ClientHeight = 324
+  ClientHeight = 280
   ClientWidth = 316
   OnCreate = FormCreate
   LCLVersion = '1.8.4.0'
@@ -607,21 +607,23 @@ object VisApropos: TVisApropos
     TabOrder = 1
     object LabInfos: TLabel
       Left = 10
-      Height = 13
+      Height = 43
       Top = 10
       Width = 296
       Align = alTop
       BorderSpacing.Around = 10
+      AutoSize = False
       Caption = 'LabInfos'
       ParentColor = False
+      WordWrap = True
     end
     object LicenceLog: TMemo
       Left = 0
-      Height = 115
+      Height = 45
       Top = 56
       Width = 316
       Align = alClient
-      Constraints.MinHeight = 115
+      Constraints.MinHeight = 45
       ScrollBars = ssAutoBoth
       TabOrder = 0
       WordWrap = False

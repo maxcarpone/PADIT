@@ -796,6 +796,10 @@ begin
     PicLogo.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-400PX');
   end;
   {$endif}
+  {$ifndef ENTERPRISE}
+  ImageLogo.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-200PX');
+  PicLogo.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-400PX');
+  {$endif}
 
   ImageLogoTaskBar.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-200PX');
   ImageLogoDetails.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-200PX');

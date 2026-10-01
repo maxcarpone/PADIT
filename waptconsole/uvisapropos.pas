@@ -49,7 +49,9 @@ begin
   Image1.Picture.LoadFromResourceName(HINSTANCE,'WAPT_PNG',TPortableNetworkGraphic);
 
   {$IFDEF WINDOWS}
-  LabInfos.Caption := ApplicationName+' '+GetApplicationVersion+' - derived from WAPT Community, originally developed by Tranquil IT.';
+  LabInfos.Caption := ApplicationName+' '+GetApplicationVersion+' -'+LineEnding+
+    'derived from WAPT Community'+LineEnding+
+    'originally developed by Tranquil IT.';
   {$ELSE}
   LabInfos.Caption := ApplicationName+' - derived from WAPT Community, originally developed by Tranquil IT.'; // TODO change
   {$ENDIF}
@@ -60,6 +62,10 @@ begin
   LicenceLog.Clear;
   LicenceLog.Append('Configuration: '+AppIniFilename);
   SLicenceLog:='';
+  {$ifndef ENTERPRISE}
+  LabLicencedTo.Visible := False;
+  {$endif}
+
   {$ifdef ENTERPRISE}
   TotalCount:=DMPython.CheckLicence('',SLicenceLog);
   LicenceLog.Lines.AddText(SLicenceLog);

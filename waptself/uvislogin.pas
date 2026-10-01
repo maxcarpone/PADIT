@@ -85,6 +85,9 @@ begin
   else
     LogoLogin.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-200PX');
   {$endif}
+  {$ifndef ENTERPRISE}
+  LogoLogin.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-200PX');
+  {$endif}
   if Screen.PixelsPerInch <> 96 then
   begin
      LogoLogin.AutoSize:=false;
