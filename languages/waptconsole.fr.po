@@ -1590,7 +1590,7 @@ msgstr "Configurer la console WAPT"
 
 #: tvislogin.caption
 msgid "WAPT authentication"
-msgstr "Authentification WAPT"
+msgstr "Authentification PADIT"
 
 #: tvislogin.cbconfiguration.text
 msgid "waptconsole"
