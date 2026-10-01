@@ -215,7 +215,7 @@ Filename: "{app}\wapttray.exe"; Tasks: autorunTray; Flags: runminimized nowait r
 
 
 [Icons]
-Name: "{commonstartup}\WAPT tray helper"; Tasks: autorunTray; Filename: "{app}\wapttray.exe"; Flags: excludefromshowinnewinstall;
+Name: "{commonstartup}\PADIT tray helper"; Tasks: autorunTray; Filename: "{app}\wapttray.exe"; Flags: excludefromshowinnewinstall;
 
 [Tasks]
 Name: installService; Description: "{cm:InstallWAPTservice}";  GroupDescription: "Base";
