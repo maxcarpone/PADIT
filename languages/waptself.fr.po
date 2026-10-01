@@ -326,7 +326,7 @@ msgstr "Cacher"
 #: tviswaptself.caption
 #| msgid "WAPT softwares Self-service"
 msgid "WAPT Self-service"
-msgstr "WAPT Self-service"
+msgstr "PADIT Self Service"
 
 #: tviswaptself.edsearch.texthint
 msgid "Search..."

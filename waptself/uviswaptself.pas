@@ -797,6 +797,9 @@ begin
   end;
   {$endif}
 
+  ImageLogoTaskBar.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-200PX');
+  ImageLogoDetails.Picture.LoadFromResourceName(HINSTANCE,'SELF-SERVICE-ENTERPRISE-200PX');
+
   if Screen.PixelsPerInch <> 96 then
   begin
     ImageLogoTaskBar.AutoSize:=false;
@@ -990,12 +993,12 @@ end;
 
 procedure TVisWaptSelf.ImageWAPTClick(Sender: TObject);
 begin
-  OpenDocument('https://www.tranquil.it/solutions/wapt-deploiement-d-applications/');
+  OpenDocument('https://github.com/maxcarpone/WAPT');
 end;
 
 procedure TVisWaptSelf.ImageLogoTaskBarClick(Sender: TObject);
 begin
-  OpenDocument('https://www.tranquil.it');
+  OpenDocument('https://github.com/maxcarpone/WAPT');
 end;
 
 procedure TVisWaptSelf.ImageLogoOnMouseEnter(Sender: TObject);

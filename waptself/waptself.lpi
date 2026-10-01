@@ -30,8 +30,8 @@
         <Resource_9 FileName="..\arts\iconsself\fleche-droite-blanche-20px.png" Type="RCDATA" ResourceName="FLECHE-DROITE-BLANCHE-20PX"/>
         <Resource_10 FileName="..\arts\iconsself\fleche-gauche-20px.png" Type="RCDATA" ResourceName="FLECHE-GAUCHE-20PX"/>
         <Resource_11 FileName="..\arts\iconsself\fleche-gauche-blanche-20px.png" Type="RCDATA" ResourceName="FLECHE-GAUCHE-BLANCHE-20PX"/>
-        <Resource_12 FileName="..\arts\self-service-enterprise-200px.png" Type="RCDATA" ResourceName="SELF-SERVICE-ENTERPRISE-200PX"/>
-        <Resource_13 FileName="..\arts\self-service-enterprise-400px.png" Type="RCDATA" ResourceName="SELF-SERVICE-ENTERPRISE-400PX"/>
+        <Resource_12 FileName="..\arts\padit-selfservice-200px.png" Type="RCDATA" ResourceName="SELF-SERVICE-ENTERPRISE-200PX"/>
+        <Resource_13 FileName="..\arts\padit-selfservice-400px.png" Type="RCDATA" ResourceName="SELF-SERVICE-ENTERPRISE-400PX"/>
       </Resources>
     </General>
     <i18n>

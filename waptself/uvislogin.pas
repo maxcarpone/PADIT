@@ -63,7 +63,7 @@ end;
 procedure TVisLogin.LogoLoginClick(Sender: TObject);
 begin
   {$ifndef ENTERPRISE }
-    OpenDocument('https://www.tranquil.it/solutions/wapt-deploiement-d-applications/');
+    OpenDocument('https://github.com/maxcarpone/WAPT');
   {$endif}
 end;
 

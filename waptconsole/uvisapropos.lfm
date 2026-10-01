@@ -3,7 +3,7 @@ object VisApropos: TVisApropos
   Height = 324
   Top = 239
   Width = 316
-  AutoSize = True
+  AutoSize = False
   BorderStyle = bsDialog
   Caption = 'About PADIT Console'
   ClientHeight = 324

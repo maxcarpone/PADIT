@@ -408,7 +408,6 @@ type
     GridHosts: TSOGrid;
     GridWSUSScan: TSOGrid;
     ActionsImages24: TImageList;
-    Image1: TImage;
     Image2: TImage;
     Image3: TImage;
     Image4: TImage;
@@ -1029,7 +1028,6 @@ type
     procedure GridWUAPackagesNodesDelete(Sender: TSOGrid; Nodes: ISuperObject);
     procedure GridWUUpdatesNodesDelete(Sender: TSOGrid; Nodes: ISuperObject);
     procedure HostPagesChange(Sender: TObject);
-    procedure Image1Click(Sender: TObject);
     procedure MainPagesChange(Sender: TObject);
     procedure MenuItem103CheckAllClick(Sender: TObject);
     procedure MenuItem104Click(Sender: TObject);
@@ -4903,7 +4901,6 @@ end;
 
 procedure TVisWaptGUI.FormCreate(Sender: TObject);
 begin
-  Image1.Picture.LoadFromResourceName(HINSTANCE,'WAPT_PNG',TPortableNetworkGraphic);
   WaptServerUser := IniReadString(Appuserinipath,self.name,'lastwaptserveruser','admin');
   HostsLimit := 2000;
   DMPython.PythonOutput.OnSendData := @PythonOutputSendData;
@@ -6175,12 +6172,6 @@ end;
 procedure TVisWaptGUI.HostPagesChange(Sender: TObject);
 begin
   UpdateHostPages(Sender);
-end;
-
-procedure TVisWaptGUI.Image1Click(Sender: TObject);
-begin
-  OpenDocument('https://github.com/maxcarpone/WAPT');
-
 end;
 
 procedure CopyMenu(menuItemSource: TPopupMenu; menuItemTarget: TMenuItem);
