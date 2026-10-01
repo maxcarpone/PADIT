@@ -4007,12 +4007,15 @@ object VisWaptGUI: TVisWaptGUI
         TabOrder = 3
         object Image1: TImage
           Cursor = crHandPoint
-          Left = 1200
-          Height = 45
+          Left = 1140
+          Height = 65
           Top = 0
-          Width = 180
+          Width = 240
           AntialiasingMode = amOn
           Align = alRight
+          Center = True
+          Proportional = True
+          Stretch = True
           OnClick = Image1Click
           Picture.Data = {
             1754506F727461626C654E6574776F726B47726170686963F316000089504E47

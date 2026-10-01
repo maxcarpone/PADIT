@@ -3832,7 +3832,7 @@ end;
 
 procedure TVisWaptGUI.ActHelpExecute(Sender: TObject);
 begin
-  OpenDocument('https://doc.wapt.fr');
+  OpenDocument('https://github.com/maxcarpone/WAPT');
 end;
 
 
