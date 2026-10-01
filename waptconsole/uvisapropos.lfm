@@ -12,13 +12,15 @@ object VisApropos: TVisApropos
   LCLVersion = '1.8.4.0'
   object Image1: TImage
     Left = 0
-    Height = 146
+    Height = 105
     Top = 0
     Width = 316
     AntialiasingMode = amOn
     Align = alTop
-    AutoSize = True
+    AutoSize = False
     Center = True
+    Proportional = True
+    Stretch = True
     OnClick = Image1Click
     Picture.Data = {
       1754506F727461626C654E6574776F726B47726170686963FB3F000089504E47

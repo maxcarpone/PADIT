@@ -329,7 +329,7 @@ msgstr "Logs d'installation du paquet %s"
 
 #: tvisapropos.caption
 msgid "About WAPTConsole"
-msgstr "Apropos de WAPTConsole"
+msgstr "A propos de la console PADIT"
 
 #: tvisapropos.labinfos.caption
 msgid "LabInfos"
@@ -1586,7 +1586,7 @@ msgstr "Chargement en cours..."
 
 #: tvislogin.bitbtn1.hint
 msgid "Configure WAPT console"
-msgstr "Configurer la console WAPT"
+msgstr "Configurer la console PADIT"
 
 #: tvislogin.caption
 msgid "WAPT authentication"
@@ -2413,7 +2413,7 @@ msgstr "&Voir le fichier de configuration"
 
 #: tviswaptconfig.caption
 msgid "WAPTConsole configuration"
-msgstr "Configuration WAPT locale"
+msgstr "Configuration locale PADIT"
 
 #: tviswaptconfig.cbmanual.caption
 msgid "Manual overrride"
@@ -3363,7 +3363,7 @@ msgstr "Tout"
 
 #: tviswaptgui.caption
 msgid "WAPT console"
-msgstr "Console WAPT"
+msgstr "Console PADIT"
 
 #: tviswaptgui.cbadgroup.hint
 msgid "Filter hosts on AD Group membership"
