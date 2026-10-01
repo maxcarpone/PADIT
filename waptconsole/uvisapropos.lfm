@@ -607,7 +607,7 @@ object VisApropos: TVisApropos
     TabOrder = 1
     object LabInfos: TLabel
       Left = 10
-      Height = 43
+      Height = 48
       Top = 10
       Width = 296
       Align = alTop
@@ -619,11 +619,11 @@ object VisApropos: TVisApropos
     end
     object LicenceLog: TMemo
       Left = 0
-      Height = 45
+      Height = 40
       Top = 56
       Width = 316
       Align = alClient
-      Constraints.MinHeight = 45
+      Constraints.MinHeight = 40
       ScrollBars = ssAutoBoth
       TabOrder = 0
       WordWrap = False
