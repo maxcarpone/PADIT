@@ -7477,51 +7477,418 @@ verification are therefore complete. Colleague pilot feedback remains the next
 operational Buster activity. Debian 11 modernization remains a separate future
 project phase.
 
+### 47.22 PADIT public identity and Windows branding consolidation - October 2, 2026
+
+The public project identity has now moved from WAPT to PADIT.
+
+Public product name:
+
+    PADIT - Pack And Deploy
+
+GitHub repository:
+
+    https://github.com/maxcarpone/PADIT
+
+The repository was renamed from maxcarpone/WAPT to maxcarpone/PADIT.
+The default branch is now release/1.8.3.
+
+The retained public branches are intentionally limited to:
+
+    branch-1.8.2
+    release/1.8.3
+
+Historical validated tags were reviewed and retained because they represent
+meaningful reconstruction, migration, DR and release milestones. They were not
+deleted merely for repository cleanup.
+
+Public project documentation was aligned with the new identity:
+
+- 93fe7fc0c72062c6e53962055c4b07795fc4ad9c
+  Update README for PADIT project identity
+
+- e49878a3f281b1da048fac0a39147b7e65e021ba
+  Update license preamble for PADIT identity
+
+README.md now presents PADIT as a community-maintained deployment and lifecycle
+management solution derived from WAPT Community 1.8.2. COPYING retains the GPL
+license and historical Tranquil IT attribution while identifying PADIT as the
+current project.
+
+The Windows PADIT visual-branding work was completed and validated before the
+security/runtime work described below.
+
+Authoritative visually validated Windows branding milestone:
+
+    PADIT 1.8.3.7517
+
+Final setup proof for that branding milestone:
+
+    FileVersion:     1.8.3.7517
+    ProductVersion:  1.8.3.7517
+    ProductName:     PADITSetup
+    Size:            27268168 bytes
+    SHA256:          BABEAF5BD7CE994A8FB572F7260A906B5217DDC5E456F71526957CCBBD251787
+
+Visual validation covered:
+
+- PADIT Setup;
+- PADIT Console and About;
+- PADIT Tray;
+- PADIT Self Service;
+- waptexit shutdown/restart UI;
+- Windows executable metadata;
+- Authenticode setup signing;
+- normal functional behavior.
+
+That visual branding milestone is frozen. Do not reopen it without a concrete
+regression or contradictory evidence.
+
+Historical and compatibility-sensitive technical identifiers remain WAPT where
+required, including executable names, service names, configuration paths,
+protocol/API names and other identifiers whose renaming could break
+compatibility. Visible product branding may use PADIT independently from those
+technical identifiers.
+
+
+### 47.23 Windows build/runtime separation and GitPython remediation - October 2, 2026
+
+The Windows build architecture was changed so that build-time Python
+dependencies are no longer forced into the distributed PADIT runtime.
+
+Commit:
+
+    6040550e1119d364480a506041af2b4aee938cbc
+    Separate Windows build Python from product runtime
+
+tools/01-prepare-windows-build-environment.ps1 now creates and validates a
+dedicated controlled Python 2 build environment:
+
+    C:\wapt-build-python2
+
+Its controlled GitPython dependency chain is:
+
+    GitPython 2.1.15
+    gitdb2    2.0.6
+    smmap2    3.0.1
+    smmap     3.0.5
+
+The dedicated build interpreter is:
+
+    C:\wapt-build-python2\Scripts\python.exe
+
+tools/03-build-windows-product.ps1 now uses this dedicated build Python for:
+
+- lazbuild.py;
+- create_version_full.py.
+
+It no longer uses the distributed product runtime as the Python interpreter for
+those build operations.
+
+A complete signed Windows build validated this separation before runtime
+cleanup.
+
+The distributed Windows runtime was then rebuilt after removing the GitPython
+dependency chain.
+
+Commit:
+
+    1f98af81e70b7b4800cf2f2acdb7dbb48cd4ef18
+    Remove GitPython from distributed Windows runtime
+
+Removed from requirements-agent.txt:
+
+    gitpython==2.1.14
+    gitdb==0.6.4
+    gitdb2==2.0.6
+
+Removed from the explicit Windows runtime package list:
+
+    smmap==3.0.5
+    smmap2==3.0.1
+
+The rebuilt C:\wapt-runtime-1.8.3 runtime was inspected directly.
+
+No matching GitPython/gitdb/smmap package directory remained under:
+
+    C:\wapt-runtime-1.8.3\Lib\site-packages
+
+pkg_resources validation reported all five distributions absent:
+
+    GitPython False
+    gitdb     False
+    gitdb2    False
+    smmap     False
+    smmap2    False
+
+A complete PADIT Windows product build was then performed using the cleaned
+runtime and the separate controlled build Python.
+
+Authoritative security-integration build proof:
+
+    PADIT Setup 1.8.3.7520
+
+Final setup:
+
+    FileVersion:     1.8.3.7520
+    ProductVersion:  1.8.3.7520
+    ProductName:     PADITSetup
+    Size:            27130176 bytes
+    SHA256:          07FE9F6DC30BA552F62B6DFD18BED9A7806A023AFE7ABE138743405E3D38A46E
+
+Results:
+
+- autonomous Windows runtime rebuild: PASS;
+- GitPython absent from distributed runtime: PASS;
+- dedicated build Python: PASS;
+- Lazarus build using dedicated build Python: PASS;
+- create_version_full.py using dedicated build Python: PASS;
+- unsigned setup build: PASS;
+- Authenticode signing: PASS;
+- final setup validation: PASS;
+- base Windows product tree assembly: PASS.
+
+The human-readable output of the controlled Windows build scripts was then
+aligned with the PADIT identity.
+
+Commit:
+
+    42a01ed73fa7e701ab0a27974c2d508ed5de5a28
+    Update Windows build messages for PADIT branding
+
+Technical WAPT compatibility identifiers were deliberately left unchanged.
+
+Important security limitation:
+
+GitPython 2.1.15 is not considered a patched version for all modern GitPython
+security advisories. It is retained only inside the isolated legacy Python 2
+build environment because the current build scripts still depend on it.
+
+The security improvement validated here is therefore:
+
+    GitPython removed from the distributed PADIT Windows runtime
+
+not:
+
+    GitPython 2.1.15 is fully vulnerability-free
+
+The remaining build-time GitPython dependency is technical debt to remove when
+the legacy Python 2 build tooling is modernized.
+
+
+### 47.24 GitHub security baseline and deferred server remediation strategy - October 2, 2026
+
+GitHub security facilities were enabled/reviewed for the public PADIT
+repository.
+
+Enabled facilities include:
+
+- Dependency graph;
+- Dependabot alerts;
+- Private vulnerability reporting;
+- Secret Protection.
+
+Dependabot security updates, automated version updates and CodeQL were not
+enabled as part of this bounded security pass.
+
+Secret scanning initially reported one historical private-key alert for:
+
+    lib/site-packages/M2Crypto/PEM/rsa8192.pem
+
+Git history showed that this file came from the historical M2Crypto test
+material and had already been deleted from the current tree. No current tracked
+rsa8192.pem remained and no operational PADIT reference to that test key was
+found.
+
+The alert was therefore classified as historical test credential material, not
+as a current PADIT operational secret.
+
+Dependabot initially reported 169 alerts, including three Critical GitPython
+alerts.
+
+After the Windows GitPython/runtime cleanup was committed and pushed, GitHub
+automatically moved 34 Dependabot alerts to Closed/Fixed, including all three
+Critical alerts.
+
+Example:
+
+    GitPython vulnerable to Remote Code Execution due to improper user input
+    validation #21
+
+GitHub automatically marked that alert Fixed because GitPython was removed from
+requirements-agent.txt.
+
+GitHub does not provide a useful annotation field on these automatically fixed
+alerts after closure, so the remediation rationale is recorded here instead.
+
+The correct interpretation is:
+
+- GitPython is no longer shipped in the distributed PADIT Windows runtime;
+- the associated manifest-based Windows alerts automatically closed;
+- GitPython 2.1.15 remains only in the isolated build environment;
+- that remaining build-time dependency is still legacy technical debt and must
+  not be described as fully patched.
+
+The remaining Dependabot alert set contains substantial overlap between the
+historical agent and server dependency manifests. The two requirements sets
+share many of the same legacy Python packages, so one vulnerable package may
+appear more than once even though the exposure and remediation context differ.
+
+Do not assume an exact duplication percentage without performing an explicit
+manifest-to-alert comparison.
+
+Server-side security remediation policy:
+
+1. Keep the remaining server-related alerts visible as the security inventory.
+
+2. Do not manually dismiss them merely because an operating-system migration is
+   planned.
+
+3. Do not spend the main modernization effort patching the old Debian 10 /
+   Python 2 server dependency set package-by-package before the next server
+   baseline is validated.
+
+4. Begin the server modernization with Debian 11.
+
+5. Continue to Debian 12 and establish a reproducible, functional server
+   baseline there.
+
+6. Once the Debian 12 baseline is validated, inventory the dependencies that
+   are actually installed, imported and distributed by that modernized server.
+
+7. Reconcile that real dependency inventory against the remaining Dependabot
+   alerts and the historical security register.
+
+8. Remediate the vulnerabilities that remain applicable on the modernized
+   baseline and document each closure with technical evidence.
+
+Debian 13 may be evaluated as a later modernization target, but it is not a
+prerequisite for performing the security-remediation pass on a validated
+Debian 12 baseline.
+
+This avoids two opposite errors:
+
+- spending large effort securing dependencies that disappear naturally during
+  the server modernization;
+- incorrectly declaring vulnerabilities fixed merely because a newer operating
+  system has been introduced.
+
+Each future server vulnerability must therefore be closed from evidence of the
+actual modernized runtime, not from assumption.
+
+
 ## 48. Resume protocol for the next ChatGPT thread
 
-Gipity, resume from sections 47.19 and 47.20. Treat this checkpoint as the
-technical reference. Speak French, call the user Max, remain warm and concise,
-and proceed one validated step at a time. Do not reopen closed investigations
-without concrete contradictory evidence. Max is moving from Work to a normal
-Chat session for continuity and his preferred conversational experience.
+Gipity, resume the PADIT/WAPT modernization project from this checkpoint.
+Treat WAPT_CHECKPOINT.md as the authoritative technical state.
+Speak French, call the user Max, remain warm and concise, and proceed one
+validated step at a time.
 
-Branch: release/1.8.3.
-Last confirmed pre-checkpoint HEAD: a6a9da7362cd85000c58a52e48d190546a4ceabb.
-Published release/tag: v1.8.3.7494.
-Binary source: 85a5bee5550f5ab4763ee3e7c0dbcc128b08ca81.
-Historical freeze: v1.8.3.7493 at 98e16ad6000bd025a1f40a5c45b8ff60186240ee.
-Inspect current Git HEAD rather than inferring artifact versions from later
-commit counts. The validated binaries remain 1.8.3.7494.
+Do not reopen closed investigations unless concrete contradictory evidence
+appears.
 
-Manual and scripted Debian 10 upgrades from authentic 1.8.2.7393 both PASS.
-Migration script 1.1 differs from tested 1.1-rc1 only by the version declaration.
-Config preservation, reference counts, schema migration, published hashes,
-services, console inventory access and client reconnection passed.
-Production SCRAB was not modified. The isolated clone and VM108 are in 7494.
-Generated-agent installation passed with the scope limit in 47.19. The inspected
-site-generated agent is NotSigned as expected with the historical identity;
-agent generation/signing is the site administrator's responsibility.
+Current development branch:
 
-Topology: VM106 Windows build/sign; Wapster Debian 10 build;
-VM107/VM104 Windows tests; VM108 client/console 10.99.99.3;
-scrab-clone isolated on vmbr999 at 10.99.99.2; wapt-deb10 separate test server.
-Keep tis- package names and the historical WAPT identity/prefix for Buster.
-Authenticode, WAPT package signing and HTTPS trust are distinct mechanisms.
-Frozen signing/bootstrap, homepage, controlled runtime, PKI renewal and DR
-Root-preservation work remain closed unless contradicted.
+    release/1.8.3
 
-Exact next action:
+Current confirmed source HEAD before this checkpoint update:
 
-1. Finish committing/pushing this checkpoint if not already completed, then
-   synchronize VM106. Add only WAPT_CHECKPOINT.md to that commit.
-2. Download the ten published release files into a separate directory and run
-   sha256sum -c SHA256SUMS (or an equivalent Windows verification). Record the
-   actual result; staging checks alone do not prove published download integrity.
-3. Gather colleague pilot feedback. The guide already documents both upgrade
-   procedures, limits, backups, rollback planning and site-agent regeneration.
-4. Begin Debian 11 modernization as the next separate project phase when Max
-   directs it. Do not repeat closed Buster validation merely to resume the chat.
+    42a01ed73fa7e701ab0a27974c2d508ed5de5a28
+    Update Windows build messages for PADIT branding
 
-Do not rebuild binaries for documentation commits, move historical tags,
-claim unsigned site agents are migration failures, or assume remote access.
-The user runs commands on the named VMs and shares results.
+Public repository:
+
+    https://github.com/maxcarpone/PADIT
+
+The Debian 10 / Buster pilot remains:
+
+    v1.8.3.7494
+
+Its publication and downloaded-asset SHA256 verification are PASS.
+Colleague pilot feedback remains a parallel operational activity.
+Do not repeat closed Buster validation merely to resume development.
+
+The public product identity is now:
+
+    PADIT - Pack And Deploy
+
+Compatibility-sensitive technical identifiers may still intentionally use
+WAPT.
+
+The Windows PADIT visual branding milestone is frozen at:
+
+    1.8.3.7517
+
+Do not reopen visual branding without a regression.
+
+The latest Windows security-integration proof is:
+
+    PADIT Setup 1.8.3.7520
+
+    ProductName: PADITSetup
+    Size:        27130176 bytes
+    SHA256:      07FE9F6DC30BA552F62B6DFD18BED9A7806A023AFE7ABE138743405E3D38A46E
+
+The controlled Windows build architecture is now:
+
+    C:\wapt-build-python2
+        build-only Python 2 environment
+        GitPython 2.1.15
+        gitdb2 2.0.6
+        smmap2 3.0.1
+        smmap 3.0.5
+
+    C:\wapt-runtime-1.8.3
+        distributed PADIT runtime
+        no GitPython
+        no gitdb
+        no gitdb2
+        no smmap
+        no smmap2
+
+Relevant commits:
+
+    6040550e1  Separate Windows build Python from product runtime
+    1f98af81e  Remove GitPython from distributed Windows runtime
+    42a01ed73  Update Windows build messages for PADIT branding
+
+GitHub Dependabot automatically closed 34 alerts after the runtime dependency
+cleanup, including all three Critical alerts.
+
+Do not interpret that as proof that every remaining legacy Python dependency is
+secure.
+
+The remaining security work is deliberately split by platform:
+
+- Windows runtime: continue evidence-based remediation where applicable;
+- server: retain the Dependabot alerts as inventory while modernizing the
+  server baseline.
+
+Exact next modernization sequence:
+
+    Debian 11
+        -> validate migration/build/runtime behavior
+    Debian 12
+        -> establish the modernized reproducible server baseline
+        -> inventory actual dependencies
+        -> reconcile and remediate remaining applicable security alerts
+    Debian 13
+        -> optional later target, not a prerequisite for Debian 12 security work
+
+Do not manually close server security alerts merely because a future migration
+is expected.
+
+Do not rebuild already validated Windows binaries only because documentation or
+checkpoint commits advance the Git revision count.
+
+Keep the historical WAPT_CHECKPOINT.md filename unless a separate deliberate
+documentation-renaming decision is made.
+
+Immediate next actions:
+
+1. review this checkpoint diff;
+2. commit only WAPT_CHECKPOINT.md;
+3. push release/1.8.3;
+4. synchronize other development/build hosts as required;
+5. begin Debian 11 modernization when Max directs it.
+
+Keep answers concise and proceed one validated step at a time.
