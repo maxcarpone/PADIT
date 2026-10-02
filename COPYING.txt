@@ -1,7 +1,10 @@
-WAPT Community is licensed under the GNU General Public License,
+PADIT is licensed under the GNU General Public License,
 version 3 or (at your option) any later version.
 
-WAPT also includes third-party free and open-source components under their
+PADIT is derived from WAPT Community 1.8.2, originally developed by
+Tranquil IT.
+
+PADIT also includes third-party free and open-source components under their
 respective licenses, as well as Microsoft components used by the Windows
 client and Authenticode tooling. Third-party components remain subject to
 their respective license terms.
