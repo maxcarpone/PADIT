@@ -205,8 +205,6 @@ Invoke-Checked $RuntimePython @(
 $ExplicitPackages = @(
     "monotonic==1.6",
     "dnspython==1.16.0",
-    "smmap==3.0.5",
-    "smmap2==3.0.1",
     "plumbum==1.7.2",
     "winkerberos==0.7.0",
     "pyasn1==0.5.1",
