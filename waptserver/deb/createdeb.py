@@ -35,7 +35,6 @@ import glob
 import types
 import time
 
-from git import Repo
 
 makepath = os.path.join
 from shutil import copyfile
@@ -62,8 +61,9 @@ def get_distrib():
     return platform.linux_distribution()[0].lower()
 
 def git_hash():
-    r = Repo('.',search_parent_directories=True)
-    return '%s' % (r.active_branch.object.name_rev[:8],)
+    return subprocess.check_output(
+        ['git', 'rev-parse', '--short=8', 'HEAD']
+    ).strip()
 
 def get_arch_debian():
     if platform.machine().startswith('arm'):
@@ -228,8 +228,9 @@ if not wapt_version:
     eprint(u'version not found in %s/waptserver.py' % os.path.abspath('..'))
     sys.exit(1)
 
-r = Repo('.',search_parent_directories=True)
-rev_count = '%04d' % (r.active_branch.commit.count(),)
+rev_count = '%04d' % int(subprocess.check_output(
+    ['git', 'rev-list', '--count', 'HEAD']
+).strip())
 
 wapt_version = wapt_version +'.'+rev_count
 
@@ -267,8 +268,22 @@ eprint('Time before Python 2 runtime : %f\n' % (time.time()-start_time))
 
 eprint('Using the reproducible WAPT Python 2 runtime')
 
+debian_version = debian_major()
+
+runtime_map = {
+    '10': ('python2-runtime-server-buster', 'build-python2-runtime-buster.sh'),
+    '11': ('python2-runtime-server-bullseye', 'build-python2-runtime-bullseye.sh'),
+    '12': ('python2-runtime-server', 'build-python2-runtime-debian12.sh'),
+}
+
+if debian_version not in runtime_map:
+    eprint('ERROR: unsupported Debian version for controlled Python 2 runtime: %s' % debian_version)
+    sys.exit(1)
+
+runtime_name, runtime_builder = runtime_map[debian_version]
+
 runtime_dir = os.path.abspath(
-    os.path.join(wapt_source_dir, 'build', 'python2-runtime-server-buster')
+    os.path.join(wapt_source_dir, 'build', runtime_name)
 )
 
 runtime_python = os.path.join(runtime_dir, 'bin', 'python')
@@ -277,7 +292,7 @@ if not os.path.isfile(runtime_python):
     eprint('ERROR: WAPT Python 2 runtime not found:')
     eprint(runtime_dir)
     eprint('Build it first with:')
-    eprint('./tools/build-python2-runtime-buster.sh')
+    eprint('./tools/%s' % runtime_builder)
     sys.exit(1)
 
 eprint('Runtime source: %s' % runtime_dir)
