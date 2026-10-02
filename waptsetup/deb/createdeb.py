@@ -35,7 +35,6 @@ import stat
 import glob
 import jinja2
 
-from git import Repo
 
 makepath = os.path.join
 from shutil import copyfile
@@ -57,8 +56,9 @@ def get_distrib():
     return platform.linux_distribution()[0].lower()
 
 def git_hash():
-    r = Repo('.',search_parent_directories=True)
-    return '%s' % (r.active_branch.object.name_rev[:8],)
+    return subprocess.check_output(
+        ['git', 'rev-parse', '--short=8', 'HEAD']
+    ).strip()
 
 def dev_revision():
     return '%s' % (git_hash())
@@ -233,8 +233,9 @@ if not wapt_version:
     eprint(u'version not found in %s/config.py' % os.path.abspath('..'))
     sys.exit(1)
 
-r = Repo('.',search_parent_directories=True)
-rev_count = '%04d' % (r.active_branch.commit.count(),)
+rev_count = '%04d' % int(subprocess.check_output(
+    ['git', 'rev-list', '--count', 'HEAD']
+).strip())
 
 wapt_version = wapt_version +'.'+rev_count
 
@@ -252,7 +253,7 @@ template_vars = {
     'UNIX': SETUP_UNIX,
     'version': wapt_version,
     'list_agents': [os.path.join('/var/www/wapt/',dict_agent[akey]) for akey in dict_agent.keys()],
-    'description': 'WAPT agent packages for Linux/MacOS\n' if SETUP_UNIX=='TRUE' else 'WAPT setup executable for Windows\n' ,
+    'description': 'PADIT agent packages for Linux/MacOS\n' if SETUP_UNIX=='TRUE' else 'PADIT setup executable for Windows\n' ,
 }
 render_control = template_control.render(template_vars)
 render_postinst = template_postinst.render(template_vars)
