@@ -2,6 +2,7 @@
 param(
     [string]$BuildKit = 'C:\wapt-build-kit',
     [string]$PythonRoot = 'C:\Python27',
+    [string]$BuildPythonRoot = 'C:\wapt-build-python2',
     [string]$LazarusRoot = 'C:\lazarus'
 )
 
@@ -58,9 +59,15 @@ function Invoke-CheckedProcess {
 $GitInstaller = Join-Path $BuildKit 'git\Git-2.55.0.5-64-bit.exe'
 $PythonInstaller = Join-Path $BuildKit 'python\python-2.7.18-x86.msi'
 $VirtualenvWheel = Join-Path $BuildKit 'python\virtualenv-15.1.0-py2.py3-none-any.whl'
+$BuiltWheels = Join-Path $BuildKit 'python\built-wheels'
+$BuildGitPythonWheel = Join-Path $BuiltWheels 'GitPython-2.1.15-py2.py3-none-any.whl'
+$BuildGitdb2Wheel = Join-Path $BuiltWheels 'gitdb2-2.0.6-py2.py3-none-any.whl'
+$BuildSmmap2Wheel = Join-Path $BuiltWheels 'smmap2-3.0.1-py2-none-any.whl'
+$BuildSmmapWheel = Join-Path $BuiltWheels 'smmap-3.0.5-py2.py3-none-any.whl'
 $LazarusInstaller = Join-Path $BuildKit 'lazarus\lazarus-1.8.2-fpc-3.0.4-win32.exe'
 
 $PythonExe = Join-Path $PythonRoot 'python.exe'
+$BuildPythonExe = Join-Path $BuildPythonRoot 'Scripts\python.exe'
 $LazbuildExe = Join-Path $LazarusRoot 'lazbuild.exe'
 $FpcExe = Join-Path $LazarusRoot 'fpc\3.0.4\bin\i386-win32\fpc.exe'
 
@@ -74,6 +81,18 @@ Assert-FileHash $PythonInstaller `
 
 Assert-FileHash $VirtualenvWheel `
     '39D88B533B422825D644087A21E78C45CF5AF0EF7A99A1FC9FBB7B481E5C85B0'
+
+Assert-FileHash $BuildGitPythonWheel `
+    '23B4DE99C5FC1564701301CEAD04E16AA3E47019034668327206D1B52E1E54F7'
+
+Assert-FileHash $BuildGitdb2Wheel `
+    '96BBB507D765A7F51EB802554A9CFE194A174582F772E0D89F4E87288C288B7B'
+
+Assert-FileHash $BuildSmmap2Wheel `
+    '6894F09ECB1C9B445B76506613B39233942EA387B4716C40552F43DCCEEC20E8'
+
+Assert-FileHash $BuildSmmapWheel `
+    '7BFCF367828031DC893530A29CB35EB8C8F2D7C8F2D0989354D75D24C8573714'
 
 Assert-FileHash $LazarusInstaller `
     'B91517C673453F5AA355FFB3952E040433A8CDBBC5239BE72C869B60131B4166'
@@ -179,6 +198,40 @@ if ($VirtualenvVersion -ne '15.1.0') {
 
 Write-Host '[PASS] virtualenv 15.1.0'
 
+Write-Step 'Preparing dedicated Python 2 build environment'
+
+if (-not (Test-Path -LiteralPath $BuildPythonExe -PathType Leaf)) {
+    if (Test-Path -LiteralPath $BuildPythonRoot) {
+        throw "Build Python path exists but is not a valid virtualenv: $BuildPythonRoot"
+    }
+
+    & $PythonExe -m virtualenv --always-copy $BuildPythonRoot
+
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Dedicated Python 2 build environment creation failed.'
+    }
+}
+
+& $BuildPythonExe -m pip install `
+    --no-index `
+    --no-deps `
+    $BuildGitPythonWheel `
+    $BuildGitdb2Wheel `
+    $BuildSmmap2Wheel `
+    $BuildSmmapWheel
+
+if ($LASTEXITCODE -ne 0) {
+    throw 'Offline GitPython build dependency installation failed.'
+}
+
+$BuildPythonPackageState = (& $BuildPythonExe -c "import pkg_resources; print('|'.join([pkg_resources.get_distribution(x).version for x in ['GitPython','gitdb2','smmap2','smmap']]))").Trim()
+
+if ($LASTEXITCODE -ne 0 -or $BuildPythonPackageState -ne '2.1.15|2.0.6|3.0.1|3.0.5') {
+    throw "Unexpected dedicated build Python package state: $BuildPythonPackageState"
+}
+
+Write-Host '[PASS] Dedicated Python 2 build environment'
+
 Write-Step 'Checking Lazarus 1.8.2 / FPC 3.0.4'
 
 $LazarusOk = $false
@@ -229,6 +282,7 @@ Write-Host ''
 Write-Host 'Git:             2.55.0.windows.5'
 Write-Host 'Python:          2.7.18 x86'
 Write-Host 'virtualenv:      15.1.0'
+Write-Host "Build Python:     $BuildPythonRoot"
 Write-Host 'Lazarus:         1.8.2'
 Write-Host 'FPC:             3.0.4'
 Write-Host 'VCForPython27:   not required'

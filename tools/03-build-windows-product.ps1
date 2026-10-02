@@ -3,6 +3,7 @@ param(
     [string]$SourceRoot,
     [string]$BuildKit = 'C:\wapt-build-kit',
     [string]$Runtime = 'C:\wapt-runtime-1.8.3',
+    [string]$BuildPython = 'C:\wapt-build-python2\Scripts\python.exe',
     [string]$Output = 'C:\wapt-product-1.8.3',
     [string]$Worktree = 'C:\wapt-build-worktree-auto',
     [string]$Lazarus = 'C:\lazarus',
@@ -76,8 +77,9 @@ function Assert-SafeDisposablePath {
 
 $SourceRoot = [IO.Path]::GetFullPath($SourceRoot)
 $BuildKit   = [IO.Path]::GetFullPath($BuildKit)
-$Runtime    = [IO.Path]::GetFullPath($Runtime)
-$Output     = [IO.Path]::GetFullPath($Output)
+$Runtime     = [IO.Path]::GetFullPath($Runtime)
+$BuildPython = [IO.Path]::GetFullPath($BuildPython)
+$Output      = [IO.Path]::GetFullPath($Output)
 $Worktree   = [IO.Path]::GetFullPath($Worktree)
 $Lazarus    = [IO.Path]::GetFullPath($Lazarus)
 $LazarusPcp = [IO.Path]::GetFullPath($LazarusPcp)
@@ -106,6 +108,7 @@ Write-Host "WAPT Windows product assembly"
 Write-Host "Source : $SourceRoot"
 Write-Host "Kit    : $BuildKit"
 Write-Host "Runtime: $Runtime"
+Write-Host "Build Python: $BuildPython"
 Write-Host "Output : $Output"
 Write-Host "Worktree: $Worktree"
 Write-Host "Lazarus : $Lazarus"
@@ -146,6 +149,7 @@ $SignToolFiles = @{
 Assert-Directory $SourceRoot
 Assert-Directory $BuildKit
 Assert-Directory $Runtime
+Assert-File $BuildPython
 Assert-File (Join-Path $Lazarus 'lazbuild.exe')
 Assert-File (Join-Path $Runtime 'waptpython.exe')
 
@@ -556,10 +560,9 @@ Write-Host "[PASS] Lazarus project files validated: 9/9"
 Write-Host ""
 Write-Host "Building Lazarus Community targets..."
 
-$WaptPython = Join-Path $Runtime 'waptpython.exe'
 $LazbuildPy = Join-Path $Worktree 'lazbuild.py'
 
-Assert-File $WaptPython
+Assert-File $BuildPython
 Assert-File $LazbuildPy
 
 $LazarusSignArgs = @()
@@ -586,7 +589,7 @@ if ($SignKey) {
 foreach ($project in $LazarusProjects) {
     $projectPath = Join-Path $Worktree $project
 
-    & $WaptPython $LazbuildPy `
+    & $BuildPython $LazbuildPy `
         '-l' $LazbuildExe `
         '-p' $LazarusPcp `
         '-e' 'community' `
@@ -941,7 +944,7 @@ Assert-File $CreateVersionFull
 
 Push-Location $Worktree
 try {
-    & $WaptPython $CreateVersionFull
+    & $BuildPython $CreateVersionFull
 
     if ($LASTEXITCODE -ne 0) {
         throw "create_version_full.py failed with exit code $LASTEXITCODE"
