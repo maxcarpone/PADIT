@@ -20,13 +20,12 @@ PYTHON_VERSION="2.7.18"
 BUILD_ROOT="/tmp/wapt-python2-build"
 PYTHON_SRC="${BUILD_ROOT}/Python-${PYTHON_VERSION}"
 
-RUNTIME_ROOT="/git/waptdev/build/python2-runtime-server-bullseye"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RUNTIME_ROOT="${REPO_ROOT}/build/python2-runtime-server-bullseye"
 
 PIP_VERSION="20.3.4"
 SETUPTOOLS_VERSION="44.1.1"
 WHEEL_VERSION="0.34.2"
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 PYTHON="${RUNTIME_ROOT}/bin/python"
 PIP="${RUNTIME_ROOT}/bin/pip"
