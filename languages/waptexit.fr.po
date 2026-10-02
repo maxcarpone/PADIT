@@ -19,7 +19,7 @@ msgstr "Installer ou mettre à jour"
 
 #: tviswaptexit.caption
 msgid "WAPT Softwares Updates"
-msgstr "WAPT - Mises à jour de logiciels "
+msgstr "PADIT - Mises à jour de logiciels"
 
 #: tviswaptexit.cbskipwindowsupdates.caption
 msgid "Skip the installation of Windows Updates"
@@ -136,7 +136,7 @@ msgstr "Mises à jour en attente"
 #: tviswaptexit.labwaptupgrades.caption
 msgctxt "tviswaptexit.labwaptupgrades.caption"
 msgid "Checking if WAPT Packages installs or updates are pending."
-msgstr "Vérification des installations WAPT en attente"
+msgstr "Vérification des installations PADIT en attente"
 
 #: tviswaptexit.labwuaupgrades.caption
 msgid "Windows Updates pending."
@@ -145,7 +145,7 @@ msgstr "Mises à jour Windows en attente"
 #: uwaptexitres.rscheckingupgrades
 msgctxt "uwaptexitres.rscheckingupgrades"
 msgid "Checking if WAPT Packages installs or updates are pending."
-msgstr "Vérification des installations WAPT en attente"
+msgstr "Vérification des installations PADIT en attente"
 
 #: uwaptexitres.rsclosing
 msgid "Closing..."
@@ -186,7 +186,7 @@ msgstr "Mise à jour des logiciels dans %s sec..."
 #: uwaptexitres.rsupdatesavailable
 msgctxt "uwaptexitres.rsupdatesavailable"
 msgid "%d WAPT installs or updates pending"
-msgstr "%d installations WAPT en attente"
+msgstr "%d installations PADIT en attente"
 
 #: uwaptexitres.rsupdatingsoftware
 msgid "Updating software"
