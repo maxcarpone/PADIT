@@ -104,7 +104,7 @@ Assert-SafeDisposablePath -Path $Worktree `
 Assert-SafeDisposablePath -Path $LazarusPcp `
     -ProtectedPaths @($Output, $Worktree)
 
-Write-Host "WAPT Windows product assembly"
+Write-Host "PADIT Windows product assembly"
 Write-Host "Source : $SourceRoot"
 Write-Host "Kit    : $BuildKit"
 Write-Host "Runtime: $Runtime"
@@ -1001,7 +1001,7 @@ Write-Host "[PASS] revision.txt generated: $ActualRevision"
 # ----------------------------------------------------------------------
 
 Write-Host ""
-Write-Host "Building unsigned WAPT Community setup..."
+Write-Host "Building unsigned PADIT Community setup..."
 
 $IsccExe = Join-Path $Output 'waptsetup\innosetup\ISCC.exe'
 $SetupIss = Join-Path $Output 'waptsetup\waptsetup.iss'
@@ -1024,7 +1024,7 @@ finally {
 
 Assert-File $SetupExe
 
-Write-Host "[PASS] Unsigned WAPT Community setup built."
+Write-Host "[PASS] Unsigned PADIT Community setup built."
 
 # ----------------------------------------------------------------------
 # Sign final Community setup
@@ -1032,7 +1032,7 @@ Write-Host "[PASS] Unsigned WAPT Community setup built."
 
 if ($SignKey) {
     Write-Host ""
-    Write-Host "Signing final WAPT Community setup..."
+    Write-Host "Signing final PADIT Community setup..."
 
     $SignPassword = [IO.File]::ReadAllText($SignKeyPasswordFile).TrimEnd("`r", "`n")
 
@@ -1060,7 +1060,7 @@ if ($SignKey) {
         throw "Invalid Authenticode signature on final setup: $($SetupSignature.Status)"
     }
 
-    Write-Host "[PASS] Final WAPT Community setup signed and validated."
+    Write-Host "[PASS] Final PADIT Community setup signed and validated."
 }
 
 # ----------------------------------------------------------------------
@@ -1068,7 +1068,7 @@ if ($SignKey) {
 # ----------------------------------------------------------------------
 
 Write-Host ""
-Write-Host "Validating final Community setup..."
+Write-Host "Validating final PADIT Community setup..."
 
 $SetupItem = Get-Item -LiteralPath $SetupExe
 $SetupVersionInfo = $SetupItem.VersionInfo
@@ -1090,7 +1090,7 @@ if ($SetupVersionInfo.ProductName.Trim() -ne 'PADITSetup') {
 
 $SetupHash = (Get-FileHash -LiteralPath $SetupExe -Algorithm SHA256).Hash
 
-Write-Host "[PASS] Final Community setup validated."
+Write-Host "[PASS] Final PADIT Community setup validated."
 Write-Host "       FileVersion    : $($SetupVersionInfo.FileVersion)"
 Write-Host "       ProductVersion : $($SetupVersionInfo.ProductVersion)"
 Write-Host "       ProductName    : $($SetupVersionInfo.ProductName)"

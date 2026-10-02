@@ -1,7 +1,7 @@
 ﻿#requires -Version 5.1
 <#
 .SYNOPSIS
-  Assemble the autonomous Python/WAPT runtime for WAPT Community 1.8.3.
+  Assemble the autonomous Python/PADIT runtime for PADIT Community 1.8.3.
 
 .DESCRIPTION
   Controlled replacement for the runtime-assembly portions of historical
@@ -447,7 +447,7 @@ finally {
 }
 
 Write-Step "SUCCESS"
-Write-Host "Autonomous WAPT 1.8.3 runtime assembled at:"
+Write-Host "Autonomous PADIT 1.8.3 runtime assembled at:"
 Write-Host "  $Output"
 Write-Host ""
 Write-Host "This script does not yet build Lazarus projects, populate the full product tree,"
