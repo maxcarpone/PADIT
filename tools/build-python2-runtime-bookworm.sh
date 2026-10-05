@@ -282,7 +282,44 @@ grep -q 'Response chunk trailer line exceeded maximum allowed length' \
 echo ">>> urllib3 CVE-2026-97689 backport verified."
 
 ###############################################################################
-# 11. Verify critical packages
+# 11. Apply urllib3 CVE-2025-66418 decompression-chain backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying urllib3 CVE-2025-66418 backport"
+echo "============================================================"
+
+URLLIB3_PATCH_66418="${REPO_ROOT}/utils/patch-urllib3-1.26.20/CVE-2025-66418.patch"
+
+[ -f "${URLLIB3_PATCH_66418}" ] \
+    || die "urllib3 security patch not found: ${URLLIB3_PATCH_66418}"
+
+if grep -q 'max_decode_links = 5' "${URLLIB3_DIR}/response.py"; then
+    echo ">>> urllib3 CVE-2025-66418 backport already present."
+else
+    (
+        cd "${URLLIB3_DIR}"
+        patch --dry-run -p1 < "${URLLIB3_PATCH_66418}" >/dev/null
+        patch -p1 < "${URLLIB3_PATCH_66418}"
+    )
+    echo ">>> urllib3 CVE-2025-66418 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${URLLIB3_DIR}/response.py"
+
+grep -q 'max_decode_links = 5' \
+    "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 decompression-chain limit marker not found"
+
+grep -q 'Too many content encodings in the chain' \
+    "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 decompression-chain rejection marker not found"
+
+echo ">>> urllib3 CVE-2025-66418 backport verified."
+
+###############################################################################
+# 12. Verify critical packages
 ###############################################################################
 
 echo
@@ -323,7 +360,7 @@ if failed:
 PY
 
 ###############################################################################
-# 12. Apply WAPT cryptography compatibility patch
+# 13. Apply WAPT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -347,7 +384,7 @@ cp -f \
 echo ">>> WAPT cryptography patch installed."
 
 ###############################################################################
-# 13. Apply WAPT socketIO client patch if present
+# 14. Apply WAPT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -377,7 +414,7 @@ else
 fi
 
 ###############################################################################
-# 14. Basic Python runtime validation
+# 15. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -408,7 +445,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 15. WAPT server import validation
+# 16. WAPT server import validation
 ###############################################################################
 
 echo
@@ -449,7 +486,7 @@ print("WAPT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 16. WAPT server component validation
+# 17. WAPT server component validation
 ###############################################################################
 
 echo
@@ -467,7 +504,7 @@ print("WAPT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 17. Socket.IO validation
+# 18. Socket.IO validation
 ###############################################################################
 
 echo
@@ -482,7 +519,7 @@ print("WAPT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 18. WAPT crypto functional test
+# 19. WAPT crypto functional test
 ###############################################################################
 
 echo
@@ -558,7 +595,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 19. Generate runtime inventory
+# 20. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -615,7 +652,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 20. Final status
+# 21. Final status
 ###############################################################################
 
 echo
