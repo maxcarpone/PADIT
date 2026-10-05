@@ -1,13 +1,13 @@
 {% extends "layout.html" %}
 {% block content %}
 <h1>{{ host_info['computer_fqdn'] }}</h1>
-<h2>{{ _("WAPT Status") }}</h2>
+<h2>{{ _("PADIT Status") }}</h2>
 <ul>
 <li>{{ _("wapt-get.exe version: {0}").format(wapt_info['wapt-exe-version']) }}</li>
 <li>{{ _("wapt-get.py version: {0}").format(wapt_info['wapt-py-version']) }}</li>
 <li>{{ _("Host UUID: {0}").format(wapt.host_uuid) }}</li>
-<li>{{ _("Main WAPT Repository: <a href={0}>{0}</a>").format(wapt.wapt_repourl) }}</li>
-<li>{{ _("WAPT server: {0}").format(wapt.waptserver.server_url) }}</li>
+<li>{{ _("Main PADIT Repository: <a href={0}>{0}</a>").format(wapt.wapt_repourl) }}</li>
+<li>{{ _("PADIT Server: {0}").format(wapt.waptserver.server_url) }}</li>
 <li>{{ _("Proxies: {0}").format(wapt.proxies) }}</li>
 <li>{{ _("Configuration file: {0}").format(wapt.config_filename) }}</li>
 <li>{{ _("Current status: {0}").format(wapt.runstatus or 'Up to date') }}</li>

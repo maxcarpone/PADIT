@@ -294,8 +294,8 @@ msgid "Back"
 msgstr "Retour"
 
 #: templates/index.html:4
-msgid "WAPT Status"
-msgstr "Statut WAPT"
+msgid "PADIT Status"
+msgstr "Statut PADIT"
 
 #: templates/index.html:6
 msgid "wapt-get.exe version: {0}"
@@ -310,12 +310,12 @@ msgid "Host UUID: {0}"
 msgstr "UUID de la machine : {0}"
 
 #: templates/index.html:9
-msgid "Main WAPT Repository: <a href={0}>{0}</a>"
-msgstr "Dépôt WAPT principal : <a href={0}>{0}</a>"
+msgid "Main PADIT Repository: <a href={0}>{0}</a>"
+msgstr "Dépôt PADIT principal : <a href={0}>{0}</a>"
 
 #: templates/index.html:10
-msgid "WAPT server: {0}"
-msgstr "Serveur WAPT : {0}"
+msgid "PADIT Server: {0}"
+msgstr "Serveur PADIT : {0}"
 
 #: templates/index.html:11
 msgid "Proxies: {0}"

@@ -488,7 +488,7 @@ msgid "Back"
 msgstr ""
 
 #: waptservice/templates/index.html:4
-msgid "WAPT Status"
+msgid "PADIT Status"
 msgstr ""
 
 #: waptservice/templates/index.html:6
@@ -504,11 +504,11 @@ msgid "Host UUID: {0}"
 msgstr ""
 
 #: waptservice/templates/index.html:9
-msgid "Main WAPT Repository: <a href={0}>{0}</a>"
+msgid "Main PADIT Repository: <a href={0}>{0}</a>"
 msgstr ""
 
 #: waptservice/templates/index.html:10
-msgid "WAPT server: {0}"
+msgid "PADIT Server: {0}"
 msgstr ""
 
 #: waptservice/templates/index.html:11
