@@ -2,9 +2,9 @@
 set -e
 
 ###############################################################################
-# WAPT - Python 2.7 compatibility runtime for Debian 12 Bookworm
+# PADIT - Python 2.7 compatibility runtime for Debian 12 Bookworm
 #
-# Transitional compatibility runtime for WAPT Server 1.8.2.
+# Transitional compatibility runtime for PADIT Server 1.8.2.
 #
 # IMPORTANT:
 #   Python 2.7 is EOL.
@@ -53,9 +53,9 @@ run()
 ###############################################################################
 
 echo "============================================================"
-echo " WAPT Python 2 compatibility runtime"
+echo " PADIT Python 2 compatibility runtime"
 echo " Debian 12 Bookworm"
-echo " WAPT Server"
+echo " PADIT Server"
 echo " Python ${PYTHON_VERSION}"
 echo "============================================================"
 
@@ -71,10 +71,10 @@ echo "============================================================"
     || die "requirements-server.txt not found"
 
 [ -f "${REPO_ROOT}/utils/patch-cryptography/__init__.py" ] \
-    || die "WAPT cryptography patch not found"
+    || die "PADIT cryptography patch not found"
 
 [ -f "${REPO_ROOT}/utils/patch-cryptography/verification.py" ] \
-    || die "WAPT cryptography verification patch not found"
+    || die "PADIT cryptography verification patch not found"
 
 echo
 echo ">>> Repository:"
@@ -214,12 +214,12 @@ run "${PYTHON}" "${GET_PIP}" \
     "wheel==${WHEEL_VERSION}"
 
 ###############################################################################
-# 9. Install WAPT SERVER dependencies
+# 9. Install PADIT SERVER dependencies
 ###############################################################################
 
 echo
 echo "============================================================"
-echo " Installing WAPT SERVER dependencies"
+echo " Installing PADIT SERVER dependencies"
 echo "============================================================"
 
 run "${PIP}" install \
@@ -319,7 +319,51 @@ grep -q 'Too many content encodings in the chain' \
 echo ">>> urllib3 CVE-2025-66418 backport verified."
 
 ###############################################################################
-# 12. Verify critical packages
+# 12. Apply urllib3 CVE-2025-66471 streaming decompression backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying urllib3 CVE-2025-66471 backport"
+echo "============================================================"
+
+URLLIB3_PATCH_66471="${REPO_ROOT}/utils/patch-urllib3-1.26.20/CVE-2025-66471.patch"
+
+[ -f "${URLLIB3_PATCH_66471}" ] \
+    || die "urllib3 security patch not found: ${URLLIB3_PATCH_66471}"
+
+if grep -q 'def decompress(self, data, max_length=-1)' \
+    "${URLLIB3_DIR}/response.py" \
+    && grep -q 'has_unconsumed_tail' \
+    "${URLLIB3_DIR}/response.py"; then
+    echo ">>> urllib3 CVE-2025-66471 backport already present."
+else
+    (
+        cd "${URLLIB3_DIR}"
+        patch --dry-run -p1 < "${URLLIB3_PATCH_66471}" >/dev/null
+        patch -p1 < "${URLLIB3_PATCH_66471}"
+    )
+    echo ">>> urllib3 CVE-2025-66471 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${URLLIB3_DIR}/response.py"
+
+grep -q 'def decompress(self, data, max_length=-1)' \
+    "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 bounded decompression marker not found"
+
+grep -q 'has_unconsumed_tail' \
+    "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 unconsumed-tail marker not found"
+
+grep -q 'max_length=amt' \
+    "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 streaming decompression limit marker not found"
+
+echo ">>> urllib3 CVE-2025-66471 backport verified."
+
+###############################################################################
+# 13. Verify critical packages
 ###############################################################################
 
 echo
@@ -360,12 +404,12 @@ if failed:
 PY
 
 ###############################################################################
-# 13. Apply WAPT cryptography compatibility patch
+# 14. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
 echo "============================================================"
-echo " Applying WAPT cryptography patch"
+echo " Applying PADIT cryptography patch"
 echo "============================================================"
 
 CRYPTO_X509="${RUNTIME_ROOT}/lib/python2.7/site-packages/cryptography/x509"
@@ -381,15 +425,15 @@ cp -f \
     "${REPO_ROOT}/utils/patch-cryptography/verification.py" \
     "${CRYPTO_X509}/verification.py"
 
-echo ">>> WAPT cryptography patch installed."
+echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 14. Apply WAPT socketIO client patch if present
+# 15. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
 echo "============================================================"
-echo " Checking WAPT socketIO compatibility patch"
+echo " Checking PADIT socketIO compatibility patch"
 echo "============================================================"
 
 SOCKETIO_DIR="${RUNTIME_ROOT}/lib/python2.7/site-packages/socketIO_client"
@@ -406,7 +450,7 @@ if [ -d "${SOCKETIO_DIR}" ]; then
         "${REPO_ROOT}/utils/patch-socketio-client-2/transports.py" \
         "${SOCKETIO_DIR}/transports.py"
 
-    echo ">>> WAPT socketIO patch installed."
+    echo ">>> PADIT socketIO patch installed."
 
 else
     echo ">>> socketIO_client not installed."
@@ -414,7 +458,7 @@ else
 fi
 
 ###############################################################################
-# 15. Basic Python runtime validation
+# 16. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -445,12 +489,12 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 16. WAPT server import validation
+# 17. PADIT server import validation
 ###############################################################################
 
 echo
 echo "============================================================"
-echo " WAPT Server import validation"
+echo " PADIT Server import validation"
 echo "============================================================"
 
 CONF_DIR="${RUNTIME_ROOT}/conf"
@@ -475,22 +519,22 @@ echo ">>> Test configuration:"
 cat "${CONF_FILE}"
 
 echo
-echo ">>> Importing WAPT server..."
+echo ">>> Importing PADIT server..."
 
 CONFIG_FILE="${CONF_FILE}" \
 PYTHONPATH="${REPO_ROOT}" \
 "${PYTHON}" - <<'PY'
 import waptserver.server
 
-print("WAPT SERVER MODULE OK")
+print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 17. WAPT server component validation
+# 18. PADIT server component validation
 ###############################################################################
 
 echo
-echo ">>> Testing WAPT server components..."
+echo ">>> Testing PADIT server components..."
 
 CONFIG_FILE="${CONF_FILE}" \
 PYTHONPATH="${REPO_ROOT}" \
@@ -500,31 +544,31 @@ import waptserver.model
 import waptserver.auth
 import waptserver.tasks
 
-print("WAPT SERVER COMPONENTS OK")
+print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 18. Socket.IO validation
+# 19. Socket.IO validation
 ###############################################################################
 
 echo
-echo ">>> Testing WAPT Socket.IO..."
+echo ">>> Testing PADIT Socket.IO..."
 
 CONFIG_FILE="${CONF_FILE}" \
 PYTHONPATH="${REPO_ROOT}" \
 "${PYTHON}" - <<'PY'
 import waptserver.server_socketio
 
-print("WAPT SOCKETIO OK")
+print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 19. WAPT crypto functional test
+# 20. PADIT crypto functional test
 ###############################################################################
 
 echo
 echo "============================================================"
-echo " WAPT cryptographic functional test"
+echo " PADIT cryptographic functional test"
 echo "============================================================"
 
 CONFIG_FILE="${CONF_FILE}" \
@@ -575,27 +619,27 @@ if verified_cn != "WAPT Inventory Test Client":
         "Unexpected certificate CN: %r" % verified_cn
     )
 
-print("WAPT CRYPTO TEST PASSED")
+print("PADIT CRYPTO TEST PASSED")
 PY
 
 ###############################################################################
-# Remove temporary WAPT server test configuration
+# Remove temporary PADIT server test configuration
 ###############################################################################
 
 echo
-echo ">>> Removing temporary WAPT server test configuration"
+echo ">>> Removing temporary PADIT server test configuration"
 
 rm -f "${CONF_FILE}"
 rmdir "${CONF_DIR}" 2>/dev/null || true
 
 if [ -e "${CONF_FILE}" ]; then
-    echo "ERROR: temporary WAPT server configuration still present:"
+    echo "ERROR: temporary PADIT server configuration still present:"
     echo "  ${CONF_FILE}"
     exit 1
 fi
 
 ###############################################################################
-# 20. Generate runtime inventory
+# 21. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -606,7 +650,7 @@ echo "============================================================"
 INVENTORY="${RUNTIME_ROOT}/WAPT-runtime-inventory.txt"
 
 {
-    echo "===== WAPT PYTHON 2 RUNTIME ====="
+    echo "===== PADIT PYTHON 2 RUNTIME ====="
     echo
     echo "Build date:"
     date -u
@@ -652,7 +696,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 21. Final status
+# 22. Final status
 ###############################################################################
 
 echo
@@ -678,5 +722,5 @@ echo "  This is a transitional Python 2 compatibility runtime."
 echo "  Do NOT expose it as the final security architecture."
 
 echo
-echo "All WAPT runtime tests passed."
+echo "All PADIT runtime tests passed."
 echo
