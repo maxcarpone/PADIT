@@ -114,7 +114,7 @@ end;
 
 procedure TVisLogin.Image1Click(Sender: TObject);
 begin
-  OpenDocument('https://github.com/maxcarpone/WAPT');
+  OpenDocument('https://github.com/maxcarpone/PADIT');
 end;
 
 

@@ -85,9 +85,9 @@ fr.LaunchingPostConf=Lancement de la post-configuration de la console
 en.LaunchingPostConf=Launch console post-configuration
 de.LaunchingPostconf=Konsole Post-Konfiguration starten
 fr.OpenWaptDocumentation=Afficher la documentation d'installation
-fr.InstallDocURL=https://github.com/maxcarpone/WAPT
+fr.InstallDocURL=https://github.com/maxcarpone/PADIT
 en.OpenWaptDocumentation=Show installation documentation
-en.InstallDocURL=https://github.com/maxcarpone/WAPT
+en.InstallDocURL=https://github.com/maxcarpone/PADIT
 
 
 [Code]

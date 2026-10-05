@@ -63,7 +63,7 @@ end;
 procedure TVisLogin.LogoLoginClick(Sender: TObject);
 begin
   {$ifndef ENTERPRISE }
-    OpenDocument('https://github.com/maxcarpone/WAPT');
+    OpenDocument('https://github.com/maxcarpone/PADIT');
   {$endif}
 end;
 
