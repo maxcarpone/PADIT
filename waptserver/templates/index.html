@@ -40,7 +40,7 @@
                 <p>
                     {{ _("To manually add a workstation to this PADIT server, download and run the PADIT agent on the Windows workstation.") }}
                     {{ _("The agent published by this server is already configured with the settings required to connect to it. Once installation is complete and the workstation is registered, it will appear in the PADIT console.") }}
-                    <a href="/wapt/waptagent.exe">{{ _("Download the PADIT agent") }}</a>
+                    <a href="/wapt/waptagent.exe" {{ data.wapt.agent.style|safe }}>{{ _("Download the PADIT agent") }}</a>
                 </p>
 
                 {% if data.wapt.deploy.url %}
