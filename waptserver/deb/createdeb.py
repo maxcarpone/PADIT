@@ -273,7 +273,7 @@ debian_version = debian_major()
 runtime_map = {
     '10': ('python2-runtime-server-buster', 'build-python2-runtime-buster.sh'),
     '11': ('python2-runtime-server-bullseye', 'build-python2-runtime-bullseye.sh'),
-    '12': ('python2-runtime-server', 'build-python2-runtime-debian12.sh'),
+    '12': ('python2-runtime-server-bookworm', 'build-python2-runtime-bookworm.sh'),
 }
 
 if debian_version not in runtime_map:

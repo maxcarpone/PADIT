@@ -2,7 +2,7 @@
 set -e
 
 ###############################################################################
-# WAPT - Python 2.7 compatibility runtime for Debian 12
+# WAPT - Python 2.7 compatibility runtime for Debian 12 Bookworm
 #
 # Transitional compatibility runtime for WAPT Server 1.8.2.
 #
@@ -11,7 +11,7 @@ set -e
 #   This runtime is a compatibility layer, NOT the final security architecture.
 #
 # Output:
-#   /git/waptdev/build/python2-runtime-server/
+#   build/python2-runtime-server-bookworm/
 #
 ###############################################################################
 
@@ -20,13 +20,12 @@ PYTHON_VERSION="2.7.18"
 BUILD_ROOT="/tmp/wapt-python2-build"
 PYTHON_SRC="${BUILD_ROOT}/Python-${PYTHON_VERSION}"
 
-RUNTIME_ROOT="/git/waptdev/build/python2-runtime-server"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RUNTIME_ROOT="${REPO_ROOT}/build/python2-runtime-server-bookworm"
 
 PIP_VERSION="20.3.4"
 SETUPTOOLS_VERSION="44.1.1"
 WHEEL_VERSION="0.34.2"
-
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 PYTHON="${RUNTIME_ROOT}/bin/python"
 PIP="${RUNTIME_ROOT}/bin/pip"
@@ -55,7 +54,7 @@ run()
 
 echo "============================================================"
 echo " WAPT Python 2 compatibility runtime"
-echo " Debian 12"
+echo " Debian 12 Bookworm"
 echo " WAPT Server"
 echo " Python ${PYTHON_VERSION}"
 echo "============================================================"
@@ -226,15 +225,6 @@ echo "============================================================"
 run "${PIP}" install \
     --no-cache-dir \
     -r "${REPO_ROOT}/requirements-server.txt"
-
-# Build-time dependencies required by Debian package creation.
-# Keep pinned to the versions validated with the controlled Python 2.7.18 runtime.
-run "${PIP}" install \
-    --no-cache-dir \
-    "GitPython==2.1.15" \
-    "gitdb2==2.0.6" \
-    "smmap2==3.0.1" \
-    "smmap==3.0.5"
 
 ###############################################################################
 # 10. Verify critical packages
