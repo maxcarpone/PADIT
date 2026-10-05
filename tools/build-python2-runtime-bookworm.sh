@@ -363,7 +363,101 @@ grep -q 'max_length=amt' \
 echo ">>> urllib3 CVE-2025-66471 backport verified."
 
 ###############################################################################
-# 13. Verify critical packages
+# 13. Apply python-socketio CVE-2026-48804 backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying python-socketio CVE-2026-48804 backport"
+echo "============================================================"
+
+SOCKETIO_DIR="${RUNTIME_ROOT}/lib/python2.7/site-packages/socketio"
+SOCKETIO_PATCH_48804="${REPO_ROOT}/utils/patch-python-socketio-4.4.0/CVE-2026-48804.patch"
+
+[ -d "${SOCKETIO_DIR}" ] \
+    || die "python-socketio directory not found: ${SOCKETIO_DIR}"
+
+[ -f "${SOCKETIO_PATCH_48804}" ] \
+    || die "python-socketio security patch not found: ${SOCKETIO_PATCH_48804}"
+
+SOCKETIO_VERSION="$("${PYTHON}" -c 'import socketio; print(socketio.__version__)')"
+
+[ "${SOCKETIO_VERSION}" = "4.4.0" ] \
+    || die "Unexpected python-socketio version: ${SOCKETIO_VERSION}"
+
+echo ">>> python-socketio version verified: ${SOCKETIO_VERSION}"
+
+if grep -q "raise ValueError('Unexpected binary packet')" \
+    "${SOCKETIO_DIR}/server.py" \
+    && [ "$(grep -c 'if sid in self._binary_packet:' "${SOCKETIO_DIR}/server.py")" -ge 2 ]; then
+    echo ">>> python-socketio CVE-2026-48804 backport already present."
+else
+    (
+        cd "${SOCKETIO_DIR}"
+        patch --dry-run -p1 < "${SOCKETIO_PATCH_48804}" >/dev/null
+        patch -p1 < "${SOCKETIO_PATCH_48804}"
+    )
+    echo ">>> python-socketio CVE-2026-48804 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${SOCKETIO_DIR}/server.py"
+
+grep -q "raise ValueError('Unexpected binary packet')" \
+    "${SOCKETIO_DIR}/server.py" \
+    || die "python-socketio unauthenticated binary rejection marker not found"
+
+[ "$(grep -c 'if sid in self._binary_packet:' "${SOCKETIO_DIR}/server.py")" -ge 2 ] \
+    || die "python-socketio binary disconnect cleanup markers not found"
+
+echo ">>> Running CVE-2026-48804 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+import socketio
+
+# Unknown/unconnected client must not allocate a partial binary packet.
+s = socketio.Server(async_handlers=False)
+
+try:
+    s._handle_eio_message(
+        '999',
+        '52-["my message","a",'
+        '{"_placeholder":true,"num":1},'
+        '{"_placeholder":true,"num":0}]'
+    )
+except ValueError:
+    pass
+else:
+    raise AssertionError("Unknown binary client was accepted")
+
+assert '999' not in s._binary_packet
+
+# Partial binary packet must disappear after Engine.IO disconnect.
+s = socketio.Server(async_handlers=False)
+s.manager.connect('123', '/')
+s.environ['123'] = {}
+
+s._handle_eio_message(
+    '123',
+    '52-["my message","a",'
+    '{"_placeholder":true,"num":1},'
+    '{"_placeholder":true,"num":0}]'
+)
+
+s._handle_eio_message('123', b'foo')
+
+assert '123' in s._binary_packet
+
+s._handle_eio_disconnect('123')
+
+assert '123' not in s._binary_packet
+
+print("CVE-2026-48804 REGRESSION TEST: PASS")
+PYTEST
+
+echo ">>> python-socketio CVE-2026-48804 backport verified."
+
+###############################################################################
+# 14. Verify critical packages
 ###############################################################################
 
 echo
@@ -404,7 +498,7 @@ if failed:
 PY
 
 ###############################################################################
-# 14. Apply PADIT cryptography compatibility patch
+# 15. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -428,7 +522,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 15. Apply PADIT socketIO client patch if present
+# 16. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -458,7 +552,7 @@ else
 fi
 
 ###############################################################################
-# 16. Basic Python runtime validation
+# 17. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -489,7 +583,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 17. PADIT server import validation
+# 18. PADIT server import validation
 ###############################################################################
 
 echo
@@ -530,7 +624,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 18. PADIT server component validation
+# 19. PADIT server component validation
 ###############################################################################
 
 echo
@@ -548,7 +642,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 19. Socket.IO validation
+# 20. Socket.IO validation
 ###############################################################################
 
 echo
@@ -563,7 +657,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 20. PADIT crypto functional test
+# 21. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -639,7 +733,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 21. Generate runtime inventory
+# 22. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -696,7 +790,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 22. Final status
+# 23. Final status
 ###############################################################################
 
 echo
