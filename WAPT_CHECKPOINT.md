@@ -8349,7 +8349,326 @@ Do not repeat the closed Bullseye validation unless a concrete regression or
 contradictory result appears.
 
 
-## 49. Resume protocol for the next ChatGPT thread
+## 49. Debian 12 / Bookworm validation - October 5, 2026
+
+The Debian 12 / Bookworm modernization baseline has now been established and
+validated on the dedicated Waptworm VM.
+
+Development work was performed on:
+
+    debian12-dev
+
+The Bookworm work is based directly on the validated Bullseye baseline.
+
+Current confirmed source HEAD before this checkpoint update:
+
+    50800ba5
+    Reuse PADIT agent status style on download link
+
+Current Git revision count before this checkpoint update:
+
+    7535
+
+
+### 49.1 Bookworm controlled Python 2 runtime
+
+The historical Debian 12 runtime builder was renamed for consistency with the
+Buster and Bullseye naming convention:
+
+    tools/build-python2-runtime-debian12.sh
+
+became:
+
+    tools/build-python2-runtime-bookworm.sh
+
+The controlled runtime output is now:
+
+    /git/paditdev/build/python2-runtime-server-bookworm
+
+The Debian package runtime selection is:
+
+    Debian 10 Buster
+        -> python2-runtime-server-buster
+        -> build-python2-runtime-buster.sh
+
+    Debian 11 Bullseye
+        -> python2-runtime-server-bullseye
+        -> build-python2-runtime-bullseye.sh
+
+    Debian 12 Bookworm
+        -> python2-runtime-server-bookworm
+        -> build-python2-runtime-bookworm.sh
+
+The Bookworm runtime was rebuilt successfully.
+
+Validated runtime:
+
+    Python:   2.7.18
+    OpenSSL:  3.0.22 25 Aug 2026
+    Size:     222M
+
+Python binary SHA256:
+
+    790df7d9cac5f535be278c86da8b7e1eb3607322c1688cf9a842b38e8ed90876
+
+The runtime builder completed with:
+
+    BUILD SUCCESS
+    All WAPT runtime tests passed.
+
+Validated runtime tests include:
+
+    WAPT server import             PASS
+    WAPT server components         PASS
+    Socket.IO compatibility        PASS
+    cryptographic functional test  PASS
+
+GitPython and its dependency chain are no longer installed into the
+distributed Bookworm runtime.
+
+Direct inspection confirmed the absence of:
+
+    GitPython
+    gitdb
+    gitdb2
+    smmap
+    smmap2
+
+This matches the separation already validated on Bullseye.
+
+The Python 2 runtime remains explicitly transitional and must not be treated as
+the final PADIT security architecture.
+
+
+### 49.2 Bookworm PostgreSQL baseline
+
+Waptworm uses:
+
+    PostgreSQL 15.19
+    Debian package: 15.19-0+deb12u1
+    Cluster:        15/main
+    Port:           5432
+    Status:         online
+    Architecture:   amd64
+
+The PostgreSQL server version was confirmed directly using SQL.
+
+This replaces the PostgreSQL 13 baseline used on Bullseye.
+
+
+### 49.3 Bookworm server package build
+
+The first validated Bookworm server package was:
+
+    tis-waptserver-1.8.3.7534-19787fcd-debian-12-amd64.deb
+
+SHA256:
+
+    09474997b477b6c39e4420671a67a688c34b0f0e4e9f5570cd09b6b20357a356
+
+Package metadata:
+
+    Package:      tis-waptserver
+    Version:      1.8.3.7534-19787fcd-debian-12-amd64
+    Architecture: amd64
+
+The packaged Python runtime was extracted and independently checked.
+
+Validated packaged runtime:
+
+    Python 2.7.18
+    OpenSSL 3.0.22
+
+No GitPython, gitdb or smmap package was present in the distributed runtime.
+
+
+### 49.4 Bookworm runtime installation validation
+
+The Bookworm server package was installed successfully on Waptworm.
+
+Validated service state:
+
+    PostgreSQL             PASS
+    waptserver             PASS
+    wapttasks              PASS
+    nginx                  PASS
+    backend HTTP 8080      PASS
+    HTTPS 443              PASS
+    /api/v3/hosts          PASS (401 unauthenticated)
+    /api/v3/packages       PASS (401 unauthenticated)
+
+Validated listening endpoints:
+
+    PostgreSQL     127.0.0.1:5432
+    waptserver     127.0.0.1:8080
+    nginx          0.0.0.0:443
+
+Validated HTTP responses:
+
+    HTTPS home page        200
+    backend HTTP 8080      200
+    /api/v3/hosts          401
+    /api/v3/packages       401
+
+The HTTP 401 responses are expected and confirm that the API routes are active
+and protected by authentication.
+
+Passlib emits non-blocking digest-name warnings with the Bookworm/OpenSSL 3
+runtime.
+
+nginx also emits the known non-blocking ssl_stapling warning for the locally
+generated server certificate.
+
+
+### 49.5 Bookworm setup publication package
+
+The validated Windows artifacts from the signed Windows 7531 build were
+transferred to Waptworm.
+
+PADIT Setup:
+
+    Size:   27158712 bytes
+    SHA256: cc0ee96a94c46d63424764acda885f57fe412a9f1d06aec9fc2b5cf4276a8dcc
+
+PADIT Deploy:
+
+    Size:   505296 bytes
+    SHA256: 40bca638d10457789d990f4cae2adef200e0f01049de113f67716a0f27d80b07
+
+Signing Root CA:
+
+    Thouet-Software-Signing-Root-CA.cer
+    SHA256: 5bb7881d601856f1ee55c7a7b88e988751751779dee1ab08d21dd319b1690e7a
+
+The Bookworm setup publication package was built as:
+
+    tis-waptsetup-windows-1.8.3.7534-19787fcd.deb
+
+SHA256:
+
+    009782b934dbcd805654e196138c4ab188d7b290255b1159aba3c2f493109022
+
+Package metadata:
+
+    Package:      tis-waptsetup
+    Version:      1.8.3.7534
+    Architecture: all
+
+The package was installed successfully.
+
+Published files were independently hashed after installation and exactly match
+the source artifacts transferred from VM106.
+
+
+### 49.6 Bookworm console and agent validation
+
+A Windows validation workstation was configured against:
+
+    https://waptworm.genevoix-signoret-vinci.fr.lan
+
+DNS, TCP port 443 and HTTPS connectivity were validated.
+
+The PADIT Console successfully connects to Waptworm.
+
+The WAPTService/PADIT agent service is operational and connects to Waptworm.
+
+A temporary apparent "unreachable" state in the console was not a server or
+network defect: the console login dialog was still targeting another server.
+Selecting Waptworm resolved the issue immediately.
+
+This confirms the Bookworm server -> console communication path.
+
+
+### 49.7 PADIT agent publication
+
+A server-specific PADIT agent was generated and published on Waptworm.
+
+Published file:
+
+    /var/www/wapt/waptagent.exe
+
+Size:
+
+    26928488 bytes
+
+SHA256:
+
+    7274e1e7d9aa66d9f19419b55029aa46f35d7fc12660197cbc9bc367ae1db460
+
+Published agent version:
+
+    1.8.3.7531
+
+The server reports:
+
+    PADIT Agent: 1.8.3.7531
+
+The agent download URL returns:
+
+    HTTP 200 OK
+
+This validates the Bookworm publication chain through the generated Windows
+agent.
+
+
+### 49.8 PADIT agent download status styling
+
+The main PADIT Server page previously displayed the primary:
+
+    Download the PADIT agent
+
+link with the normal link style even when no agent had yet been generated.
+
+The link now reuses the existing agent status style:
+
+    data.wapt.agent.style
+
+This keeps it consistent with the PADIT Agent status widget.
+
+Validated behavior:
+
+    agent absent
+        -> PADIT Agent reports N/A
+        -> primary agent download link is red
+
+    agent published
+        -> PADIT Agent reports its real version
+        -> primary agent download link returns to normal styling
+
+Relevant commit:
+
+    50800ba5
+    Reuse PADIT agent status style on download link
+
+The behavior was validated visually in the browser before and after agent
+publication.
+
+
+### 49.9 Current Bookworm milestone status
+
+The following Bookworm chain is now validated:
+
+    controlled Python 2.7.18 runtime
+        -> OpenSSL 3.0.22
+        -> no distributed GitPython/gitdb/smmap
+        -> PostgreSQL 15
+        -> Bookworm server package build
+        -> Bookworm server installation
+        -> waptserver / wapttasks
+        -> nginx / HTTPS
+        -> API routing
+        -> setup publication package
+        -> Windows Setup / Deploy publication
+        -> PADIT Console connection
+        -> server-specific PADIT Agent generation
+        -> agent publication and HTTP download
+        -> dynamic PADIT Agent status rendering
+
+Do not repeat these closed Bookworm baseline validations unless a concrete
+regression or contradictory result appears.
+
+
+## 50. Resume protocol for the next ChatGPT thread
 
 Gipity, resume the PADIT/WAPT modernization project from this checkpoint.
 
@@ -8362,18 +8681,18 @@ Do not reopen closed investigations unless concrete contradictory evidence
 appears.
 
 
-Current development branch:
+Current development branch after integration:
 
     release/1.8.3
 
 Current confirmed source HEAD before this checkpoint update:
 
-    33123c07
-    Update PADIT GitHub links
+    50800ba5
+    Reuse PADIT agent status style on download link
 
 Current Git revision count before this checkpoint update:
 
-    7532
+    7535
 
 Public repository:
 
@@ -8384,87 +8703,103 @@ The Debian 10 / Buster pilot remains frozen and validated:
 
     v1.8.3.7494
 
-The Debian 11 / Bullseye modernization baseline is now validated and closed.
+The Debian 11 / Bullseye modernization baseline is validated and closed.
 
-Final validated Bullseye packages:
-
-    tis-waptsetup-windows-1.8.3.7532-33123c07.deb
-
-    SHA256:
-    f3cfa003b55446650ce88290c57e46e36e64c5fdacedc4dad250e817394b6573
+The Debian 12 / Bookworm runtime, server, setup publication, console connection
+and agent publication baseline is now validated.
 
 
-    tis-waptserver-1.8.3.7532-33123c07-debian-11-amd64.deb
+Current controlled Bookworm runtime:
 
-    SHA256:
-    61e03c878bb0edd88598a1c36e9e970425255827fc1c1a37bb40c8714a937c5c
+    /git/paditdev/build/python2-runtime-server-bookworm
 
-
-The controlled Bullseye Python 2 runtime remains:
-
-    /git/paditdev/build/python2-runtime-server-bullseye
-
-Python version:
+Runtime baseline:
 
     Python 2.7.18
+    OpenSSL 3.0.22
+    no GitPython
+    no gitdb
+    no smmap
+
+Bookworm database baseline:
+
+    PostgreSQL 15.19
+
+Latest validated Bookworm server package:
+
+    tis-waptserver-1.8.3.7535-50800ba5-debian-12-amd64.deb
+
+SHA256:
+
+    e07b276811ee2e7ebb2c69a8a2dab70a840817a5d1db5f05ad393371945ee233
+
+Validated Bookworm setup publication package:
+
+    tis-waptsetup-windows-1.8.3.7534-19787fcd.deb
+
+SHA256:
+
+    009782b934dbcd805654e196138c4ab188d7b290255b1159aba3c2f493109022
+
+Published PADIT Agent:
+
+    Version: 1.8.3.7531
+    Size:    26928488 bytes
+
+SHA256:
+
+    7274e1e7d9aa66d9f19419b55029aa46f35d7fc12660197cbc9bc367ae1db460
 
 
-The public product identity remains:
-
-    PADIT - Pack And Deploy
-
-Compatibility-sensitive historical identifiers may intentionally remain WAPT or
-tis-* where changing them could break installations, upgrade paths, package
-metadata or existing deployments.
-
-Do not rename historical physical compatibility filenames such as:
+Compatibility-sensitive historical identifiers remain intentionally unchanged
+where required, including:
 
     waptsetup-tis.exe
     waptagent.exe
     waptdeploy.exe
     tis-waptserver
     tis-waptsetup
+    WAPTService
+    wapt-get.ini
+    /wapt
+    /wapt-host
 
-without a dedicated compatibility audit.
+Do not rename them without a dedicated compatibility audit.
 
 
-The latest Windows build actually produced and cryptographically validated is:
+The latest Windows product build actually produced and cryptographically
+validated remains:
 
     1.8.3.7531
 
-Revision 7532 only adds GitHub link corrections and does not require a dedicated
-Windows rebuild.
-
-Future Windows builds will incorporate those changes automatically.
+Later source revisions do not require a Windows rebuild merely because the Git
+revision count advanced.
 
 
 Exact next action:
 
-    Begin Debian 12 / Bookworm modernization.
+    Continue the Bookworm modernization from the validated runtime and
+    end-to-end baseline by auditing the actual distributed/imported server
+    dependencies and reconciling the remaining security alerts.
 
-Do not restart the Python 2 investigation from zero.
+The next phase is evidence-based security remediation:
 
-A Debian 12 Python 2.7.18 runtime was already built and validated earlier,
-including successful WAPT server imports and cryptographic tests.
+    1. inventory the Python packages actually distributed in the Bookworm
+       runtime;
+    2. inventory the modules actually imported by the running PADIT server;
+    3. compare that evidence against the remaining Dependabot alerts;
+    4. identify alerts already made irrelevant by removed dependencies or the
+       Bookworm/OpenSSL 3 baseline;
+    5. identify dependencies which are still genuinely exposed;
+    6. remediate applicable vulnerabilities one dependency at a time;
+    7. rebuild and regression-test after meaningful runtime changes.
 
-Reuse that work as the starting point and first establish the exact current
-Bookworm build state before modifying anything.
+Do not claim a CVE is fixed solely because Bookworm uses a newer OpenSSL.
+Close or classify security findings only when the actual affected dependency,
+version and execution/distribution path have been established.
 
-The Debian 12 sequence is:
-
-    1. inventory the existing Bookworm runtime/build state;
-    2. align it with the now-validated Bullseye packaging architecture;
-    3. build tis-waptserver for Debian 12;
-    4. build tis-waptsetup for the Debian 12 publication environment;
-    5. install on a clean Debian 12 validation server;
-    6. run postconfiguration;
-    7. validate PostgreSQL, nginx, waptserver, wapttasks and HTTPS;
-    8. validate API routing;
-    9. publish and validate PADIT Windows artifacts;
-    10. validate backup/restore and migration compatibility;
-    11. inventory actual distributed/imported dependencies;
-    12. reconcile the remaining Dependabot alerts;
-    13. remediate applicable vulnerabilities with evidence.
+Backup/restore and migration compatibility on Bookworm remain a later
+validation unit and must not be forgotten.
 
 Debian 13 remains an optional later target.
 
