@@ -227,7 +227,62 @@ run "${PIP}" install \
     -r "${REPO_ROOT}/requirements-server.txt"
 
 ###############################################################################
-# 10. Verify critical packages
+# 10. Apply urllib3 CVE-2026-97689 compatibility backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying urllib3 CVE-2026-97689 backport"
+echo "============================================================"
+
+URLLIB3_DIR="${RUNTIME_ROOT}/lib/python2.7/site-packages/urllib3"
+URLLIB3_PATCH="${REPO_ROOT}/utils/patch-urllib3-1.26.20/CVE-2026-97689.patch"
+
+[ -d "${URLLIB3_DIR}" ] \
+    || die "urllib3 directory not found: ${URLLIB3_DIR}"
+
+[ -f "${URLLIB3_PATCH}" ] \
+    || die "urllib3 security patch not found: ${URLLIB3_PATCH}"
+
+"${PYTHON}" - <<'PYURLLIB3'
+import urllib3
+
+expected = "1.26.20"
+actual = urllib3.__version__
+
+if actual != expected:
+    raise SystemExit(
+        "Unexpected urllib3 version: %s (expected %s)" % (actual, expected)
+    )
+
+print(">>> urllib3 version verified: %s" % actual)
+PYURLLIB3
+
+if grep -q '_MAX_CHUNK_LINE_LENGTH' "${URLLIB3_DIR}/response.py"; then
+    echo ">>> urllib3 CVE-2026-97689 backport already present."
+else
+    (
+        cd "${URLLIB3_DIR}"
+        patch --dry-run -p1 < "${URLLIB3_PATCH}" >/dev/null
+        patch -p1 < "${URLLIB3_PATCH}"
+    )
+    echo ">>> urllib3 CVE-2026-97689 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${URLLIB3_DIR}/response.py"
+
+grep -q 'Response chunk size line exceeded maximum allowed length' \
+    "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 chunk-size protection marker not found"
+
+grep -q 'Response chunk trailer line exceeded maximum allowed length' \
+    "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 trailer protection marker not found"
+
+echo ">>> urllib3 CVE-2026-97689 backport verified."
+
+###############################################################################
+# 11. Verify critical packages
 ###############################################################################
 
 echo
@@ -268,7 +323,7 @@ if failed:
 PY
 
 ###############################################################################
-# 11. Apply WAPT cryptography compatibility patch
+# 12. Apply WAPT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -292,7 +347,7 @@ cp -f \
 echo ">>> WAPT cryptography patch installed."
 
 ###############################################################################
-# 12. Apply WAPT socketIO client patch if present
+# 13. Apply WAPT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -322,7 +377,7 @@ else
 fi
 
 ###############################################################################
-# 13. Basic Python runtime validation
+# 14. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -353,7 +408,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 14. WAPT server import validation
+# 15. WAPT server import validation
 ###############################################################################
 
 echo
@@ -394,7 +449,7 @@ print("WAPT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 15. WAPT server component validation
+# 16. WAPT server component validation
 ###############################################################################
 
 echo
@@ -412,7 +467,7 @@ print("WAPT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 16. Socket.IO validation
+# 17. Socket.IO validation
 ###############################################################################
 
 echo
@@ -427,7 +482,7 @@ print("WAPT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 17. WAPT crypto functional test
+# 18. WAPT crypto functional test
 ###############################################################################
 
 echo
@@ -503,7 +558,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 18. Generate runtime inventory
+# 19. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -560,7 +615,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 19. Final status
+# 20. Final status
 ###############################################################################
 
 echo
