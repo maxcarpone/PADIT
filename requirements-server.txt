@@ -31,7 +31,7 @@ pytz==2017.2
 requests==2.26.0
 six==1.11.0
 ujson==2.0.3
-urllib3==1.26.7
+urllib3==2.8.0
 wakeonlan==0.2.2
 Werkzeug==0.16
 wsgiref==0.1.2
