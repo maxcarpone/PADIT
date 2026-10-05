@@ -26,8 +26,8 @@ msgid "Save this host's inventory to the server"
 msgstr "Sauvegarder l'inventaire de cette machine sur le serveur"
 
 #: tdmwapttray.actlaunchwaptconsole.caption
-msgid "Run WAPT Console"
-msgstr "Lancer la console WAPT"
+msgid "Run PADIT Console"
+msgstr "Lancer la console PADIT"
 
 #: tdmwapttray.actlocalinfo.caption
 msgid "About this host"
@@ -43,8 +43,8 @@ msgid "Reload network related service configuration"
 msgstr "Recharger la configuration réseau du service"
 
 #: tdmwapttray.actserviceenable.caption
-msgid "Wapt service running"
-msgstr "Service WAPT lancé"
+msgid "PADIT service running"
+msgstr "Service PADIT lancé"
 
 #: tdmwapttray.actsessionsetup.caption
 msgid "Configure all installed packages for your own session"
@@ -71,8 +71,8 @@ msgid "Install updates"
 msgstr "Installer les mises à jour"
 
 #: tdmwapttray.actwaptupgrade.caption
-msgid "Update WAPT software on this host"
-msgstr "Mettre à jour le logiciel WAPT sur cet hôte"
+msgid "Update PADIT software on this host"
+msgstr "Mettre à jour le logiciel PADIT sur cet hôte"
 
 #: tdmwapttray.menuitem10.caption
 msgid "Configuration"

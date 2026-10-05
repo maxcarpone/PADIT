@@ -8,8 +8,8 @@ object DMWaptTray: TDMWaptTray
   Width = 531
   PPI = 96
   object TrayIcon1: TTrayIcon
-    BalloonHint = 'WAPT Service'
-    BalloonTitle = 'WAPT Service'
+    BalloonHint = 'PADIT Service'
+    BalloonTitle = 'PADIT Service'
     PopUpMenu = PopupMenu1
     Icon.Data = {
       7E04000000000100010010100000010020006804000016000000280000001000
@@ -50,7 +50,7 @@ object DMWaptTray: TDMWaptTray
       0000000000000000000000000000000000000000000000000000000000000000
       0000
     }
-    Hint = 'WAPT Service'
+    Hint = 'PADIT Service'
     Visible = True
     OnClick = TrayIcon1Click
     OnDblClick = TrayIcon1DblClick
@@ -169,7 +169,7 @@ object DMWaptTray: TDMWaptTray
       OnExecute = ActLaunchWaptConsoleExecute
     end
     object ActWaptUpgrade: TAction
-      Caption = 'Update WAPT software on this host'
+      Caption = 'Update PADIT software on this host'
       OnExecute = ActWaptUpgradeExecute
       OnUpdate = ActUpdateUpdate
     end
@@ -208,7 +208,7 @@ object DMWaptTray: TDMWaptTray
       OnUpdate = ActUpdateUpdate
     end
     object ActServiceEnable: TAction
-      Caption = 'Wapt service running'
+      Caption = 'PADIT service running'
       OnExecute = ActServiceEnableExecute
       OnUpdate = ActServiceEnableUpdate
     end
@@ -460,7 +460,7 @@ object DMWaptTray: TDMWaptTray
   object ApplicationProperties1: TApplicationProperties
     CaptureExceptions = False
     ShowMainForm = False
-    Title = 'WAPT Updates manager'
+    Title = 'PADIT Updates Manager'
     OnEndSession = ApplicationProperties1EndSession
     OnQueryEndSession = ApplicationProperties1QueryEndSession
     left = 236
