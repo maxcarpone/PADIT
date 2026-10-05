@@ -7776,15 +7776,591 @@ Each future server vulnerability must therefore be closed from evidence of the
 actual modernized runtime, not from assumption.
 
 
-## 48. Resume protocol for the next ChatGPT thread
+### 47.25 Debian 11 / Bullseye controlled Python 2 runtime - October 2, 2026
+
+The Debian 11 modernization phase was started on the dedicated WaptBull VM.
+
+Validated host baseline:
+
+    Host:       WaptBull
+    Debian:     11.11 Bullseye
+    Kernel:     5.10.0-30-amd64
+    OpenSSL:    1.1.1w
+    Git:        2.30.2
+    PostgreSQL: 13
+    nginx:      1.18.0
+
+The repository is cloned as:
+
+    /git/paditdev
+
+Branch:
+
+    release/1.8.3
+
+A dedicated Bullseye Python 2 compatibility runtime builder was added:
+
+    tools/build-python2-runtime-bullseye.sh
+
+Unlike the historical Buster builder, Bullseye does not require the Buster
+multiarch setup.py workaround.
+
+The runtime output was made repository-relative:
+
+    /git/paditdev/build/python2-runtime-server-bullseye
+
+Relevant commits:
+
+    39c5e06c  Add Debian 11 Python 2 runtime builder
+    1d761fb9  Make Debian 11 runtime builder repository-relative
+
+The controlled runtime successfully builds CPython 2.7.18 on Bullseye and all
+existing WAPT server runtime tests pass, including:
+
+- WAPT server module import;
+- component imports;
+- Socket.IO compatibility;
+- cryptographic certificate/signature validation.
+
+The runtime remains explicitly transitional:
+
+    This is a transitional Python 2 compatibility runtime.
+    Do NOT expose it as the final security architecture.
+
+During the first Debian package build, inspection showed that GitPython and its
+dependency chain were still being copied into the distributed server runtime:
+
+    GitPython 2.1.15
+    gitdb2 2.0.6
+    smmap2 3.0.1
+    smmap 3.0.5
+
+A source audit confirmed that GitPython is not imported by the server runtime
+business code. Its uses were limited to build/package tooling such as:
+
+    waptserver/deb/createdeb.py
+    waptserver/rpm/createrpm.py
+    build_exe.py
+    create_version_full.py
+    lazbuild.py
+
+The Bullseye runtime builder was therefore changed so that GitPython, gitdb and
+smmap are no longer installed into the distributed server runtime.
+
+The Debian package builder was also changed to use the native git executable
+for:
+
+    git rev-parse --short=8 HEAD
+    git rev-list --count HEAD
+
+instead of importing GitPython.
+
+Commit:
+
+    503d2cf3  Separate Debian build dependencies from server runtime
+
+A clean runtime rebuild after this change passed all WAPT runtime tests.
+
+Direct inspection confirmed that the distributed Bullseye runtime contains no:
+
+    GitPython
+    gitdb
+    gitdb2
+    smmap
+    smmap2
+
+
+### 47.26 PADIT Server Debian 11 package and first clean installation - October 2, 2026
+
+The Debian server package builder now selects the controlled Python 2 runtime
+according to the Debian major version:
+
+    Debian 10 -> python2-runtime-server-buster
+    Debian 11 -> python2-runtime-server-bullseye
+    Debian 12 -> python2-runtime-server
+
+The package identity was also updated from the historical TIS public identity
+to PADIT while retaining compatibility-sensitive package names.
+
+Current package metadata:
+
+    Package:     tis-waptserver
+    Maintainer:  PADIT Community <182104444+maxcarpone@users.noreply.github.com>
+    Description: PADIT Server for Windows application deployment and management.
+
+The historical package name `tis-waptserver` is intentionally retained for
+compatibility.
+
+Relevant source commit:
+
+    3d63a2b0  Update Debian package identity for PADIT
+
+Validated Bullseye server package:
+
+    tis-waptserver-1.8.3.7527-3d63a2b0-debian-11-amd64.deb
+
+SHA256:
+
+    48105791c048f6a592bbc39c449f97538b74a3e8afb835aab3b9dab8081eeb85
+
+The package was installed on a clean/snapshotted Debian 11 WaptBull VM.
+
+Installed system components include:
+
+    PostgreSQL 13
+    nginx 1.18.0
+    tis-waptserver 1.8.3.7527-3d63a2b0-debian-11-amd64
+
+The normal postconfiguration was run using:
+
+    /opt/wapt/waptserver/scripts/postconf.sh
+
+Validated runtime state:
+
+- PostgreSQL cluster 13/main online;
+- PostgreSQL listening on localhost port 5432;
+- waptserver active and listening on localhost port 8080;
+- wapttasks active;
+- nginx active and listening on ports 80 and 443;
+- backend HTTP request to port 8080 returns HTTP 200;
+- nginx HTTPS request returns HTTP 200;
+- /api/v3/hosts returns HTTP 401 without credentials;
+- /api/v3/packages returns HTTP 401 without credentials.
+
+The HTTP 401 responses are expected and confirm that the API routes are active
+and protected by authentication.
+
+Fresh database initialization created the `wapt` PostgreSQL database with 18
+tables, including:
+
+    hosts
+    hostgroups
+    hostpackagesstatus
+    hostsoftwares
+    packages
+    serverattribs
+    waptusers
+    waptuseracls
+
+The `hosts` table was explicitly verified.
+
+At the first startup of a fresh database, waptserver logged:
+
+    Unable to upgrade DB structure, init instead
+
+and a Python 2 UnicodeDecodeError while logging the localized PostgreSQL error:
+
+    relation « hosts » n'existe pas
+
+This did not prevent initialization. The database was subsequently created
+correctly, the services remained active and the HTTP/API validation passed.
+
+Treat this as a Python 2/localized-error logging defect to investigate later,
+not as a failed Bullseye server initialization.
+
+nginx also reports the non-blocking warning:
+
+    ssl_stapling ignored, issuer certificate not found
+
+for the locally generated server certificate.
+
+
+### 47.27 PADIT Windows 7527 rebuild for Bullseye publication - October 2, 2026
+
+Before building the Debian `tis-waptsetup` package, the Windows product was
+rebuilt cleanly on VM106 from the current release/1.8.3 source available at that
+time.
+
+VM106 was synchronized from:
+
+    c36b69171
+
+to:
+
+    3d63a2b01
+
+The controlled Windows product build completed successfully despite several
+non-fatal Lazarus/FPC AccessViolation / EPrivilege messages printed during the
+build.
+
+Final build result:
+
+    [PASS] Unsigned PADIT Community setup built.
+    [PASS] Final PADIT Community setup signed and validated.
+    [PASS] Final PADIT Community setup validated.
+    [PASS] Base Windows product tree assembled.
+
+Validated PADIT Setup:
+
+    FileVersion:    1.8.3.7527
+    ProductVersion: 1.8.3.7527
+    ProductName:    PADITSetup
+    Size:           27130776 bytes
+    SHA256:         CBE113F87B3E82EE9BF175A14895C464D111B69B5CD309E2185B0C8B9130E88C
+
+Validated PADIT Deploy:
+
+    Size:           505296 bytes
+    SHA256:         699E97BFD4646B5662132E68C67A6F4BB3272C1A1119CEDD52822E95C716CB9D
+
+Published signing Root CA:
+
+    Thouet-Software-Signing-Root-CA.cer
+    Size:           1319 bytes
+    SHA256:         5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A
+
+These exact three artifacts were transferred to WaptBull and their SHA256
+values were revalidated before Debian packaging.
+
+
+### 47.28 PADIT Setup Debian package and Bullseye publication - October 2, 2026
+
+The historical `waptsetup/deb/createdeb.py` still depended on GitPython only to
+read the Git hash and revision count.
+
+It was changed to use native git commands instead, matching the server package
+builder cleanup.
+
+Public package identity was also updated:
+
+    Maintainer: PADIT Community <182104444+maxcarpone@users.noreply.github.com>
+
+and the package description now uses PADIT terminology.
+
+The compatibility-sensitive Debian package name remains:
+
+    tis-waptsetup
+
+The historical published executable filename also remains intentionally:
+
+    /var/www/wapt/waptsetup-tis.exe
+
+This filename is retained for compatibility even though the visible product
+identity is PADIT.
+
+Relevant commit:
+
+    c9355052  Update Debian setup packaging for PADIT
+
+Final package built from that commit:
+
+    tis-waptsetup-windows-1.8.3.7528-c9355052.deb
+
+Package metadata:
+
+    Package:      tis-waptsetup
+    Version:      1.8.3.7528
+    Architecture: all
+    Maintainer:   PADIT Community <182104444+maxcarpone@users.noreply.github.com>
+    Description:  PADIT setup executable for Windows
+
+Package SHA256:
+
+    c3c53a40196a89fd6a64e0f3b0d849f1521c74b7508b376193cfec257836fcee
+
+The package contains and publishes:
+
+    /var/www/wapt/waptsetup-tis.exe
+    /var/www/wapt/waptdeploy.exe
+    /var/www/wapt/Thouet-Software-Signing-Root-CA.cer
+
+Post-install publication hashes were verified and exactly match the VM106
+source artifacts:
+
+    waptsetup-tis.exe
+    cbe113f87b3e82ee9bf175a14895c464d111b69b5cd309e2185b0c8b9130e88c
+
+    waptdeploy.exe
+    699e97bfd4646b5662132e68c67a6f4bb3272c1a1119cedd52822e95c716cb9d
+
+    Thouet-Software-Signing-Root-CA.cer
+    5bb7881d601856f1ee55c7a7b88e988751751779dee1ab08d21dd319b1690e7a
+
+The PADIT Server web page now reports:
+
+    PADIT Server: 1.8.3
+    PADIT Agent:  N/A
+    PADIT Setup:  1.8.3.7527
+    PADIT Deploy: 1.8.3.7527
+    Database:      OK (1.8.3.0)
+
+The page also exposes the PADIT publisher certificate information and the
+expected Root CA SHA256.
+
+This validates the Bullseye chain up to:
+
+    server
+        -> database
+        -> nginx/API
+        -> setup publication
+        -> deploy publication
+
+The PADIT Agent remains intentionally N/A because a server-specific
+`waptagent.exe` has not yet been generated and published.
+
+
+## 48. Bullseye validation closure - October 5, 2026
+
+The Debian 11 / Bullseye modernization baseline is now validated.
+
+Current development branch:
+
+    release/1.8.3
+
+Current confirmed source HEAD:
+
+    33123c07
+    Update PADIT GitHub links
+
+Current Git revision count:
+
+    7532
+
+Public repository:
+
+    https://github.com/maxcarpone/PADIT
+
+
+### 48.1 Final validated Bullseye Debian packages
+
+Final PADIT Setup publication package:
+
+    tis-waptsetup-windows-1.8.3.7532-33123c07.deb
+
+Package metadata:
+
+    Package:      tis-waptsetup
+    Version:      1.8.3.7532
+    Architecture: all
+
+SHA256:
+
+    f3cfa003b55446650ce88290c57e46e36e64c5fdacedc4dad250e817394b6573
+
+
+Final PADIT Server package:
+
+    tis-waptserver-1.8.3.7532-33123c07-debian-11-amd64.deb
+
+Package metadata:
+
+    Package:      tis-waptserver
+    Version:      1.8.3.7532-33123c07-debian-11-amd64
+    Architecture: amd64
+
+SHA256:
+
+    61e03c878bb0edd88598a1c36e9e970425255827fc1c1a37bb40c8714a937c5c
+
+
+Both packages were installed successfully on WaptBull.
+
+Validated installed package state:
+
+    tis-waptserver  1.8.3.7532-33123c07-debian-11-amd64
+    tis-waptsetup   1.8.3.7532
+
+
+### 48.2 Bullseye runtime validation
+
+Validated Bullseye runtime state remains:
+
+    PostgreSQL 13          PASS
+    database schema        PASS
+    waptserver             PASS
+    wapttasks              PASS
+    nginx                  PASS
+    backend HTTP 8080      PASS
+    HTTPS 443              PASS
+    /api/v3/hosts routing  PASS
+    /api/v3/packages       PASS
+
+The controlled Debian 11 Python 2 runtime remains:
+
+    /git/paditdev/build/python2-runtime-server-bullseye
+
+It provides Python 2.7.18 and remains the runtime used to build the Bullseye
+server and setup Debian packages.
+
+GitPython, gitdb and smmap are not shipped in the distributed Bullseye server
+runtime.
+
+
+### 48.3 PADIT Server web branding validation
+
+The PADIT Server home page is served successfully over HTTPS.
+
+Validated visible branding includes:
+
+    PADIT - Pack And Deploy
+    PADIT Server
+    PADIT Setup
+    PADIT Deploy
+    PADIT Agent
+
+The server favicon was replaced by the PADIT favicon.
+
+The exact SHA256 was verified at all three levels:
+
+    source:
+    /git/paditdev/arts/padit.ico
+
+    packaged source:
+    /git/paditdev/waptserver/static/img/favicon.ico
+
+    file actually served by nginx:
+    https://localhost/static/img/favicon.ico
+
+SHA256 for all three:
+
+    290b0d0878f3a400e19935c48ff431475972e0b32016611cd46932bc9a2f5403
+
+This validates the favicon from source through package installation to the
+actual HTTP response.
+
+
+### 48.4 GitHub link rebranding
+
+All application-facing links which still referenced:
+
+    https://github.com/maxcarpone/WAPT
+
+were updated to:
+
+    https://github.com/maxcarpone/PADIT
+
+or:
+
+    https://github.com/maxcarpone/PADIT/issues
+
+Affected areas include:
+
+    PADIT Console
+    PADIT Self Service
+    PADIT Server web interface
+    Windows installer metadata
+    Windows installer documentation links
+
+The only remaining occurrences of maxcarpone/WAPT are intentional historical
+references in WAPT_CHECKPOINT.md.
+
+The installed Bullseye server was validated after the update and serves:
+
+    https://github.com/maxcarpone/PADIT
+    https://github.com/maxcarpone/PADIT/issues
+
+
+### 48.5 Windows build state after Bullseye validation
+
+The latest Windows binaries actually rebuilt and cryptographically validated
+are version 1.8.3.7531.
+
+PADIT Setup:
+
+    FileVersion:    1.8.3.7531
+    ProductVersion: 1.8.3.7531
+    ProductName:    PADITSetup
+    Size:           27158712 bytes
+    SHA256:         CC0EE96A94C46D63424764ACDA885F57FE412A9F1D06AEC9FC2B5CF4276A8DCC
+    Authenticode:   Valid
+    Signer:         CN=Thouet Software Code Signing
+
+PADIT Deploy:
+
+    FileVersion:    1.8.3.7531
+    ProductVersion: 1.8.3
+    ProductName:    PADIT Community Edition
+    Size:           505296 bytes
+    SHA256:         40BCA638D10457789D990F4CAE2ADEF200E0F01049DE113F67716A0F27D80B07
+    Authenticode:   Valid
+    Signer:         CN=Thouet Software Code Signing
+
+Revision 7532 contains only the GitHub link updates described above.
+
+Those Windows-side link changes were validated by source inspection and were
+not considered sufficient reason to perform another complete Windows rebuild.
+
+A later Windows build will naturally incorporate them.
+
+
+### 48.6 Windows visible branding validation
+
+The recent PADIT cosmetic fixes were validated on Windows.
+
+Validated tray branding includes:
+
+    Run PADIT Console
+    PADIT service running
+    Update PADIT software on this host
+
+The session package configuration dialog now uses:
+
+    PADIT Updates Manager
+
+The local service mini-site opened by:
+
+    "Afficher les tâches en cours"
+
+was also validated.
+
+Visible PADIT branding includes:
+
+    PADIT Service status
+    PADIT
+    PADIT Status
+    Main PADIT Repository
+    PADIT Server
+
+The local service web logo and favicon are PADIT-branded.
+
+The technical compatibility identifiers intentionally remain unchanged where
+required, including examples such as:
+
+    wapt-get.exe
+    wapt-get.py
+    wapt-get.ini
+    /wapt
+    /wapt-host
+
+Historical Tranquil IT attribution is retained where appropriate.
+
+
+### 48.7 Bullseye milestone status
+
+The Debian 11 / Bullseye modernization phase is considered validated and
+closed as a technical baseline.
+
+Validated chain:
+
+    reproducible Python 2 runtime
+        -> Bullseye server package build
+        -> Bullseye setup package build
+        -> package installation / upgrade
+        -> PostgreSQL
+        -> waptserver
+        -> nginx / HTTPS
+        -> API routing
+        -> Windows artifact publication
+        -> PADIT web branding
+        -> PADIT favicon
+        -> PADIT GitHub links
+
+Do not repeat the closed Bullseye validation unless a concrete regression or
+contradictory result appears.
+
+
+## 49. Resume protocol for the next ChatGPT thread
 
 Gipity, resume the PADIT/WAPT modernization project from this checkpoint.
+
 Treat WAPT_CHECKPOINT.md as the authoritative technical state.
+
 Speak French, call the user Max, remain warm and concise, and proceed one
 validated step at a time.
 
 Do not reopen closed investigations unless concrete contradictory evidence
 appears.
+
 
 Current development branch:
 
@@ -7792,103 +8368,104 @@ Current development branch:
 
 Current confirmed source HEAD before this checkpoint update:
 
-    42a01ed73fa7e701ab0a27974c2d508ed5de5a28
-    Update Windows build messages for PADIT branding
+    33123c07
+    Update PADIT GitHub links
+
+Current Git revision count before this checkpoint update:
+
+    7532
 
 Public repository:
 
     https://github.com/maxcarpone/PADIT
 
-The Debian 10 / Buster pilot remains:
+
+The Debian 10 / Buster pilot remains frozen and validated:
 
     v1.8.3.7494
 
-Its publication and downloaded-asset SHA256 verification are PASS.
-Colleague pilot feedback remains a parallel operational activity.
-Do not repeat closed Buster validation merely to resume development.
+The Debian 11 / Bullseye modernization baseline is now validated and closed.
 
-The public product identity is now:
+Final validated Bullseye packages:
+
+    tis-waptsetup-windows-1.8.3.7532-33123c07.deb
+
+    SHA256:
+    f3cfa003b55446650ce88290c57e46e36e64c5fdacedc4dad250e817394b6573
+
+
+    tis-waptserver-1.8.3.7532-33123c07-debian-11-amd64.deb
+
+    SHA256:
+    61e03c878bb0edd88598a1c36e9e970425255827fc1c1a37bb40c8714a937c5c
+
+
+The controlled Bullseye Python 2 runtime remains:
+
+    /git/paditdev/build/python2-runtime-server-bullseye
+
+Python version:
+
+    Python 2.7.18
+
+
+The public product identity remains:
 
     PADIT - Pack And Deploy
 
-Compatibility-sensitive technical identifiers may still intentionally use
-WAPT.
+Compatibility-sensitive historical identifiers may intentionally remain WAPT or
+tis-* where changing them could break installations, upgrade paths, package
+metadata or existing deployments.
 
-The Windows PADIT visual branding milestone is frozen at:
+Do not rename historical physical compatibility filenames such as:
 
-    1.8.3.7517
+    waptsetup-tis.exe
+    waptagent.exe
+    waptdeploy.exe
+    tis-waptserver
+    tis-waptsetup
 
-Do not reopen visual branding without a regression.
+without a dedicated compatibility audit.
 
-The latest Windows security-integration proof is:
 
-    PADIT Setup 1.8.3.7520
+The latest Windows build actually produced and cryptographically validated is:
 
-    ProductName: PADITSetup
-    Size:        27130176 bytes
-    SHA256:      07FE9F6DC30BA552F62B6DFD18BED9A7806A023AFE7ABE138743405E3D38A46E
+    1.8.3.7531
 
-The controlled Windows build architecture is now:
+Revision 7532 only adds GitHub link corrections and does not require a dedicated
+Windows rebuild.
 
-    C:\wapt-build-python2
-        build-only Python 2 environment
-        GitPython 2.1.15
-        gitdb2 2.0.6
-        smmap2 3.0.1
-        smmap 3.0.5
+Future Windows builds will incorporate those changes automatically.
 
-    C:\wapt-runtime-1.8.3
-        distributed PADIT runtime
-        no GitPython
-        no gitdb
-        no gitdb2
-        no smmap
-        no smmap2
 
-Relevant commits:
+Exact next action:
 
-    6040550e1  Separate Windows build Python from product runtime
-    1f98af81e  Remove GitPython from distributed Windows runtime
-    42a01ed73  Update Windows build messages for PADIT branding
+    Begin Debian 12 / Bookworm modernization.
 
-GitHub Dependabot automatically closed 34 alerts after the runtime dependency
-cleanup, including all three Critical alerts.
+Do not restart the Python 2 investigation from zero.
 
-Do not interpret that as proof that every remaining legacy Python dependency is
-secure.
+A Debian 12 Python 2.7.18 runtime was already built and validated earlier,
+including successful WAPT server imports and cryptographic tests.
 
-The remaining security work is deliberately split by platform:
+Reuse that work as the starting point and first establish the exact current
+Bookworm build state before modifying anything.
 
-- Windows runtime: continue evidence-based remediation where applicable;
-- server: retain the Dependabot alerts as inventory while modernizing the
-  server baseline.
+The Debian 12 sequence is:
 
-Exact next modernization sequence:
+    1. inventory the existing Bookworm runtime/build state;
+    2. align it with the now-validated Bullseye packaging architecture;
+    3. build tis-waptserver for Debian 12;
+    4. build tis-waptsetup for the Debian 12 publication environment;
+    5. install on a clean Debian 12 validation server;
+    6. run postconfiguration;
+    7. validate PostgreSQL, nginx, waptserver, wapttasks and HTTPS;
+    8. validate API routing;
+    9. publish and validate PADIT Windows artifacts;
+    10. validate backup/restore and migration compatibility;
+    11. inventory actual distributed/imported dependencies;
+    12. reconcile the remaining Dependabot alerts;
+    13. remediate applicable vulnerabilities with evidence.
 
-    Debian 11
-        -> validate migration/build/runtime behavior
-    Debian 12
-        -> establish the modernized reproducible server baseline
-        -> inventory actual dependencies
-        -> reconcile and remediate remaining applicable security alerts
-    Debian 13
-        -> optional later target, not a prerequisite for Debian 12 security work
-
-Do not manually close server security alerts merely because a future migration
-is expected.
-
-Do not rebuild already validated Windows binaries only because documentation or
-checkpoint commits advance the Git revision count.
-
-Keep the historical WAPT_CHECKPOINT.md filename unless a separate deliberate
-documentation-renaming decision is made.
-
-Immediate next actions:
-
-1. review this checkpoint diff;
-2. commit only WAPT_CHECKPOINT.md;
-3. push release/1.8.3;
-4. synchronize other development/build hosts as required;
-5. begin Debian 11 modernization when Max directs it.
+Debian 13 remains an optional later target.
 
 Keep answers concise and proceed one validated step at a time.
