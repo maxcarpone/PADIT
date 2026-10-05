@@ -566,7 +566,7 @@ msgid "System product name : {0}"
 msgstr ""
 
 #: waptservice/templates/layout.html:19
-msgid "WAPT Service status"
+msgid "PADIT Service status"
 msgstr ""
 
 #: waptservice/templates/layout.html:37
@@ -578,7 +578,7 @@ msgid "design by TIS"
 msgstr ""
 
 #: waptservice/templates/layout.html:44
-msgid "WAPT"
+msgid "PADIT"
 msgstr ""
 
 #: waptservice/templates/layout.html:45 waptservice/templates/status.html:6

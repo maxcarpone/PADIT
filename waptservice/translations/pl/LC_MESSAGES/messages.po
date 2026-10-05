@@ -385,11 +385,11 @@ msgid "Installing {0} <a href=\"task?id={1}\">task {1}"
 msgstr ""
 
 #: templates/layout.html:12
-msgid "WAPT Service status"
+msgid "PADIT Service status"
 msgstr ""
 
 #: templates/layout.html:40
-msgid "WAPT"
+msgid "PADIT"
 msgstr ""
 
 #: templates/layout.html:41 templates/status.html:6
