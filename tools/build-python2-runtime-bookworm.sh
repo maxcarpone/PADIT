@@ -957,7 +957,100 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-25577 backport verified."
 
 ###############################################################################
-# 19. Apply python-socketio CVE-2026-48804 backport
+# 19. Apply Werkzeug CVE-2024-34069 debugger host trust backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying Werkzeug CVE-2024-34069 backport"
+echo "============================================================"
+
+WERKZEUG_PATCH_34069="${REPO_ROOT}/utils/patch-werkzeug-1.0.1/CVE-2024-34069.patch"
+WERKZEUG_PATCH_34069_SHA256="69c1b353edb4b311a532c8fd81e9f3de07a30951a064165047250c28f1ca0f8d"
+
+[ -f "${WERKZEUG_PATCH_34069}" ] \
+    || die "Werkzeug security patch not found: ${WERKZEUG_PATCH_34069}"
+
+ACTUAL_WERKZEUG_PATCH_34069_SHA256="$(
+    sha256sum "${WERKZEUG_PATCH_34069}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_WERKZEUG_PATCH_34069_SHA256}" = "${WERKZEUG_PATCH_34069_SHA256}" ] \
+    || die "Unexpected SHA256 for CVE-2024-34069 patch: ${ACTUAL_WERKZEUG_PATCH_34069_SHA256}"
+
+if grep -q 'self.trusted_hosts = \[".localhost", "127.0.0.1"\]' \
+    "${WERKZEUG_DIR}/debug/__init__.py" \
+    && grep -q 'application.trusted_hosts.append(hostname)' \
+    "${WERKZEUG_DIR}/serving.py"; then
+    echo ">>> Werkzeug CVE-2024-34069 backport already present."
+else
+    (
+        cd "${WERKZEUG_DIR}"
+        patch --dry-run -p1 < "${WERKZEUG_PATCH_34069}" >/dev/null
+        patch -p1 < "${WERKZEUG_PATCH_34069}"
+    )
+    echo ">>> Werkzeug CVE-2024-34069 backport applied."
+fi
+
+"${PYTHON}" -m py_compile \
+    "${WERKZEUG_DIR}/debug/__init__.py" \
+    "${WERKZEUG_DIR}/serving.py"
+
+grep -q 'self.trusted_hosts = \[".localhost", "127.0.0.1"\]' \
+    "${WERKZEUG_DIR}/debug/__init__.py" \
+    || die "Werkzeug CVE-2024-34069 trusted hosts marker not found"
+
+grep -q 'application.trusted_hosts.append(hostname)' \
+    "${WERKZEUG_DIR}/serving.py" \
+    || die "Werkzeug CVE-2024-34069 serving hostname marker not found"
+
+[ "$(grep -c 'url: document.location,' \
+    "${WERKZEUG_DIR}/debug/shared/debugger.js")" -eq 2 ] \
+    || die "Werkzeug CVE-2024-34069 debugger.js markers not found"
+
+echo ">>> Running CVE-2024-34069 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+from werkzeug.debug import DebuggedApplication
+from werkzeug.test import Client
+from werkzeug.wrappers import Response
+
+
+def app(environ, start_response):
+    response = Response("normal")
+    return response(environ, start_response)
+
+
+debug_app = DebuggedApplication(app, evalex=True)
+client = Client(debug_app, Response)
+
+bad = client.get(
+    "/console",
+    headers={"Host": "attacker.example"},
+)
+
+good = client.get(
+    "/console",
+    headers={"Host": "localhost"},
+)
+
+if bad.status_code != 400:
+    raise RuntimeError(
+        "CVE-2024-34069 regression: untrusted debugger Host was accepted"
+    )
+
+if good.status_code != 200:
+    raise RuntimeError(
+        "CVE-2024-34069 regression: trusted localhost debugger Host was rejected"
+    )
+
+print("CVE-2024-34069 DEBUGGER HOST TRUST TEST: PASS")
+PYTEST
+
+echo ">>> Werkzeug CVE-2024-34069 backport verified."
+
+###############################################################################
+# 20. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -1051,7 +1144,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 20. Verify critical packages
+# 21. Verify critical packages
 ###############################################################################
 
 echo
@@ -1092,7 +1185,7 @@ if failed:
 PY
 
 ###############################################################################
-# 21. Apply PADIT cryptography compatibility patch
+# 22. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -1116,7 +1209,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 22. Apply PADIT socketIO client patch if present
+# 23. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -1146,7 +1239,7 @@ else
 fi
 
 ###############################################################################
-# 23. Basic Python runtime validation
+# 24. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -1177,7 +1270,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 24. PADIT server import validation
+# 25. PADIT server import validation
 ###############################################################################
 
 echo
@@ -1218,7 +1311,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 25. PADIT server component validation
+# 26. PADIT server component validation
 ###############################################################################
 
 echo
@@ -1236,7 +1329,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 26. Socket.IO validation
+# 27. Socket.IO validation
 ###############################################################################
 
 echo
@@ -1251,7 +1344,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 27. PADIT crypto functional test
+# 28. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -1327,7 +1420,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 28. Generate runtime inventory
+# 29. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -1384,7 +1477,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 29. Final status
+# 30. Final status
 ###############################################################################
 
 echo
