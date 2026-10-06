@@ -603,7 +603,85 @@ PYTEST
 echo ">>> requests CVE-2024-35195 backport verified."
 
 ###############################################################################
-# 15. Apply python-socketio CVE-2026-48804 backport
+# 15. Apply requests CVE-2024-47081 netrc hostname backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying requests CVE-2024-47081 backport"
+echo "============================================================"
+
+REQUESTS_PATCH_47081="${REPO_ROOT}/utils/patch-requests-2.27.1/CVE-2024-47081.patch"
+REQUESTS_PATCH_47081_SHA256="1ffc179dae25541aaefb867361535d4fda56a51462e988cc06c9df330ab23196"
+
+[ -f "${REQUESTS_PATCH_47081}" ] \
+    || die "requests security patch not found: ${REQUESTS_PATCH_47081}"
+
+ACTUAL_REQUESTS_PATCH_SHA256="$(
+    sha256sum "${REQUESTS_PATCH_47081}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_REQUESTS_PATCH_SHA256}" = "${REQUESTS_PATCH_47081_SHA256}" ] \
+    || die "Unexpected SHA256 for CVE-2024-47081 patch: ${ACTUAL_REQUESTS_PATCH_SHA256}"
+
+if grep -q 'host = ri.hostname' \
+    "${REQUESTS_DIR}/utils.py"; then
+    echo ">>> requests CVE-2024-47081 backport already present."
+else
+    (
+        cd "${REQUESTS_DIR}"
+        patch --dry-run -p1 < "${REQUESTS_PATCH_47081}" >/dev/null
+        patch -p1 < "${REQUESTS_PATCH_47081}"
+    )
+    echo ">>> requests CVE-2024-47081 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${REQUESTS_DIR}/utils.py"
+
+grep -q 'host = ri.hostname' \
+    "${REQUESTS_DIR}/utils.py" \
+    || die "requests netrc hostname marker not found"
+
+echo ">>> Running CVE-2024-47081 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+import os
+import tempfile
+import requests
+
+fd, path = tempfile.mkstemp(prefix='padit-netrc-')
+os.close(fd)
+
+with open(path, 'w') as f:
+    f.write(
+        'machine example.com\n'
+        'login padituser\n'
+        'password paditpass\n'
+    )
+
+os.chmod(path, 0600)
+os.environ['NETRC'] = path
+
+try:
+    auth = requests.utils.get_netrc_auth(
+        'https://user:pass@example.com:8443/test'
+    )
+
+    if auth != ('padituser', 'paditpass'):
+        raise RuntimeError(
+            "CVE-2024-47081 regression: hostname netrc lookup failed"
+        )
+
+    print("CVE-2024-47081 NETRC HOSTNAME TEST: PASS")
+finally:
+    os.unlink(path)
+    os.environ.pop('NETRC', None)
+PYTEST
+
+echo ">>> requests CVE-2024-47081 backport verified."
+
+###############################################################################
+# 16. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -697,7 +775,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 16. Verify critical packages
+# 17. Verify critical packages
 ###############################################################################
 
 echo
@@ -738,7 +816,7 @@ if failed:
 PY
 
 ###############################################################################
-# 17. Apply PADIT cryptography compatibility patch
+# 18. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -762,7 +840,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 18. Apply PADIT socketIO client patch if present
+# 19. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -792,7 +870,7 @@ else
 fi
 
 ###############################################################################
-# 19. Basic Python runtime validation
+# 20. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -823,7 +901,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 20. PADIT server import validation
+# 21. PADIT server import validation
 ###############################################################################
 
 echo
@@ -864,7 +942,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 21. PADIT server component validation
+# 22. PADIT server component validation
 ###############################################################################
 
 echo
@@ -882,7 +960,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 22. Socket.IO validation
+# 23. Socket.IO validation
 ###############################################################################
 
 echo
@@ -897,7 +975,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 23. PADIT crypto functional test
+# 24. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -973,7 +1051,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 24. Generate runtime inventory
+# 25. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -1030,7 +1108,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 25. Final status
+# 26. Final status
 ###############################################################################
 
 echo
