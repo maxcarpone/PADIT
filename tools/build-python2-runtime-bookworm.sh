@@ -854,7 +854,110 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-23934 backport verified."
 
 ###############################################################################
-# 18. Apply python-socketio CVE-2026-48804 backport
+# 18. Apply Werkzeug CVE-2023-25577 multipart part limit backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying Werkzeug CVE-2023-25577 backport"
+echo "============================================================"
+
+WERKZEUG_PATCH_25577="${REPO_ROOT}/utils/patch-werkzeug-1.0.1/CVE-2023-25577.patch"
+WERKZEUG_PATCH_25577_SHA256="2e40f24444ec9adbc8297550116ceaf17506c8cf6887fa4db4a0201e066866ec"
+
+[ -f "${WERKZEUG_PATCH_25577}" ] \
+    || die "Werkzeug security patch not found: ${WERKZEUG_PATCH_25577}"
+
+ACTUAL_WERKZEUG_PATCH_25577_SHA256="$(
+    sha256sum "${WERKZEUG_PATCH_25577}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_WERKZEUG_PATCH_25577_SHA256}" = "${WERKZEUG_PATCH_25577_SHA256}" ] \
+    || die "Unexpected SHA256 for CVE-2023-25577 patch: ${ACTUAL_WERKZEUG_PATCH_25577_SHA256}"
+
+if grep -q 'max_form_parts = 1000' \
+    "${WERKZEUG_DIR}/wrappers/base_request.py" \
+    && grep -q 'parts > self.max_form_parts' \
+    "${WERKZEUG_DIR}/formparser.py"; then
+    echo ">>> Werkzeug CVE-2023-25577 backport already present."
+else
+    (
+        cd "${WERKZEUG_DIR}"
+        patch --dry-run -p1 < "${WERKZEUG_PATCH_25577}" >/dev/null
+        patch -p1 < "${WERKZEUG_PATCH_25577}"
+    )
+    echo ">>> Werkzeug CVE-2023-25577 backport applied."
+fi
+
+"${PYTHON}" -m py_compile \
+    "${WERKZEUG_DIR}/formparser.py" \
+    "${WERKZEUG_DIR}/wrappers/base_request.py"
+
+grep -q 'max_form_parts = 1000' \
+    "${WERKZEUG_DIR}/wrappers/base_request.py" \
+    || die "Werkzeug CVE-2023-25577 request limit marker not found"
+
+grep -q 'parts > self.max_form_parts' \
+    "${WERKZEUG_DIR}/formparser.py" \
+    || die "Werkzeug CVE-2023-25577 parser limit marker not found"
+
+echo ">>> Running CVE-2023-25577 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+from io import BytesIO
+
+from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.wrappers import Request
+
+
+def make_request(count):
+    boundary = b"PADITBOUNDARY"
+    parts = []
+
+    for i in range(count):
+        parts.append(
+            b"--" + boundary + b"\r\n"
+            b"Content-Disposition: form-data; name=\"field%d\"\r\n"
+            b"\r\n"
+            b"x\r\n" % i
+        )
+
+    parts.append(b"--" + boundary + b"--\r\n")
+    data = b"".join(parts)
+
+    return Request.from_values(
+        input_stream=BytesIO(data),
+        content_length=len(data),
+        content_type="multipart/form-data; boundary=PADITBOUNDARY",
+        method="POST",
+    )
+
+
+req = make_request(1000)
+
+if len(req.form) != 1000:
+    raise RuntimeError(
+        "CVE-2023-25577 regression: 1000 multipart parts were not accepted"
+    )
+
+req = make_request(1001)
+
+try:
+    req.form
+except RequestEntityTooLarge:
+    pass
+else:
+    raise RuntimeError(
+        "CVE-2023-25577 regression: 1001 multipart parts were accepted"
+    )
+
+print("CVE-2023-25577 MULTIPART PART LIMIT TEST: PASS")
+PYTEST
+
+echo ">>> Werkzeug CVE-2023-25577 backport verified."
+
+###############################################################################
+# 19. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -948,7 +1051,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 19. Verify critical packages
+# 20. Verify critical packages
 ###############################################################################
 
 echo
@@ -989,7 +1092,7 @@ if failed:
 PY
 
 ###############################################################################
-# 20. Apply PADIT cryptography compatibility patch
+# 21. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -1013,7 +1116,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 21. Apply PADIT socketIO client patch if present
+# 22. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -1043,7 +1146,7 @@ else
 fi
 
 ###############################################################################
-# 22. Basic Python runtime validation
+# 23. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -1074,7 +1177,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 23. PADIT server import validation
+# 24. PADIT server import validation
 ###############################################################################
 
 echo
@@ -1115,7 +1218,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 24. PADIT server component validation
+# 25. PADIT server component validation
 ###############################################################################
 
 echo
@@ -1133,7 +1236,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 25. Socket.IO validation
+# 26. Socket.IO validation
 ###############################################################################
 
 echo
@@ -1148,7 +1251,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 26. PADIT crypto functional test
+# 27. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -1224,7 +1327,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 27. Generate runtime inventory
+# 28. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -1281,7 +1384,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 28. Final status
+# 29. Final status
 ###############################################################################
 
 echo
