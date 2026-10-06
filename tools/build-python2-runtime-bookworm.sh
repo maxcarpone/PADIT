@@ -222,12 +222,132 @@ echo "============================================================"
 echo " Installing PADIT SERVER dependencies"
 echo "============================================================"
 
+SERVER_REQUIREMENTS="${BUILD_ROOT}/requirements-server-build.txt"
+UJSON_REQUIREMENT_RE='^[[:space:]]*ujson==2\.0\.3([[:space:]]*(#.*)?)?$'
+
+UJSON_REQ_COUNT="$(
+    grep -Ec "${UJSON_REQUIREMENT_RE}" \
+        "${REPO_ROOT}/requirements-server.txt" || true
+)"
+
+[ "${UJSON_REQ_COUNT}" = "1" ] \
+    || die "Expected exactly one ujson==2.0.3 requirement, found ${UJSON_REQ_COUNT}"
+
+grep -Ev "${UJSON_REQUIREMENT_RE}" \
+    "${REPO_ROOT}/requirements-server.txt" \
+    > "${SERVER_REQUIREMENTS}"
+
 run "${PIP}" install \
     --no-cache-dir \
-    -r "${REPO_ROOT}/requirements-server.txt"
+    -r "${SERVER_REQUIREMENTS}"
 
 ###############################################################################
-# 10. Apply urllib3 CVE-2026-97689 compatibility backport
+# 10. Build ujson 2.0.3 with CVE-2022-31116 backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Building ujson 2.0.3 with CVE-2022-31116 backport"
+echo "============================================================"
+
+UJSON_VERSION="2.0.3"
+UJSON_BUILD_DIR="${BUILD_ROOT}/ujson-${UJSON_VERSION}-patched"
+UJSON_PATCH="${REPO_ROOT}/utils/patch-ujson-2.0.3/CVE-2022-31116.patch"
+UJSON_PATCH_SHA256="ccef883e16bbd8dad3b790f38ff2d324f5d0515a7e0d6f6377b86f509a6fb18d"
+
+[ -f "${UJSON_PATCH}" ] \
+    || die "ujson security patch not found: ${UJSON_PATCH}"
+
+ACTUAL_UJSON_PATCH_SHA256="$(
+    sha256sum "${UJSON_PATCH}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_UJSON_PATCH_SHA256}" = "${UJSON_PATCH_SHA256}" ] \
+    || die "Unexpected SHA256 for CVE-2022-31116 patch: ${ACTUAL_UJSON_PATCH_SHA256}"
+
+rm -rf "${UJSON_BUILD_DIR}"
+mkdir -p "${UJSON_BUILD_DIR}"
+cd "${UJSON_BUILD_DIR}"
+
+run "${PIP}" download \
+    --no-deps \
+    --no-binary=:all: \
+    "ujson==${UJSON_VERSION}"
+
+UJSON_SDIST="ujson-${UJSON_VERSION}.tar.gz"
+
+[ -f "${UJSON_SDIST}" ] \
+    || die "ujson source archive not found: ${UJSON_SDIST}"
+
+tar -xf "${UJSON_SDIST}"
+
+UJSON_SRC_DIR="${UJSON_BUILD_DIR}/ujson-${UJSON_VERSION}"
+
+[ -d "${UJSON_SRC_DIR}" ] \
+    || die "ujson source directory not found: ${UJSON_SRC_DIR}"
+
+(
+    cd "${UJSON_SRC_DIR}"
+    patch --dry-run -p1 < "${UJSON_PATCH}" >/dev/null
+    patch -p1 < "${UJSON_PATCH}"
+)
+
+echo ">>> ujson CVE-2022-31116 backport applied."
+
+UJSON_WHEELHOUSE="${UJSON_BUILD_DIR}/wheelhouse"
+mkdir -p "${UJSON_WHEELHOUSE}"
+
+run "${PIP}" wheel \
+    --no-deps \
+    --no-cache-dir \
+    --wheel-dir "${UJSON_WHEELHOUSE}" \
+    "${UJSON_SRC_DIR}"
+
+run "${PIP}" install \
+    --no-index \
+    --no-deps \
+    --find-links "${UJSON_WHEELHOUSE}" \
+    "ujson==${UJSON_VERSION}"
+
+"${PYTHON}" - <<'PYUJSON'
+import json
+import ujson
+
+expected_version = "2.0.3"
+actual_version = ujson.__version__
+
+if actual_version != expected_version:
+    raise SystemExit(
+        "Unexpected ujson version: %s (expected %s)"
+        % (actual_version, expected_version)
+    )
+
+tests = [
+    r'"\uD800"',
+    r'"\uD800hello"',
+    r'"\uDC00"',
+    r'"\uD800foo bar\uDC00"',
+    r'"\uD83D\uDCA9"',
+]
+
+for payload in tests:
+    actual = ujson.loads(payload)
+    expected = json.loads(payload)
+
+    if actual != expected:
+        raise AssertionError(
+            "CVE-2022-31116 regression for %r: ujson=%r stdlib=%r"
+            % (payload, actual, expected)
+        )
+
+print(">>> ujson version verified: %s" % actual_version)
+print("CVE-2022-31116 REGRESSION TEST: PASS")
+PYUJSON
+
+echo ">>> ujson CVE-2022-31116 backport verified."
+
+###############################################################################
+# 11. Apply urllib3 CVE-2026-97689 compatibility backport
 ###############################################################################
 
 echo
@@ -282,7 +402,7 @@ grep -q 'Response chunk trailer line exceeded maximum allowed length' \
 echo ">>> urllib3 CVE-2026-97689 backport verified."
 
 ###############################################################################
-# 11. Apply urllib3 CVE-2025-66418 decompression-chain backport
+# 12. Apply urllib3 CVE-2025-66418 decompression-chain backport
 ###############################################################################
 
 echo
@@ -319,7 +439,7 @@ grep -q 'Too many content encodings in the chain' \
 echo ">>> urllib3 CVE-2025-66418 backport verified."
 
 ###############################################################################
-# 12. Apply urllib3 CVE-2025-66471 streaming decompression backport
+# 13. Apply urllib3 CVE-2025-66471 streaming decompression backport
 ###############################################################################
 
 echo
@@ -363,7 +483,7 @@ grep -q 'max_length=amt' \
 echo ">>> urllib3 CVE-2025-66471 backport verified."
 
 ###############################################################################
-# 13. Apply python-socketio CVE-2026-48804 backport
+# 14. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -457,7 +577,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 14. Verify critical packages
+# 15. Verify critical packages
 ###############################################################################
 
 echo
@@ -498,7 +618,7 @@ if failed:
 PY
 
 ###############################################################################
-# 15. Apply PADIT cryptography compatibility patch
+# 16. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -522,7 +642,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 16. Apply PADIT socketIO client patch if present
+# 17. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -552,7 +672,7 @@ else
 fi
 
 ###############################################################################
-# 17. Basic Python runtime validation
+# 18. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -583,7 +703,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 18. PADIT server import validation
+# 19. PADIT server import validation
 ###############################################################################
 
 echo
@@ -624,7 +744,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 19. PADIT server component validation
+# 20. PADIT server component validation
 ###############################################################################
 
 echo
@@ -642,7 +762,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 20. Socket.IO validation
+# 21. Socket.IO validation
 ###############################################################################
 
 echo
@@ -657,7 +777,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 21. PADIT crypto functional test
+# 22. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -733,7 +853,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 22. Generate runtime inventory
+# 23. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -790,7 +910,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 23. Final status
+# 24. Final status
 ###############################################################################
 
 echo
