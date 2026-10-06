@@ -520,7 +520,90 @@ grep -q 'max_length=amt' \
 echo ">>> urllib3 CVE-2025-66471 backport verified."
 
 ###############################################################################
-# 14. Apply python-socketio CVE-2026-48804 backport
+# 14. Apply requests CVE-2024-35195 TLS pool isolation backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying requests CVE-2024-35195 backport"
+echo "============================================================"
+
+REQUESTS_DIR="${RUNTIME_ROOT}/lib/python2.7/site-packages/requests"
+REQUESTS_PATCH_35195="${REPO_ROOT}/utils/patch-requests-2.27.1/CVE-2024-35195.patch"
+REQUESTS_PATCH_35195_SHA256="4af162e6e503f464ae8a62fb208e89d4427f3349606014c2c22901f02a8451d8"
+
+[ -d "${REQUESTS_DIR}" ] \
+    || die "requests directory not found: ${REQUESTS_DIR}"
+
+[ -f "${REQUESTS_PATCH_35195}" ] \
+    || die "requests security patch not found: ${REQUESTS_PATCH_35195}"
+
+REQUESTS_VERSION="$("${PYTHON}" -c 'import requests; print(requests.__version__)')"
+
+[ "${REQUESTS_VERSION}" = "2.27.1" ] \
+    || die "Unexpected requests version: ${REQUESTS_VERSION}"
+
+echo ">>> requests version verified: ${REQUESTS_VERSION}"
+
+ACTUAL_REQUESTS_PATCH_SHA256="$(
+    sha256sum "${REQUESTS_PATCH_35195}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_REQUESTS_PATCH_SHA256}" = "${REQUESTS_PATCH_35195_SHA256}" ] \
+    || die "Unexpected SHA256 for CVE-2024-35195 patch: ${ACTUAL_REQUESTS_PATCH_SHA256}"
+
+if grep -q 'def _urllib3_request_context(request, verify):' \
+    "${REQUESTS_DIR}/adapters.py" \
+    && grep -q 'self._get_connection(request, verify, proxies)' \
+    "${REQUESTS_DIR}/adapters.py"; then
+    echo ">>> requests CVE-2024-35195 backport already present."
+else
+    (
+        cd "${REQUESTS_DIR}"
+        patch --dry-run -p1 < "${REQUESTS_PATCH_35195}" >/dev/null
+        patch -p1 < "${REQUESTS_PATCH_35195}"
+    )
+    echo ">>> requests CVE-2024-35195 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${REQUESTS_DIR}/adapters.py"
+
+grep -q 'def _urllib3_request_context(request, verify):' \
+    "${REQUESTS_DIR}/adapters.py" \
+    || die "requests TLS pool context marker not found"
+
+grep -q 'self._get_connection(request, verify, proxies)' \
+    "${REQUESTS_DIR}/adapters.py" \
+    || die "requests TLS-aware connection marker not found"
+
+echo ">>> Running CVE-2024-35195 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+import requests
+from requests.adapters import HTTPAdapter
+
+req = requests.Request(
+    "GET",
+    "https://example.invalid/test"
+).prepare()
+
+adapter = HTTPAdapter()
+
+conn_unverified = adapter._get_connection(req, False)
+conn_verified = adapter._get_connection(req, True)
+
+if conn_unverified is conn_verified:
+    raise RuntimeError(
+        "CVE-2024-35195 regression: verify=False and verify=True reused the same pool"
+    )
+
+print("CVE-2024-35195 POOL ISOLATION TEST: PASS")
+PYTEST
+
+echo ">>> requests CVE-2024-35195 backport verified."
+
+###############################################################################
+# 15. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -614,7 +697,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 15. Verify critical packages
+# 16. Verify critical packages
 ###############################################################################
 
 echo
@@ -655,7 +738,7 @@ if failed:
 PY
 
 ###############################################################################
-# 16. Apply PADIT cryptography compatibility patch
+# 17. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -679,7 +762,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 17. Apply PADIT socketIO client patch if present
+# 18. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -709,7 +792,7 @@ else
 fi
 
 ###############################################################################
-# 18. Basic Python runtime validation
+# 19. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -740,7 +823,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 19. PADIT server import validation
+# 20. PADIT server import validation
 ###############################################################################
 
 echo
@@ -781,7 +864,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 20. PADIT server component validation
+# 21. PADIT server component validation
 ###############################################################################
 
 echo
@@ -799,7 +882,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 21. Socket.IO validation
+# 22. Socket.IO validation
 ###############################################################################
 
 echo
@@ -814,7 +897,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 22. PADIT crypto functional test
+# 23. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -890,7 +973,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 23. Generate runtime inventory
+# 24. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -947,7 +1030,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 24. Final status
+# 25. Final status
 ###############################################################################
 
 echo
