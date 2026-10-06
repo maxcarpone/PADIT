@@ -5,7 +5,7 @@ chardet==4.0.0
 click==6.7
 cryptography==2.5.0
 eventlet==0.33.3
-Flask==1.1.1
+Flask==1.1.4
 Flask-Babel==0.11.2
 Flask-Login==0.4.1
 Flask-SocketIO==4.2.1
@@ -33,7 +33,7 @@ six==1.11.0
 ujson==2.0.3
 urllib3==1.26.20
 wakeonlan==0.2.2
-Werkzeug==0.16
+Werkzeug==1.0.1
 wsgiref==0.1.2
 WTForms==2.1
 ldap3==2.7
