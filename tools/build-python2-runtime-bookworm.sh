@@ -775,7 +775,86 @@ PYTEST
 echo ">>> requests CVE-2026-25645 backport verified."
 
 ###############################################################################
-# 17. Apply python-socketio CVE-2026-48804 backport
+# 17. Apply Werkzeug CVE-2023-23934 cookie parsing backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying Werkzeug CVE-2023-23934 backport"
+echo "============================================================"
+
+WERKZEUG_DIR="${RUNTIME_ROOT}/lib/python2.7/site-packages/werkzeug"
+WERKZEUG_PATCH_23934="${REPO_ROOT}/utils/patch-werkzeug-1.0.1/CVE-2023-23934.patch"
+WERKZEUG_PATCH_23934_SHA256="9e682a6132ffcac899723307e8098ed6adee57cd69218a938c1e5b13c315514e"
+
+[ -d "${WERKZEUG_DIR}" ] \
+    || die "Werkzeug directory not found: ${WERKZEUG_DIR}"
+
+[ -f "${WERKZEUG_PATCH_23934}" ] \
+    || die "Werkzeug security patch not found: ${WERKZEUG_PATCH_23934}"
+
+WERKZEUG_VERSION="$("${PYTHON}" -c 'import werkzeug; print(werkzeug.__version__)')"
+
+[ "${WERKZEUG_VERSION}" = "1.0.1" ] \
+    || die "Unexpected Werkzeug version: ${WERKZEUG_VERSION}"
+
+echo ">>> Werkzeug version verified: ${WERKZEUG_VERSION}"
+
+ACTUAL_WERKZEUG_PATCH_SHA256="$(
+    sha256sum "${WERKZEUG_PATCH_23934}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_WERKZEUG_PATCH_SHA256}" = "${WERKZEUG_PATCH_23934_SHA256}" ] \
+    || die "Unexpected SHA256 for CVE-2023-23934 patch: ${ACTUAL_WERKZEUG_PATCH_SHA256}"
+
+if grep -q 'match = _cookie_re.match(b, i)' \
+    "${WERKZEUG_DIR}/_internal.py" \
+    && grep -q 'b += b";"' "${WERKZEUG_DIR}/_internal.py"; then
+    echo ">>> Werkzeug CVE-2023-23934 backport already present."
+else
+    (
+        cd "${WERKZEUG_DIR}"
+        patch --dry-run -p1 < "${WERKZEUG_PATCH_23934}" >/dev/null
+        patch -p1 < "${WERKZEUG_PATCH_23934}"
+    )
+    echo ">>> Werkzeug CVE-2023-23934 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${WERKZEUG_DIR}/_internal.py"
+
+grep -q 'match = _cookie_re.match(b, i)' \
+    "${WERKZEUG_DIR}/_internal.py" \
+    || die "Werkzeug CVE-2023-23934 match marker not found"
+
+grep -q 'b += b";"' \
+    "${WERKZEUG_DIR}/_internal.py" \
+    || die "Werkzeug CVE-2023-23934 input terminator marker not found"
+
+echo ">>> Running CVE-2023-23934 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+from werkzeug.http import parse_cookie
+
+header = '==__Host-eq=bad;__Host-eq=good;'
+cookies = parse_cookie(header)
+
+if cookies.get('__Host-eq') != 'good':
+    raise RuntimeError(
+        "CVE-2023-23934 regression: malformed cookie took precedence"
+    )
+
+if cookies.getlist('__Host-eq') != ['good']:
+    raise RuntimeError(
+        "CVE-2023-23934 regression: malformed cookie was not discarded"
+    )
+
+print("CVE-2023-23934 COOKIE PARSING TEST: PASS")
+PYTEST
+
+echo ">>> Werkzeug CVE-2023-23934 backport verified."
+
+###############################################################################
+# 18. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -869,7 +948,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 18. Verify critical packages
+# 19. Verify critical packages
 ###############################################################################
 
 echo
@@ -910,7 +989,7 @@ if failed:
 PY
 
 ###############################################################################
-# 19. Apply PADIT cryptography compatibility patch
+# 20. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -934,7 +1013,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 20. Apply PADIT socketIO client patch if present
+# 21. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -964,7 +1043,7 @@ else
 fi
 
 ###############################################################################
-# 21. Basic Python runtime validation
+# 22. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -995,7 +1074,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 22. PADIT server import validation
+# 23. PADIT server import validation
 ###############################################################################
 
 echo
@@ -1036,7 +1115,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 23. PADIT server component validation
+# 24. PADIT server component validation
 ###############################################################################
 
 echo
@@ -1054,7 +1133,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 24. Socket.IO validation
+# 25. Socket.IO validation
 ###############################################################################
 
 echo
@@ -1069,7 +1148,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 25. PADIT crypto functional test
+# 26. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -1145,7 +1224,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 26. Generate runtime inventory
+# 27. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -1202,7 +1281,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 27. Final status
+# 28. Final status
 ###############################################################################
 
 echo
