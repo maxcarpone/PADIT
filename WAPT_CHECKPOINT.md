@@ -8804,3 +8804,702 @@ validation unit and must not be forgotten.
 Debian 13 remains an optional later target.
 
 Keep answers concise and proceed one validated step at a time.
+
+## 51. Bookworm server security remediation — October 6, 2026
+
+This section supersedes the resume state in section 50 for current development
+work.
+
+The Debian 12 / Bookworm installation, publication, console and agent baseline
+documented in section 49 remains valid and must not be repeated unless a
+concrete regression appears.
+
+The work performed after revision 7535 is a source/runtime security remediation
+phase.
+
+It does NOT yet constitute a newly built and installation-validated Bookworm
+tis-waptserver Debian package.
+
+
+### 51.1 Current authoritative Git state
+
+Development branch:
+
+    release/1.8.3
+
+Current confirmed source HEAD before this checkpoint update:
+
+    09a675749055deb26b2fad0182f775c8b76ec1e8
+    Backport eventlet CVE-2025-58068
+
+Current Git revision count before this checkpoint update:
+
+    7559
+
+Public repository:
+
+    https://github.com/maxcarpone/PADIT
+
+The latest validated Bookworm server Debian package remains the historical
+Bookworm baseline:
+
+    tis-waptserver-1.8.3.7535-50800ba5-debian-12-amd64.deb
+
+SHA256:
+
+    e07b276811ee2e7ebb2c69a8a2dab70a840817a5d1db5f05ad393371945ee233
+
+Do not confuse the current source/runtime security baseline at revision 7559
+with a newly package-validated Bookworm release.
+
+A new Debian package has not yet been built and validated from revision 7559.
+
+
+### 51.2 Current controlled Bookworm server runtime
+
+Build host:
+
+    waptworm
+
+Repository:
+
+    /git/paditdev
+
+Controlled runtime:
+
+    /git/paditdev/build/python2-runtime-server-bookworm
+
+Runtime baseline:
+
+    Python 2.7.18
+    OpenSSL 3.0.22
+
+Latest complete runtime build after the Eventlet remediation:
+
+    BUILD SUCCESS
+    All PADIT runtime tests passed.
+
+Runtime size:
+
+    223M
+
+Python binary SHA256:
+
+    4f5e7c1726230673c64339fc3133b0637338b93d94c72e72f55d7ac350bcd863
+
+Runtime inventory:
+
+    /git/paditdev/build/python2-runtime-server-bookworm/WAPT-runtime-inventory.txt
+
+This remains a transitional Python 2 compatibility runtime.
+
+Do not present Python 2 as the final security architecture.
+
+
+### 51.3 Server dependency security baseline
+
+The security work is performed against the dependencies actually distributed
+and exercised by the Bookworm server runtime.
+
+Important current versions include:
+
+    Flask             1.1.4
+    Werkzeug          1.0.1
+    eventlet          0.33.3
+    python-socketio   4.4.0
+    Flask-SocketIO    4.2.1
+    requests          2.27.1
+    urllib3           1.26.20
+    ujson             2.0.3
+    lxml              4.9.4
+    future            0.18.3
+    psutil            6.1.1
+    cryptography      2.5
+    pyOpenSSL         19.0.0
+    Jinja2            2.10.1
+    psycopg2          2.8.6
+    setproctitle      1.1.10
+
+Important Python 2 dependency-audit rule:
+
+    pip list --outdated is not authoritative for Python 2 ceilings.
+
+It may omit releases such as:
+
+    psycopg2 2.8.6
+    setproctitle 1.1.10
+
+because later releases dropped Python 2.
+
+After the CVE remediation pass, perform a separate package-by-package
+modernization review using:
+
+    current version
+    latest Python-2-compatible version
+    latest global version
+    recommended action
+
+Do not perform a blind global dependency upgrade.
+
+
+### 51.4 Security changes integrated into the Bookworm runtime
+
+The following security and dependency work has been integrated after the
+original Bookworm 7535 baseline.
+
+
+#### urllib3
+
+Current version:
+
+    urllib3 1.26.20
+
+Integrated security backports include:
+
+    CVE-2026-97689
+    CVE-2025-66418
+    CVE-2025-66471
+
+Relevant commits include:
+
+    0b013a14a  Backport urllib3 CVE-2026-97689 on Bookworm runtime
+    c801fa450  Backport urllib3 CVE-2025-66418 on Bookworm runtime
+    1b0173b2f  Backport urllib3 CVE-2025-66471 on Bookworm runtime
+
+The corresponding targeted runtime regression tests pass.
+
+
+#### python-socketio / Socket.IO stack
+
+The Python-2-compatible Socket.IO stack was updated and controlled.
+
+Relevant commits:
+
+    bdfbfb20c  Update Socket.IO stack to final Python 2 releases
+    38e4ffc8f  Backport python-socketio CVE-2026-48804 on Bookworm runtime
+
+Current python-socketio version:
+
+    4.4.0
+
+CVE-2026-48804 has a dedicated runtime regression test and passes.
+
+
+#### Eventlet dependency update
+
+Eventlet was moved to its final Python-2-compatible release:
+
+    eventlet 0.33.3
+
+Commit:
+
+    0db0e4e9d  Update Eventlet to final Python 2 release
+
+
+#### ujson
+
+Current version:
+
+    ujson 2.0.3
+
+Backports:
+
+    CVE-2022-31116
+    upstream issue #334 / CVE-2021-45958 buffer overflow
+
+Commits:
+
+    a6560468f  Backport ujson CVE-2022-31116 on Bookworm runtime
+    96b8b8e4a  Backport ujson issue 334 buffer overflow fix
+
+Server-side Dependabot findings corresponding to these fixes were dismissed
+after validation.
+
+The equivalent Windows and Unix agent findings must remain treated separately.
+Do not claim an agent vulnerability is fixed merely because the server runtime
+was fixed.
+
+
+#### psutil
+
+Updated to:
+
+    psutil 6.1.1
+
+Commit:
+
+    f55da2d18  Update server psutil to 6.1.1
+
+The server CVE-2019-18874 finding was dismissed after the update.
+
+
+#### future
+
+Updated to:
+
+    future 0.18.3
+
+Commit:
+
+    01df5a8f2  Update server future to 0.18.3
+
+The server CVE-2022-40899 finding was dismissed after validation.
+
+
+#### lxml
+
+Updated from the historical version to:
+
+    lxml 4.9.4
+
+Commit:
+
+    2e04ac61d  Update server lxml to 4.9.4
+
+The following older server findings were made obsolete by this update and
+dismissed:
+
+    CVE-2022-2309
+    CVE-2018-19787
+    CVE-2021-43818
+    CVE-2021-28957
+    CVE-2020-27783
+
+A newer lxml security finding still exists and must be handled separately:
+
+    Dependabot #160
+    CVE-2026-41066
+
+
+#### requests
+
+Server requirements were moved from requests 2.26.0 to:
+
+    requests 2.27.1
+
+Commit:
+
+    5a86410a0  Update server requests to 2.27.1
+
+Security backports integrated on top of requests 2.27.1:
+
+    CVE-2024-35195
+    CVE-2024-47081
+    CVE-2026-25645
+    CVE-2023-32681
+
+Commits:
+
+    75fe5fb03  Backport requests CVE-2024-35195
+    3ba709361  Backport requests CVE-2024-47081
+    8e63b72c1  Backport requests CVE-2026-25645
+    19d1e444b9a7664b84516cce22b57f5b0d2e6645
+                 Backport requests CVE-2023-32681
+
+Dedicated regression tests exist for:
+
+    TLS pool isolation
+    netrc hostname handling
+    secure temporary-file uniqueness
+    Proxy-Authorization handling through HTTPS proxies
+
+All passed in the controlled Bookworm runtime.
+
+
+#### Flask and Werkzeug baseline
+
+Server versions were moved to:
+
+    Flask    1.1.4
+    Werkzeug 1.0.1
+
+Commit:
+
+    18bb12370  Update server Flask and Werkzeug
+
+
+#### Werkzeug security backports
+
+Backports integrated on Werkzeug 1.0.1:
+
+    CVE-2023-23934
+    CVE-2023-25577
+    CVE-2024-34069
+
+Commits:
+
+    6594d01b6  Backport Werkzeug CVE-2023-23934
+    d685542d1  Backport Werkzeug CVE-2023-25577
+    6c9ecf63a  Backport Werkzeug CVE-2024-34069
+
+A consolidated safe_join backport also covers:
+
+    CVE-2024-49766
+    CVE-2025-66221
+    CVE-2026-21860
+    CVE-2026-27199
+    CVE-2026-102598
+
+Commit:
+
+    2c8a42b7ea51fab87fde2af052f6956545906676
+    Backport Werkzeug safe_join security fixes
+
+The consolidated safe_join regression suite covers, among other cases:
+
+    absolute-path rejection
+    traversal
+    alternate separators
+    Windows special device names
+    CON / CON.txt / compound extensions
+    CONIN$ / CONOUT$
+    COM1 / LPT9
+    Unicode superscript device aliases
+    nested path segments
+    ADS markers
+
+The full Bookworm runtime build passes with these backports.
+
+
+#### Eventlet CVE-2025-58068
+
+Dependabot server alert:
+
+    #147
+    CVE-2025-58068
+    HTTP request smuggling in unparsed HTTP trailers
+
+The finding is relevant to the PADIT server.
+
+Evidence:
+
+    waptserver/server.py imports and monkey-patches eventlet
+    Flask-SocketIO selects async_mode = eventlet
+    python-socketio also reports async_mode = eventlet
+
+The upstream fix was backported onto eventlet 0.33.3.
+
+Patch:
+
+    utils/patch-eventlet-0.33.3/CVE-2025-58068.patch
+
+Patch SHA256:
+
+    897e91e4e5c77fe8205408e4daca9c9fc12da7540f34f2c19f92875343ea151d
+
+The fix replaces the single-line trailer discard after the zero-length chunk
+with complete trailer consumption.
+
+Dedicated regression test verifies that:
+
+    multiple trailers are consumed
+    the next HTTP request line remains untouched
+
+Result:
+
+    CVE-2025-58068 TRAILER DISCARD TEST: PASS
+
+Full runtime rebuild result:
+
+    BUILD SUCCESS
+    All PADIT runtime tests passed.
+
+Commit:
+
+    09a675749055deb26b2fad0182f775c8b76ec1e8
+    Backport eventlet CVE-2025-58068
+
+Dependabot server alert #147 was dismissed with:
+
+    dismissed_reason = fix_started
+
+and references the exact commit above.
+
+
+### 51.5 Dependabot findings classified as not applicable to the PADIT server
+
+Do not dismiss findings as not applicable without demonstrating the actual
+runtime or execution path.
+
+
+#### python-socketio CVE-2025-61765
+
+Dependabot server alert:
+
+    #148
+    CVE-2025-61765
+
+The vulnerability concerns unsafe pickle deserialization in python-socketio
+multi-server queue managers.
+
+PADIT evidence established:
+
+    no RedisManager use
+    no KombuManager use
+    no KafkaManager use
+    no ZmqManager use
+    no message_queue configuration
+    no client_manager configuration
+
+Runtime Flask-SocketIO manager:
+
+    socketio.base_manager.BaseManager
+
+The Windows agent uses socketIO_client rather than the affected
+python-socketio server queue-manager path.
+
+Alert #148 was therefore dismissed as:
+
+    not_used
+
+
+#### requests CVE-2022-31117
+
+Server alert #119 was classified and dismissed as:
+
+    not_used
+
+Keep this classification separate from actual source backports.
+
+
+### 51.6 Remaining server security work
+
+The security remediation pass is NOT finished.
+
+Known remaining Bookworm server findings include at least:
+
+    #163  cryptography / bundled OpenSSL finding
+    #160  CVE-2026-41066  lxml
+    #159  CVE-2026-34073  cryptography
+    #157  CVE-2026-27448  pyOpenSSL
+    #156  CVE-2026-27205  Flask
+    #154  CVE-2026-26007  cryptography
+    #144  CVE-2025-27516  Jinja2
+    #143  CVE-2024-56326  Jinja2
+    #138  CVE-2024-34064  Jinja2
+    #137  CVE-2023-29483  eventlet
+    #136  CVE-2024-0727   cryptography
+    #135  CVE-2023-50782  cryptography
+    #134  CVE-2024-22195  Jinja2
+    #131  cryptography / bundled OpenSSL finding
+    #130  cryptography finding
+    #129  cryptography finding
+    #127  CVE-2023-30861  Flask
+    #124  CVE-2023-0286   cryptography
+    #123  CVE-2023-23931  cryptography
+    #113  CVE-2020-28493  Jinja2
+    #111  CVE-2020-25659  cryptography
+
+Refresh the live Dependabot alert list before relying on this list as complete,
+because GitHub alert state can change as fixes are committed or advisories are
+updated.
+
+Do not infer that cryptography or pyOpenSSL alerts are fixed merely because the
+runtime links against OpenSSL 3.0.22.
+
+For each alert establish:
+
+    package actually distributed
+    exact version
+    vulnerable execution path
+    upstream fixing commit/release
+    feasibility of a Python-2-compatible update or surgical backport
+    dedicated regression test where practical
+
+
+### 51.7 Server, Windows agent and Unix agent are separate security targets
+
+Dependabot path/context matters.
+
+A server-side fix does not automatically remediate an agent-side alert.
+
+Known example:
+
+    ujson CVE-2021-45958 / issue #334
+
+The server runtime has the validated backport.
+
+The corresponding agent findings were reopened after initially being dismissed:
+
+    Windows agent alert #10
+    Unix agent alert #2
+
+Keep them open until the corresponding agent runtime/build path has been
+independently inspected and remediated.
+
+Current work order:
+
+    1. finish Bookworm server CVE remediation
+    2. perform the non-CVE server dependency modernization review
+    3. handle Windows agent security findings on the Windows build chain
+    4. investigate Unix agent separately when that build/runtime is actually
+       brought back under validation
+
+Do not mix these scopes.
+
+
+### 51.8 Git history / root-author decision
+
+An audit found historical commits authored or committed as root.
+
+Rewriting those commits now would rewrite all descendant SHA values and affect
+historical tags including validated Buster milestones and the 1.8.3 release
+line.
+
+It would also invalidate SHA references already recorded in documentation and
+Dependabot remediation comments.
+
+Decision:
+
+    Do NOT rewrite the historical Git authorship.
+
+Keep the existing history intact.
+
+Current repositories are already configured to create new commits using the
+intended maxcarpone identity.
+
+Do not reopen this investigation unless there is a new concrete requirement.
+
+
+### 51.9 Current build-script security architecture
+
+Authoritative Bookworm runtime builder:
+
+    tools/build-python2-runtime-bookworm.sh
+
+At revision 7559 the builder contains 33 numbered stages.
+
+Security-specific runtime handling currently includes:
+
+    ujson security backports
+    urllib3 security backports
+    requests security backports
+    Werkzeug security backports
+    eventlet CVE-2025-58068 backport
+    python-socketio CVE-2026-48804 backport
+
+The builder validates patch SHA256 values, expected package versions,
+Python syntax and targeted regression behavior before continuing.
+
+A meaningful runtime security change must continue to end with a complete
+runtime rebuild and the existing PADIT server validation suite.
+
+
+### 51.10 Current repository working-tree cautions
+
+On waptworm, the following build/publication artifacts are intentionally
+untracked and must not be accidentally committed:
+
+    waptsetup/deb/Thouet-Software-Signing-Root-CA.cer
+    waptsetup/deb/builddir/
+    waptsetup/deb/waptsetup-tis.exe
+
+They were still the only untracked items after commit 09a675749.
+
+On VM106, after fast-forwarding to 09a675749, the working tree was clean.
+
+
+### 51.11 Exact next action
+
+Resume on waptworm from:
+
+    branch: release/1.8.3
+    HEAD:   09a675749055deb26b2fad0182f775c8b76ec1e8
+
+First refresh the current OPEN Dependabot server alert list with gh api so that
+the checkpoint list is not treated as more authoritative than GitHub's live
+state.
+
+Then continue the server CVE remediation one dependency at a time.
+
+The next logical Eventlet finding to investigate is:
+
+    Dependabot #137
+    CVE-2023-29483
+
+For that finding:
+
+    1. inspect the GitHub advisory and exact upstream fixing commit;
+    2. determine whether eventlet 0.33.3 is vulnerable;
+    3. reproduce the vulnerable behavior where practical;
+    4. backport only the minimum upstream correction if required;
+    5. add a targeted Python 2 regression test;
+    6. integrate it into tools/build-python2-runtime-bookworm.sh;
+    7. rebuild the complete controlled runtime;
+    8. commit and push before dismissing the Dependabot alert.
+
+Continue the remaining server CVEs using the same evidence-based method.
+
+After all applicable server CVEs are resolved, perform the separate non-CVE
+dependency modernization pass using the Python-2 compatibility matrix.
+
+Do not yet rebuild the Windows product simply because the Git revision count
+has advanced.
+
+Do not yet claim a new Bookworm Debian-package milestone.
+
+A new package build/install/functional validation will be a separate validation
+barrier after the server runtime security work reaches a suitable stable point.
+
+Bookworm backup/restore and migration compatibility also remain a later
+validation unit and must not be forgotten.
+
+Debian 13 remains an optional later target.
+
+
+## 52. Resume protocol for the next ChatGPT thread
+
+Gipity, resume the PADIT/WAPT modernization project from this checkpoint.
+
+Treat WAPT_CHECKPOINT.md as the authoritative technical state.
+
+Speak French, call the user Max, remain concise, and proceed one validated step
+at a time.
+
+Current active development branch:
+
+    release/1.8.3
+
+Current source baseline before this checkpoint commit:
+
+    09a675749055deb26b2fad0182f775c8b76ec1e8
+    Backport eventlet CVE-2025-58068
+
+Current Git revision count before this checkpoint commit:
+
+    7559
+
+The Bookworm end-to-end installation baseline remains validated.
+
+The active work unit is now:
+
+    Bookworm SERVER dependency security remediation.
+
+Do not reopen:
+
+    validated Buster migration / DR work
+    validated Bullseye baseline
+    validated Bookworm installation/publication baseline
+    historical root-author rewrite investigation
+
+unless concrete contradictory evidence appears.
+
+Do not confuse server, Windows-agent and Unix-agent Dependabot findings.
+
+Exact next action:
+
+    Refresh the open SERVER Dependabot alerts, then investigate
+    #137 / CVE-2023-29483 against eventlet 0.33.3.
+
+Keep the existing evidence-based workflow:
+
+    establish relevance
+    inspect upstream
+    reproduce when practical
+    apply minimal compatible fix
+    add regression test
+    full runtime rebuild
+    commit and push
+    only then close/dismiss the alert
+
+Keep answers concise and proceed one validated step at a time.
