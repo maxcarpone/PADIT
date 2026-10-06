@@ -520,23 +520,13 @@ grep -q 'max_length=amt' \
 echo ">>> urllib3 CVE-2025-66471 backport verified."
 
 ###############################################################################
-# 14. Apply requests CVE-2024-35195 TLS pool isolation backport
+# requests common setup
 ###############################################################################
 
-echo
-echo "============================================================"
-echo " Applying requests CVE-2024-35195 backport"
-echo "============================================================"
-
 REQUESTS_DIR="${RUNTIME_ROOT}/lib/python2.7/site-packages/requests"
-REQUESTS_PATCH_35195="${REPO_ROOT}/utils/patch-requests-2.27.1/CVE-2024-35195.patch"
-REQUESTS_PATCH_35195_SHA256="4af162e6e503f464ae8a62fb208e89d4427f3349606014c2c22901f02a8451d8"
 
 [ -d "${REQUESTS_DIR}" ] \
     || die "requests directory not found: ${REQUESTS_DIR}"
-
-[ -f "${REQUESTS_PATCH_35195}" ] \
-    || die "requests security patch not found: ${REQUESTS_PATCH_35195}"
 
 REQUESTS_VERSION="$("${PYTHON}" -c 'import requests; print(requests.__version__)')"
 
@@ -544,6 +534,94 @@ REQUESTS_VERSION="$("${PYTHON}" -c 'import requests; print(requests.__version__)
     || die "Unexpected requests version: ${REQUESTS_VERSION}"
 
 echo ">>> requests version verified: ${REQUESTS_VERSION}"
+
+###############################################################################
+# 14. Apply requests CVE-2023-32681 proxy authorization leak backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying requests CVE-2023-32681 backport"
+echo "============================================================"
+
+REQUESTS_PATCH_32681="${REPO_ROOT}/utils/patch-requests-2.27.1/CVE-2023-32681.patch"
+REQUESTS_PATCH_32681_SHA256="003eb163893c401f94e65172b6e11e659d4a5983e8cf6f85eed43e674dd8eca2"
+
+[ -f "${REQUESTS_PATCH_32681}" ] \
+    || die "requests CVE-2023-32681 patch not found: ${REQUESTS_PATCH_32681}"
+
+ACTUAL_REQUESTS_PATCH_32681_SHA256="$(
+    sha256sum "${REQUESTS_PATCH_32681}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_REQUESTS_PATCH_32681_SHA256}" = "${REQUESTS_PATCH_32681_SHA256}" ] \
+    || die "Unexpected SHA256 for requests CVE-2023-32681 patch: ${ACTUAL_REQUESTS_PATCH_32681_SHA256}"
+
+if grep -q "if not scheme.startswith('https') and username and password:" \
+    "${REQUESTS_DIR}/sessions.py"; then
+    echo ">>> requests CVE-2023-32681 backport already present."
+else
+    (
+        cd "${REQUESTS_DIR}"
+        patch --dry-run -p1 < "${REQUESTS_PATCH_32681}" >/dev/null
+        patch -p1 < "${REQUESTS_PATCH_32681}"
+    )
+    echo ">>> requests CVE-2023-32681 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${REQUESTS_DIR}/sessions.py"
+
+echo ">>> Running CVE-2023-32681 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+import requests
+
+session = requests.Session()
+session.trust_env = False
+
+proxies = {
+    "http": "http://test:pass@localhost:8080",
+    "https": "http://test:pass@localhost:8090",
+}
+
+cases = [
+    ("http://example.com", True),
+    ("https://example.com", False),
+]
+
+for url, should_have_auth in cases:
+    req = requests.Request("GET", url)
+    prep = req.prepare()
+
+    session.rebuild_proxies(prep, proxies)
+
+    has_auth = "Proxy-Authorization" in prep.headers
+
+    if has_auth != should_have_auth:
+        raise RuntimeError(
+            "Unexpected Proxy-Authorization state for %s: %r"
+            % (url, prep.headers.get("Proxy-Authorization"))
+        )
+
+print("CVE-2023-32681 PROXY AUTH LEAK TEST: PASS")
+PYTEST
+
+echo ">>> requests CVE-2023-32681 backport verified."
+
+###############################################################################
+# 15. Apply requests CVE-2024-35195 TLS pool isolation backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying requests CVE-2024-35195 backport"
+echo "============================================================"
+
+REQUESTS_PATCH_35195="${REPO_ROOT}/utils/patch-requests-2.27.1/CVE-2024-35195.patch"
+REQUESTS_PATCH_35195_SHA256="4af162e6e503f464ae8a62fb208e89d4427f3349606014c2c22901f02a8451d8"
+
+[ -f "${REQUESTS_PATCH_35195}" ] \
+    || die "requests security patch not found: ${REQUESTS_PATCH_35195}"
 
 ACTUAL_REQUESTS_PATCH_SHA256="$(
     sha256sum "${REQUESTS_PATCH_35195}" | awk '{print $1}'
@@ -603,7 +681,7 @@ PYTEST
 echo ">>> requests CVE-2024-35195 backport verified."
 
 ###############################################################################
-# 15. Apply requests CVE-2024-47081 netrc hostname backport
+# 16. Apply requests CVE-2024-47081 netrc hostname backport
 ###############################################################################
 
 echo
@@ -681,7 +759,7 @@ PYTEST
 echo ">>> requests CVE-2024-47081 backport verified."
 
 ###############################################################################
-# 16. Apply requests CVE-2026-25645 temporary-file backport
+# 17. Apply requests CVE-2026-25645 temporary-file backport
 ###############################################################################
 
 echo
@@ -775,7 +853,7 @@ PYTEST
 echo ">>> requests CVE-2026-25645 backport verified."
 
 ###############################################################################
-# 17. Apply Werkzeug CVE-2023-23934 cookie parsing backport
+# 18. Apply Werkzeug CVE-2023-23934 cookie parsing backport
 ###############################################################################
 
 echo
@@ -854,7 +932,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-23934 backport verified."
 
 ###############################################################################
-# 18. Apply Werkzeug CVE-2023-25577 multipart part limit backport
+# 19. Apply Werkzeug CVE-2023-25577 multipart part limit backport
 ###############################################################################
 
 echo
@@ -957,7 +1035,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-25577 backport verified."
 
 ###############################################################################
-# 19. Apply Werkzeug CVE-2024-34069 debugger host trust backport
+# 20. Apply Werkzeug CVE-2024-34069 debugger host trust backport
 ###############################################################################
 
 echo
@@ -1050,7 +1128,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2024-34069 backport verified."
 
 ###############################################################################
-# 20. Apply consolidated Werkzeug safe_join security backports
+# 21. Apply consolidated Werkzeug safe_join security backports
 #     CVE-2024-49766, CVE-2025-66221, CVE-2026-21860,
 #     CVE-2026-27199, CVE-2026-102598
 ###############################################################################
@@ -1153,7 +1231,7 @@ PYTEST
 echo ">>> Werkzeug safe_join security backports verified."
 
 ###############################################################################
-# 21. Apply python-socketio CVE-2026-48804 backport
+# 22. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -1247,7 +1325,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 22. Verify critical packages
+# 23. Verify critical packages
 ###############################################################################
 
 echo
@@ -1288,7 +1366,7 @@ if failed:
 PY
 
 ###############################################################################
-# 23. Apply PADIT cryptography compatibility patch
+# 24. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -1312,7 +1390,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 24. Apply PADIT socketIO client patch if present
+# 25. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -1342,7 +1420,7 @@ else
 fi
 
 ###############################################################################
-# 25. Basic Python runtime validation
+# 26. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -1373,7 +1451,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 26. PADIT server import validation
+# 27. PADIT server import validation
 ###############################################################################
 
 echo
@@ -1414,7 +1492,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 27. PADIT server component validation
+# 28. PADIT server component validation
 ###############################################################################
 
 echo
@@ -1432,7 +1510,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 28. Socket.IO validation
+# 29. Socket.IO validation
 ###############################################################################
 
 echo
@@ -1447,7 +1525,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 29. PADIT crypto functional test
+# 30. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -1523,7 +1601,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 30. Generate runtime inventory
+# 31. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -1580,7 +1658,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 31. Final status
+# 32. Final status
 ###############################################################################
 
 echo
