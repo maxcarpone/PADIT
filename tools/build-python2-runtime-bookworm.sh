@@ -1231,7 +1231,88 @@ PYTEST
 echo ">>> Werkzeug safe_join security backports verified."
 
 ###############################################################################
-# 22. Apply python-socketio CVE-2026-48804 backport
+# 22. Apply eventlet CVE-2025-58068 trailer parsing backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying eventlet CVE-2025-58068 backport"
+echo "============================================================"
+
+EVENTLET_DIR="${RUNTIME_ROOT}/lib/python2.7/site-packages/eventlet"
+EVENTLET_PATCH_58068="${REPO_ROOT}/utils/patch-eventlet-0.33.3/CVE-2025-58068.patch"
+EVENTLET_PATCH_58068_SHA256="897e91e4e5c77fe8205408e4daca9c9fc12da7540f34f2c19f92875343ea151d"
+
+[ -d "${EVENTLET_DIR}" ] \
+    || die "eventlet directory not found: ${EVENTLET_DIR}"
+
+[ -f "${EVENTLET_PATCH_58068}" ] \
+    || die "eventlet CVE-2025-58068 patch not found: ${EVENTLET_PATCH_58068}"
+
+EVENTLET_VERSION="$("${PYTHON}" -c 'import eventlet; print(eventlet.__version__)')"
+
+[ "${EVENTLET_VERSION}" = "0.33.3" ] \
+    || die "Unexpected eventlet version: ${EVENTLET_VERSION}"
+
+echo ">>> eventlet version verified: ${EVENTLET_VERSION}"
+
+ACTUAL_EVENTLET_PATCH_58068_SHA256="$(
+    sha256sum "${EVENTLET_PATCH_58068}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_EVENTLET_PATCH_58068_SHA256}" = "${EVENTLET_PATCH_58068_SHA256}" ] \
+    || die "Unexpected SHA256 for eventlet CVE-2025-58068 patch: ${ACTUAL_EVENTLET_PATCH_58068_SHA256}"
+
+if grep -q 'def _discard_trailers(self, rfile):' \
+    "${EVENTLET_DIR}/wsgi.py"; then
+    echo ">>> eventlet CVE-2025-58068 backport already present."
+else
+    (
+        cd "${EVENTLET_DIR}"
+        patch --dry-run -p1 < "${EVENTLET_PATCH_58068}" >/dev/null
+        patch -p1 < "${EVENTLET_PATCH_58068}"
+    )
+    echo ">>> eventlet CVE-2025-58068 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${EVENTLET_DIR}/wsgi.py"
+
+echo ">>> Running CVE-2025-58068 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+from io import BytesIO
+from eventlet.wsgi import Input
+
+raw = (
+    b"0\r\n"
+    b"X-Trailer-One: one\r\n"
+    b"X-Trailer-Two: two\r\n"
+    b"\r\n"
+    b"GET /next HTTP/1.1\r\n"
+)
+
+rfile = BytesIO(raw)
+
+inp = Input(
+    rfile=rfile,
+    content_length=None,
+    sock=None,
+    chunked_input=True,
+)
+
+body = inp.read()
+remaining = rfile.readline()
+
+assert body == b""
+assert remaining == b"GET /next HTTP/1.1\r\n"
+
+print("CVE-2025-58068 TRAILER DISCARD TEST: PASS")
+PYTEST
+
+echo ">>> eventlet CVE-2025-58068 backport verified."
+
+###############################################################################
+# 23. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -1325,7 +1406,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 23. Verify critical packages
+# 24. Verify critical packages
 ###############################################################################
 
 echo
@@ -1366,7 +1447,7 @@ if failed:
 PY
 
 ###############################################################################
-# 24. Apply PADIT cryptography compatibility patch
+# 25. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -1390,7 +1471,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 25. Apply PADIT socketIO client patch if present
+# 26. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -1420,7 +1501,7 @@ else
 fi
 
 ###############################################################################
-# 26. Basic Python runtime validation
+# 27. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -1451,7 +1532,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 27. PADIT server import validation
+# 28. PADIT server import validation
 ###############################################################################
 
 echo
@@ -1492,7 +1573,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 28. PADIT server component validation
+# 29. PADIT server component validation
 ###############################################################################
 
 echo
@@ -1510,7 +1591,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 29. Socket.IO validation
+# 30. Socket.IO validation
 ###############################################################################
 
 echo
@@ -1525,7 +1606,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 30. PADIT crypto functional test
+# 31. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -1601,7 +1682,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 31. Generate runtime inventory
+# 32. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -1658,7 +1739,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 32. Final status
+# 33. Final status
 ###############################################################################
 
 echo
