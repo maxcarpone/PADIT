@@ -1,0 +1,48 @@
+--- a/security.py
++++ b/security.py
+@@ -33,6 +33,12 @@
+     sep for sep in [os.path.sep, os.path.altsep] if sep not in (None, "/")
+ )
+ 
++_windows_device_files = set(
++    ["AUX", "CON", "CONIN$", "CONOUT$", "NUL", "PRN"]
++    + ["COM%s" % c for c in u"123456789¹²³"]
++    + ["LPT%s" % c for c in u"123456789¹²³"]
++)
++
+ 
+ def pbkdf2_hex(
+     data, salt, iterations=DEFAULT_PBKDF2_ITERATIONS, keylen=None, hashfunc=None
+@@ -233,14 +239,28 @@
+     parts = [directory]
+ 
+     for filename in pathnames:
+-        if filename != "":
+-            filename = posixpath.normpath(filename)
++        if not filename:
++            continue
++
++        filename = posixpath.normpath(filename)
+ 
+         if (
+-            any(sep in filename for sep in _os_alt_seps)
+-            or os.path.isabs(filename)
++            os.path.isabs(filename)
++            or filename.startswith("/")
+             or filename == ".."
+             or filename.startswith("../")
++            or any(sep in filename for sep in _os_alt_seps)
++            or (
++                os.name == "nt"
++                and any(
++                    part.partition(":")[0]
++                    .partition(".")[0]
++                    .strip()
++                    .upper()
++                    in _windows_device_files
++                    for part in filename.split("/")
++                )
++            )
+         ):
+             return None
+ 

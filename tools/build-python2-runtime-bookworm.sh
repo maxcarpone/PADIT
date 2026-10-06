@@ -1050,7 +1050,110 @@ PYTEST
 echo ">>> Werkzeug CVE-2024-34069 backport verified."
 
 ###############################################################################
-# 20. Apply python-socketio CVE-2026-48804 backport
+# 20. Apply consolidated Werkzeug safe_join security backports
+#     CVE-2024-49766, CVE-2025-66221, CVE-2026-21860,
+#     CVE-2026-27199, CVE-2026-102598
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying consolidated Werkzeug safe_join security backports"
+echo "============================================================"
+
+WERKZEUG_PATCH_SAFE_JOIN="${REPO_ROOT}/utils/patch-werkzeug-1.0.1/safe-join-security-backports.patch"
+WERKZEUG_PATCH_SAFE_JOIN_SHA256="acca1e1741f0c0b65b2a67498fce315772b5c9a9c1d763a6bd60af0436543650"
+
+[ -f "${WERKZEUG_PATCH_SAFE_JOIN}" ] \
+    || die "Werkzeug safe_join security patch not found: ${WERKZEUG_PATCH_SAFE_JOIN}"
+
+ACTUAL_WERKZEUG_PATCH_SAFE_JOIN_SHA256="$(
+    sha256sum "${WERKZEUG_PATCH_SAFE_JOIN}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_WERKZEUG_PATCH_SAFE_JOIN_SHA256}" = "${WERKZEUG_PATCH_SAFE_JOIN_SHA256}" ] \
+    || die "Unexpected SHA256 for Werkzeug safe_join security patch: ${ACTUAL_WERKZEUG_PATCH_SAFE_JOIN_SHA256}"
+
+if grep -q 'filename.startswith("/")' \
+    "${WERKZEUG_DIR}/security.py" \
+    && grep -q 'part.partition(":")\[0\]' \
+    "${WERKZEUG_DIR}/security.py" \
+    && grep -q 'CONOUT\$' \
+    "${WERKZEUG_DIR}/security.py"; then
+    echo ">>> Werkzeug safe_join security backports already present."
+else
+    (
+        cd "${WERKZEUG_DIR}"
+        patch --dry-run -p1 < "${WERKZEUG_PATCH_SAFE_JOIN}" >/dev/null
+        patch -p1 < "${WERKZEUG_PATCH_SAFE_JOIN}"
+    )
+    echo ">>> Werkzeug safe_join security backports applied."
+fi
+
+"${PYTHON}" -m py_compile "${WERKZEUG_DIR}/security.py"
+
+echo ">>> Running consolidated Werkzeug safe_join regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+import ntpath
+
+import werkzeug.security as security
+from werkzeug.security import safe_join
+
+
+assert safe_join("a", "b/c") == "a/b/c"
+assert safe_join("a", "../b/c") is None
+
+# CVE-2024-49766
+original_isabs = security.os.path.isabs
+security.os.path.isabs = ntpath.isabs
+
+try:
+    assert safe_join("a", "//b/c") is None
+finally:
+    security.os.path.isabs = original_isabs
+
+# CVE-2025-66221, CVE-2026-21860,
+# CVE-2026-27199, CVE-2026-102598
+original_name = security.os.name
+security.os.name = "nt"
+
+try:
+    blocked = [
+        "CON",
+        "CON.txt",
+        "CON.txt.html",
+        "CON  ",
+        "CON . txt",
+        "CONIN$",
+        "CONOUT$",
+        "COM1",
+        "LPT9",
+        u"COM\u00b9",
+        u"LPT\u00b3",
+        "b/CON",
+        "CON:",
+        "CON::$DATA",
+        "b/CON:",
+    ]
+
+    for value in blocked:
+        result = safe_join("a", value)
+
+        if result is not None:
+            raise RuntimeError(
+                "Werkzeug safe_join regression: unsafe path accepted: %r => %r"
+                % (value, result)
+            )
+finally:
+    security.os.name = original_name
+
+print("WERKZEUG SAFE_JOIN CONSOLIDATED REGRESSION TEST: PASS")
+PYTEST
+
+echo ">>> Werkzeug safe_join security backports verified."
+
+###############################################################################
+# 21. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -1144,7 +1247,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 21. Verify critical packages
+# 22. Verify critical packages
 ###############################################################################
 
 echo
@@ -1185,7 +1288,7 @@ if failed:
 PY
 
 ###############################################################################
-# 22. Apply PADIT cryptography compatibility patch
+# 23. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -1209,7 +1312,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 23. Apply PADIT socketIO client patch if present
+# 24. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -1239,7 +1342,7 @@ else
 fi
 
 ###############################################################################
-# 24. Basic Python runtime validation
+# 25. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -1270,7 +1373,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 25. PADIT server import validation
+# 26. PADIT server import validation
 ###############################################################################
 
 echo
@@ -1311,7 +1414,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 26. PADIT server component validation
+# 27. PADIT server component validation
 ###############################################################################
 
 echo
@@ -1329,7 +1432,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 27. Socket.IO validation
+# 28. Socket.IO validation
 ###############################################################################
 
 echo
@@ -1344,7 +1447,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 28. PADIT crypto functional test
+# 29. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -1420,7 +1523,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 29. Generate runtime inventory
+# 30. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -1477,7 +1580,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 30. Final status
+# 31. Final status
 ###############################################################################
 
 echo
