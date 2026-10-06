@@ -242,28 +242,44 @@ run "${PIP}" install \
     -r "${SERVER_REQUIREMENTS}"
 
 ###############################################################################
-# 10. Build ujson 2.0.3 with CVE-2022-31116 backport
+# 10. Build ujson 2.0.3 with security backports
 ###############################################################################
 
 echo
 echo "============================================================"
-echo " Building ujson 2.0.3 with CVE-2022-31116 backport"
+echo " Building ujson 2.0.3 with security backports"
 echo "============================================================"
 
 UJSON_VERSION="2.0.3"
 UJSON_BUILD_DIR="${BUILD_ROOT}/ujson-${UJSON_VERSION}-patched"
-UJSON_PATCH="${REPO_ROOT}/utils/patch-ujson-2.0.3/CVE-2022-31116.patch"
-UJSON_PATCH_SHA256="ccef883e16bbd8dad3b790f38ff2d324f5d0515a7e0d6f6377b86f509a6fb18d"
 
-[ -f "${UJSON_PATCH}" ] \
-    || die "ujson security patch not found: ${UJSON_PATCH}"
+UJSON_PATCH_CVE_2022_31116="${REPO_ROOT}/utils/patch-ujson-2.0.3/CVE-2022-31116.patch"
+UJSON_PATCH_CVE_2022_31116_SHA256="ccef883e16bbd8dad3b790f38ff2d324f5d0515a7e0d6f6377b86f509a6fb18d"
+
+UJSON_PATCH_ISSUE_334="${REPO_ROOT}/utils/patch-ujson-2.0.3/issue-334-buffer-overflow.patch"
+UJSON_PATCH_ISSUE_334_SHA256="1ddba061ddc6e776e518a5a272d6d7ca0263bac3b5ee947f554abc82795658fd"
+
+for UJSON_PATCH in \
+    "${UJSON_PATCH_CVE_2022_31116}" \
+    "${UJSON_PATCH_ISSUE_334}"
+do
+    [ -f "${UJSON_PATCH}" ] \
+        || die "ujson security patch not found: ${UJSON_PATCH}"
+done
 
 ACTUAL_UJSON_PATCH_SHA256="$(
-    sha256sum "${UJSON_PATCH}" | awk '{print $1}'
+    sha256sum "${UJSON_PATCH_CVE_2022_31116}" | awk '{print $1}'
 )"
 
-[ "${ACTUAL_UJSON_PATCH_SHA256}" = "${UJSON_PATCH_SHA256}" ] \
+[ "${ACTUAL_UJSON_PATCH_SHA256}" = "${UJSON_PATCH_CVE_2022_31116_SHA256}" ] \
     || die "Unexpected SHA256 for CVE-2022-31116 patch: ${ACTUAL_UJSON_PATCH_SHA256}"
+
+ACTUAL_UJSON_PATCH_SHA256="$(
+    sha256sum "${UJSON_PATCH_ISSUE_334}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_UJSON_PATCH_SHA256}" = "${UJSON_PATCH_ISSUE_334_SHA256}" ] \
+    || die "Unexpected SHA256 for issue 334 patch: ${ACTUAL_UJSON_PATCH_SHA256}"
 
 rm -rf "${UJSON_BUILD_DIR}"
 mkdir -p "${UJSON_BUILD_DIR}"
@@ -288,11 +304,18 @@ UJSON_SRC_DIR="${UJSON_BUILD_DIR}/ujson-${UJSON_VERSION}"
 
 (
     cd "${UJSON_SRC_DIR}"
-    patch --dry-run -p1 < "${UJSON_PATCH}" >/dev/null
-    patch -p1 < "${UJSON_PATCH}"
+
+    for UJSON_PATCH in \
+        "${UJSON_PATCH_CVE_2022_31116}" \
+        "${UJSON_PATCH_ISSUE_334}"
+    do
+        patch --dry-run -p1 < "${UJSON_PATCH}" >/dev/null
+        patch -p1 < "${UJSON_PATCH}"
+    done
 )
 
 echo ">>> ujson CVE-2022-31116 backport applied."
+echo ">>> ujson issue 334 buffer-overflow backport applied."
 
 UJSON_WHEELHOUSE="${UJSON_BUILD_DIR}/wheelhouse"
 mkdir -p "${UJSON_WHEELHOUSE}"
@@ -309,8 +332,9 @@ run "${PIP}" install \
     --find-links "${UJSON_WHEELHOUSE}" \
     "ujson==${UJSON_VERSION}"
 
-"${PYTHON}" - <<'PYUJSON'
+UJSON_SRC_DIR="${UJSON_SRC_DIR}" "${PYTHON}" - <<'PYUJSON'
 import json
+import os
 import ujson
 
 expected_version = "2.0.3"
@@ -340,11 +364,24 @@ for payload in tests:
             % (payload, actual, expected)
         )
 
+reproducer = os.path.join(
+    os.environ["UJSON_SRC_DIR"],
+    "tests",
+    "334-reproducer.json",
+)
+
+with open(reproducer, "rb") as f:
+    issue_334_data = ujson.loads(f.read())
+
+for indent in [0, 1, 2, 4, 5, 8, 49]:
+    ujson.dumps(issue_334_data, indent=indent)
+
 print(">>> ujson version verified: %s" % actual_version)
 print("CVE-2022-31116 REGRESSION TEST: PASS")
+print("ujson issue 334 REGRESSION TEST: PASS")
 PYUJSON
 
-echo ">>> ujson CVE-2022-31116 backport verified."
+echo ">>> ujson security backports verified."
 
 ###############################################################################
 # 11. Apply urllib3 CVE-2026-97689 compatibility backport
