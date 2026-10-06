@@ -681,7 +681,101 @@ PYTEST
 echo ">>> requests CVE-2024-47081 backport verified."
 
 ###############################################################################
-# 16. Apply python-socketio CVE-2026-48804 backport
+# 16. Apply requests CVE-2026-25645 temporary-file backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying requests CVE-2026-25645 backport"
+echo "============================================================"
+
+REQUESTS_PATCH_25645="${REPO_ROOT}/utils/patch-requests-2.27.1/CVE-2026-25645.patch"
+REQUESTS_PATCH_25645_SHA256="8b3a91cf7e963b2fa50311525db2b23f297c966fd1860042190019443384937a"
+
+[ -f "${REQUESTS_PATCH_25645}" ] \
+    || die "requests security patch not found: ${REQUESTS_PATCH_25645}"
+
+ACTUAL_REQUESTS_PATCH_SHA256="$(
+    sha256sum "${REQUESTS_PATCH_25645}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_REQUESTS_PATCH_SHA256}" = "${REQUESTS_PATCH_25645_SHA256}" ] \
+    || die "Unexpected SHA256 for CVE-2026-25645 patch: ${ACTUAL_REQUESTS_PATCH_SHA256}"
+
+if grep -q 'fd, extracted_path = tempfile.mkstemp(suffix=suffix)' \
+    "${REQUESTS_DIR}/utils.py"; then
+    echo ">>> requests CVE-2026-25645 backport already present."
+else
+    (
+        cd "${REQUESTS_DIR}"
+        patch --dry-run -p1 < "${REQUESTS_PATCH_25645}" >/dev/null
+        patch -p1 < "${REQUESTS_PATCH_25645}"
+    )
+    echo ">>> requests CVE-2026-25645 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${REQUESTS_DIR}/utils.py"
+
+grep -q 'fd, extracted_path = tempfile.mkstemp(suffix=suffix)' \
+    "${REQUESTS_DIR}/utils.py" \
+    || die "requests secure temporary-file marker not found"
+
+echo ">>> Running CVE-2026-25645 regression test..."
+
+"${PYTHON}" - <<'PYTEST'
+import os
+import tempfile
+import zipfile
+import requests
+
+fd, zip_path = tempfile.mkstemp(prefix='padit-requests-', suffix='.zip')
+os.close(fd)
+
+payload = 'PADIT-CVE-2026-25645'
+
+try:
+    z = zipfile.ZipFile(zip_path, 'w')
+    z.writestr('nested/test.txt', payload)
+    z.close()
+
+    virtual_path = zip_path + os.sep + 'nested' + os.sep + 'test.txt'
+
+    extracted1 = requests.utils.extract_zipped_paths(virtual_path)
+    extracted2 = requests.utils.extract_zipped_paths(virtual_path)
+
+    if extracted1 == extracted2:
+        raise RuntimeError(
+            "CVE-2026-25645 regression: temporary path was reused"
+        )
+
+    for extracted in (extracted1, extracted2):
+        if not os.path.isfile(extracted):
+            raise RuntimeError(
+                "CVE-2026-25645 regression: extracted file missing"
+            )
+        with open(extracted, 'rb') as f:
+            if f.read() != payload:
+                raise RuntimeError(
+                    "CVE-2026-25645 regression: extracted content mismatch"
+                )
+
+    print("CVE-2026-25645 TEMP FILE UNIQUENESS TEST: PASS")
+
+finally:
+    for name in ('extracted1', 'extracted2'):
+        if name in locals():
+            extracted = locals()[name]
+            if os.path.exists(extracted):
+                os.unlink(extracted)
+
+    if os.path.exists(zip_path):
+        os.unlink(zip_path)
+PYTEST
+
+echo ">>> requests CVE-2026-25645 backport verified."
+
+###############################################################################
+# 17. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -775,7 +869,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 17. Verify critical packages
+# 18. Verify critical packages
 ###############################################################################
 
 echo
@@ -816,7 +910,7 @@ if failed:
 PY
 
 ###############################################################################
-# 18. Apply PADIT cryptography compatibility patch
+# 19. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -840,7 +934,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 19. Apply PADIT socketIO client patch if present
+# 20. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -870,7 +964,7 @@ else
 fi
 
 ###############################################################################
-# 20. Basic Python runtime validation
+# 21. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -901,7 +995,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 21. PADIT server import validation
+# 22. PADIT server import validation
 ###############################################################################
 
 echo
@@ -942,7 +1036,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 22. PADIT server component validation
+# 23. PADIT server component validation
 ###############################################################################
 
 echo
@@ -960,7 +1054,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 23. Socket.IO validation
+# 24. Socket.IO validation
 ###############################################################################
 
 echo
@@ -975,7 +1069,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 24. PADIT crypto functional test
+# 25. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -1051,7 +1145,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 25. Generate runtime inventory
+# 26. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -1108,7 +1202,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 26. Final status
+# 27. Final status
 ###############################################################################
 
 echo
