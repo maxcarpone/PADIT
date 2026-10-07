@@ -2336,9 +2336,13 @@ class SSLCertificate(BaseObjectClass):
         extensions = []
 
         issuer = self.crt.subject
+        issuer_ski = self.crt.extensions.get_extension_for_oid(
+            x509.OID_SUBJECT_KEY_IDENTIFIER).value
         extensions.append(
-            dict(extension=x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(
-                self.crt.extensions.get_extension_for_oid(x509.OID_SUBJECT_KEY_IDENTIFIER)),
+            dict(extension=x509.AuthorityKeyIdentifier(
+                key_identifier=issuer_ski.digest,
+                authority_cert_issuer=None,
+                authority_cert_serial_number=None),
             critical=False))
 
         serial_number = x509.random_serial_number()

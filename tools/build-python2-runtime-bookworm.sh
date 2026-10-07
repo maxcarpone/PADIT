@@ -224,6 +224,7 @@ echo "============================================================"
 
 SERVER_REQUIREMENTS="${BUILD_ROOT}/requirements-server-build.txt"
 UJSON_REQUIREMENT_RE='^[[:space:]]*ujson==2\.0\.3([[:space:]]*(#.*)?)?$'
+CRYPTOGRAPHY_REQUIREMENT_RE='^[[:space:]]*cryptography==3\.3\.2([[:space:]]*(#.*)?)?$'
 
 UJSON_REQ_COUNT="$(
     grep -Ec "${UJSON_REQUIREMENT_RE}" \
@@ -233,7 +234,15 @@ UJSON_REQ_COUNT="$(
 [ "${UJSON_REQ_COUNT}" = "1" ] \
     || die "Expected exactly one ujson==2.0.3 requirement, found ${UJSON_REQ_COUNT}"
 
-grep -Ev "${UJSON_REQUIREMENT_RE}" \
+CRYPTOGRAPHY_REQ_COUNT="$(
+    grep -Ec "${CRYPTOGRAPHY_REQUIREMENT_RE}" \
+        "${REPO_ROOT}/requirements-server.txt" || true
+)"
+
+[ "${CRYPTOGRAPHY_REQ_COUNT}" = "1" ] \
+    || die "Expected exactly one cryptography==3.3.2 requirement, found ${CRYPTOGRAPHY_REQ_COUNT}"
+
+grep -Ev "${UJSON_REQUIREMENT_RE}|${CRYPTOGRAPHY_REQUIREMENT_RE}" \
     "${REPO_ROOT}/requirements-server.txt" \
     > "${SERVER_REQUIREMENTS}"
 
@@ -242,7 +251,110 @@ run "${PIP}" install \
     -r "${SERVER_REQUIREMENTS}"
 
 ###############################################################################
-# 10. Build ujson 2.0.3 with security backports
+# 10. Build cryptography 3.3.2 against system OpenSSL 3
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Building cryptography 3.3.2 against system OpenSSL 3"
+echo "============================================================"
+
+CRYPTOGRAPHY_VERSION="3.3.2"
+CRYPTOGRAPHY_BUILD_DIR="${BUILD_ROOT}/cryptography-${CRYPTOGRAPHY_VERSION}-patched"
+
+CRYPTOGRAPHY_PATCH="${REPO_ROOT}/utils/patch-cryptography-3.3.2/openssl3-compat.patch"
+CRYPTOGRAPHY_PATCH_SHA256="2d2529dad4c11757524942ff797937c03573f1dcb12f32aefc2ee8227f1af626"
+
+CRYPTOGRAPHY_SDIST_SHA256="5a60d3780149e13b7a6ff7ad6526b38846354d11a15e21068e57073e29e19bed"
+
+[ -f "${CRYPTOGRAPHY_PATCH}" ] \
+    || die "cryptography OpenSSL 3 patch not found: ${CRYPTOGRAPHY_PATCH}"
+
+ACTUAL_CRYPTOGRAPHY_PATCH_SHA256="$(
+    sha256sum "${CRYPTOGRAPHY_PATCH}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}" = "${CRYPTOGRAPHY_PATCH_SHA256}" ] \
+    || die "Unexpected SHA256 for cryptography OpenSSL 3 patch: ${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}"
+
+rm -rf "${CRYPTOGRAPHY_BUILD_DIR}"
+mkdir -p "${CRYPTOGRAPHY_BUILD_DIR}"
+cd "${CRYPTOGRAPHY_BUILD_DIR}"
+
+run "${PIP}" download \
+    --no-deps \
+    --no-binary=:all: \
+    "cryptography==${CRYPTOGRAPHY_VERSION}"
+
+CRYPTOGRAPHY_SDIST="cryptography-${CRYPTOGRAPHY_VERSION}.tar.gz"
+
+[ -f "${CRYPTOGRAPHY_SDIST}" ] \
+    || die "cryptography source archive not found: ${CRYPTOGRAPHY_SDIST}"
+
+ACTUAL_CRYPTOGRAPHY_SDIST_SHA256="$(
+    sha256sum "${CRYPTOGRAPHY_SDIST}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_CRYPTOGRAPHY_SDIST_SHA256}" = "${CRYPTOGRAPHY_SDIST_SHA256}" ] \
+    || die "Unexpected SHA256 for cryptography source archive: ${ACTUAL_CRYPTOGRAPHY_SDIST_SHA256}"
+
+tar -xf "${CRYPTOGRAPHY_SDIST}"
+
+CRYPTOGRAPHY_SRC_DIR="${CRYPTOGRAPHY_BUILD_DIR}/cryptography-${CRYPTOGRAPHY_VERSION}"
+
+[ -d "${CRYPTOGRAPHY_SRC_DIR}" ] \
+    || die "cryptography source directory not found: ${CRYPTOGRAPHY_SRC_DIR}"
+
+(
+    cd "${CRYPTOGRAPHY_SRC_DIR}"
+
+    patch --dry-run -p1 < "${CRYPTOGRAPHY_PATCH}" >/dev/null
+    patch -p1 < "${CRYPTOGRAPHY_PATCH}"
+)
+
+echo ">>> cryptography OpenSSL 3 compatibility patch applied."
+
+CRYPTOGRAPHY_WHEELHOUSE="${CRYPTOGRAPHY_BUILD_DIR}/wheelhouse"
+mkdir -p "${CRYPTOGRAPHY_WHEELHOUSE}"
+
+run "${PIP}" wheel \
+    --no-deps \
+    --no-cache-dir \
+    --wheel-dir "${CRYPTOGRAPHY_WHEELHOUSE}" \
+    "${CRYPTOGRAPHY_SRC_DIR}"
+
+run "${PIP}" install \
+    --force-reinstall \
+    --no-index \
+    --no-deps \
+    --find-links "${CRYPTOGRAPHY_WHEELHOUSE}" \
+    "cryptography==${CRYPTOGRAPHY_VERSION}"
+
+"${PYTHON}" - <<'PYCRYPTOGRAPHY'
+import cryptography
+from cryptography.hazmat.backends.openssl.backend import backend
+
+expected_version = "3.3.2"
+
+if cryptography.__version__ != expected_version:
+    raise SystemExit(
+        "Unexpected cryptography version: %s (expected %s)"
+        % (cryptography.__version__, expected_version)
+    )
+
+if backend.openssl_version_number() < 0x30000000:
+    raise SystemExit(
+        "cryptography is not using OpenSSL 3: %s"
+        % backend.openssl_version_text()
+    )
+
+print(">>> cryptography version verified: %s" % cryptography.__version__)
+print(">>> cryptography OpenSSL backend: %s" % backend.openssl_version_text())
+print("CRYPTOGRAPHY 3.3.2 SYSTEM OPENSSL 3 TEST: PASS")
+PYCRYPTOGRAPHY
+
+###############################################################################
+# 11. Build ujson 2.0.3 with security backports
 ###############################################################################
 
 echo
@@ -384,7 +496,7 @@ PYUJSON
 echo ">>> ujson security backports verified."
 
 ###############################################################################
-# 11. Apply urllib3 CVE-2026-97689 compatibility backport
+# 12. Apply urllib3 CVE-2026-97689 compatibility backport
 ###############################################################################
 
 echo
@@ -439,7 +551,7 @@ grep -q 'Response chunk trailer line exceeded maximum allowed length' \
 echo ">>> urllib3 CVE-2026-97689 backport verified."
 
 ###############################################################################
-# 12. Apply urllib3 CVE-2025-66418 decompression-chain backport
+# 13. Apply urllib3 CVE-2025-66418 decompression-chain backport
 ###############################################################################
 
 echo
@@ -476,7 +588,7 @@ grep -q 'Too many content encodings in the chain' \
 echo ">>> urllib3 CVE-2025-66418 backport verified."
 
 ###############################################################################
-# 13. Apply urllib3 CVE-2025-66471 streaming decompression backport
+# 14. Apply urllib3 CVE-2025-66471 streaming decompression backport
 ###############################################################################
 
 echo
@@ -536,7 +648,7 @@ REQUESTS_VERSION="$("${PYTHON}" -c 'import requests; print(requests.__version__)
 echo ">>> requests version verified: ${REQUESTS_VERSION}"
 
 ###############################################################################
-# 14. Apply requests CVE-2023-32681 proxy authorization leak backport
+# 15. Apply requests CVE-2023-32681 proxy authorization leak backport
 ###############################################################################
 
 echo
@@ -609,7 +721,7 @@ PYTEST
 echo ">>> requests CVE-2023-32681 backport verified."
 
 ###############################################################################
-# 15. Apply requests CVE-2024-35195 TLS pool isolation backport
+# 16. Apply requests CVE-2024-35195 TLS pool isolation backport
 ###############################################################################
 
 echo
@@ -681,7 +793,7 @@ PYTEST
 echo ">>> requests CVE-2024-35195 backport verified."
 
 ###############################################################################
-# 16. Apply requests CVE-2024-47081 netrc hostname backport
+# 17. Apply requests CVE-2024-47081 netrc hostname backport
 ###############################################################################
 
 echo
@@ -759,7 +871,7 @@ PYTEST
 echo ">>> requests CVE-2024-47081 backport verified."
 
 ###############################################################################
-# 17. Apply requests CVE-2026-25645 temporary-file backport
+# 18. Apply requests CVE-2026-25645 temporary-file backport
 ###############################################################################
 
 echo
@@ -853,7 +965,7 @@ PYTEST
 echo ">>> requests CVE-2026-25645 backport verified."
 
 ###############################################################################
-# 18. Apply Werkzeug CVE-2023-23934 cookie parsing backport
+# 19. Apply Werkzeug CVE-2023-23934 cookie parsing backport
 ###############################################################################
 
 echo
@@ -932,7 +1044,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-23934 backport verified."
 
 ###############################################################################
-# 19. Apply Werkzeug CVE-2023-25577 multipart part limit backport
+# 20. Apply Werkzeug CVE-2023-25577 multipart part limit backport
 ###############################################################################
 
 echo
@@ -1035,7 +1147,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-25577 backport verified."
 
 ###############################################################################
-# 20. Apply Werkzeug CVE-2024-34069 debugger host trust backport
+# 21. Apply Werkzeug CVE-2024-34069 debugger host trust backport
 ###############################################################################
 
 echo
@@ -1128,7 +1240,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2024-34069 backport verified."
 
 ###############################################################################
-# 21. Apply consolidated Werkzeug safe_join security backports
+# 22. Apply consolidated Werkzeug safe_join security backports
 #     CVE-2024-49766, CVE-2025-66221, CVE-2026-21860,
 #     CVE-2026-27199, CVE-2026-102598
 ###############################################################################
@@ -1231,7 +1343,7 @@ PYTEST
 echo ">>> Werkzeug safe_join security backports verified."
 
 ###############################################################################
-# 22. Apply eventlet CVE-2025-58068 trailer parsing backport
+# 23. Apply eventlet CVE-2025-58068 trailer parsing backport
 ###############################################################################
 
 echo
@@ -1312,7 +1424,7 @@ PYTEST
 echo ">>> eventlet CVE-2025-58068 backport verified."
 
 ###############################################################################
-# 23. Apply Eventlet/dnspython CVE-2023-29483 TuDoor backport
+# 24. Apply Eventlet/dnspython CVE-2023-29483 TuDoor backport
 ###############################################################################
 
 echo
@@ -1666,7 +1778,7 @@ PYTEST
 echo ">>> Eventlet/dnspython CVE-2023-29483 backport verified."
 
 ###############################################################################
-# 24. Apply python-socketio CVE-2026-48804 backport
+# 25. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -1760,7 +1872,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 25. Verify critical packages
+# 26. Verify critical packages
 ###############################################################################
 
 echo
@@ -1801,7 +1913,7 @@ if failed:
 PY
 
 ###############################################################################
-# 26. Apply PADIT cryptography compatibility patch
+# 27. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -1825,7 +1937,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 27. Apply PADIT socketIO client patch if present
+# 28. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -1855,7 +1967,7 @@ else
 fi
 
 ###############################################################################
-# 28. Basic Python runtime validation
+# 29. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -1886,7 +1998,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 29. PADIT server import validation
+# 30. PADIT server import validation
 ###############################################################################
 
 echo
@@ -1927,7 +2039,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 30. PADIT server component validation
+# 31. PADIT server component validation
 ###############################################################################
 
 echo
@@ -1945,7 +2057,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 31. Socket.IO validation
+# 32. Socket.IO validation
 ###############################################################################
 
 echo
@@ -1960,7 +2072,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 32. PADIT crypto functional test
+# 33. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -2036,7 +2148,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 33. Generate runtime inventory
+# 34. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -2093,7 +2205,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 34. Final status
+# 35. Final status
 ###############################################################################
 
 echo

@@ -1,0 +1,35 @@
+--- a/src/_cffi_src/openssl/fips.py
++++ b/src/_cffi_src/openssl/fips.py
+@@ -18,7 +18,7 @@
+ """
+ 
+ CUSTOMIZATIONS = """
+-#if CRYPTOGRAPHY_IS_LIBRESSL
++#if CRYPTOGRAPHY_IS_LIBRESSL || OPENSSL_VERSION_NUMBER >= 0x30000000L
+ static const long Cryptography_HAS_FIPS = 0;
+ int (*FIPS_mode_set)(int) = NULL;
+ int (*FIPS_mode)(void) = NULL;
+--- a/src/_cffi_src/openssl/err.py
++++ b/src/_cffi_src/openssl/err.py
+@@ -46,4 +46,7 @@
+ """
+ 
+ CUSTOMIZATIONS = """
++#if OPENSSL_VERSION_NUMBER >= 0x30000000L
++int (*ERR_GET_FUNC)(unsigned long) = NULL;
++#endif
+ """
+--- a/src/cryptography/hazmat/bindings/openssl/binding.py
++++ b/src/cryptography/hazmat/bindings/openssl/binding.py
+@@ -43,7 +43,10 @@
+             break
+ 
+         err_lib = lib.ERR_GET_LIB(code)
+-        err_func = lib.ERR_GET_FUNC(code)
++        if lib.OpenSSL_version_num() >= 0x30000000:
++            err_func = 0
++        else:
++            err_func = lib.ERR_GET_FUNC(code)
+         err_reason = lib.ERR_GET_REASON(code)
+ 
+         errors.append(_OpenSSLError(code, err_lib, err_func, err_reason))
