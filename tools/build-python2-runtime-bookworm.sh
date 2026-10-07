@@ -353,20 +353,35 @@ echo "============================================================"
 CRYPTOGRAPHY_VERSION="3.3.2"
 CRYPTOGRAPHY_BUILD_DIR="${BUILD_ROOT}/cryptography-${CRYPTOGRAPHY_VERSION}-patched"
 
-CRYPTOGRAPHY_PATCH="${REPO_ROOT}/utils/patch-cryptography-3.3.2/openssl3-compat.patch"
-CRYPTOGRAPHY_PATCH_SHA256="2d2529dad4c11757524942ff797937c03573f1dcb12f32aefc2ee8227f1af626"
+CRYPTOGRAPHY_PATCH_OPENSSL3="${REPO_ROOT}/utils/patch-cryptography-3.3.2/openssl3-compat.patch"
+CRYPTOGRAPHY_PATCH_OPENSSL3_SHA256="2d2529dad4c11757524942ff797937c03573f1dcb12f32aefc2ee8227f1af626"
+
+CRYPTOGRAPHY_PATCH_CVE_2023_49083="${REPO_ROOT}/utils/patch-cryptography-3.3.2/CVE-2023-49083.patch"
+CRYPTOGRAPHY_PATCH_CVE_2023_49083_SHA256="3ce50d0c316ac82c00824d45777cd5e23f0aaad329fa4088df1a097936c0e162"
 
 CRYPTOGRAPHY_SDIST_SHA256="5a60d3780149e13b7a6ff7ad6526b38846354d11a15e21068e57073e29e19bed"
 
-[ -f "${CRYPTOGRAPHY_PATCH}" ] \
-    || die "cryptography OpenSSL 3 patch not found: ${CRYPTOGRAPHY_PATCH}"
+for CRYPTOGRAPHY_PATCH in \
+    "${CRYPTOGRAPHY_PATCH_OPENSSL3}" \
+    "${CRYPTOGRAPHY_PATCH_CVE_2023_49083}"
+do
+    [ -f "${CRYPTOGRAPHY_PATCH}" ] \
+        || die "cryptography patch not found: ${CRYPTOGRAPHY_PATCH}"
+done
 
 ACTUAL_CRYPTOGRAPHY_PATCH_SHA256="$(
-    sha256sum "${CRYPTOGRAPHY_PATCH}" | awk '{print $1}'
+    sha256sum "${CRYPTOGRAPHY_PATCH_OPENSSL3}" | awk '{print $1}'
 )"
 
-[ "${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}" = "${CRYPTOGRAPHY_PATCH_SHA256}" ] \
+[ "${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}" = "${CRYPTOGRAPHY_PATCH_OPENSSL3_SHA256}" ] \
     || die "Unexpected SHA256 for cryptography OpenSSL 3 patch: ${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}"
+
+ACTUAL_CRYPTOGRAPHY_PATCH_SHA256="$(
+    sha256sum "${CRYPTOGRAPHY_PATCH_CVE_2023_49083}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}" = "${CRYPTOGRAPHY_PATCH_CVE_2023_49083_SHA256}" ] \
+    || die "Unexpected SHA256 for cryptography CVE-2023-49083 patch: ${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}"
 
 rm -rf "${CRYPTOGRAPHY_BUILD_DIR}"
 mkdir -p "${CRYPTOGRAPHY_BUILD_DIR}"
@@ -399,11 +414,17 @@ CRYPTOGRAPHY_SRC_DIR="${CRYPTOGRAPHY_BUILD_DIR}/cryptography-${CRYPTOGRAPHY_VERS
 (
     cd "${CRYPTOGRAPHY_SRC_DIR}"
 
-    patch --dry-run -p1 < "${CRYPTOGRAPHY_PATCH}" >/dev/null
-    patch -p1 < "${CRYPTOGRAPHY_PATCH}"
+    for CRYPTOGRAPHY_PATCH in \
+        "${CRYPTOGRAPHY_PATCH_OPENSSL3}" \
+        "${CRYPTOGRAPHY_PATCH_CVE_2023_49083}"
+    do
+        patch --dry-run -p1 < "${CRYPTOGRAPHY_PATCH}" >/dev/null
+        patch -p1 < "${CRYPTOGRAPHY_PATCH}"
+    done
 )
 
 echo ">>> cryptography OpenSSL 3 compatibility patch applied."
+echo ">>> cryptography CVE-2023-49083 backport applied."
 
 CRYPTOGRAPHY_WHEELHOUSE="${CRYPTOGRAPHY_BUILD_DIR}/wheelhouse"
 mkdir -p "${CRYPTOGRAPHY_WHEELHOUSE}"
@@ -422,8 +443,15 @@ run "${PIP}" install \
     "cryptography==${CRYPTOGRAPHY_VERSION}"
 
 "${PYTHON}" - <<'PYCRYPTOGRAPHY'
+import datetime
+
 import cryptography
+from cryptography import x509
 from cryptography.hazmat.backends.openssl.backend import backend
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import pkcs7
+from cryptography.x509.oid import NameOID
 
 expected_version = "3.3.2"
 
@@ -439,9 +467,51 @@ if backend.openssl_version_number() < 0x30000000:
         % backend.openssl_version_text()
     )
 
+key = rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=2048,
+)
+
+name = x509.Name([
+    x509.NameAttribute(NameOID.COMMON_NAME, u"PADIT CVE-2023-49083 test"),
+])
+
+now = datetime.datetime.utcnow()
+
+cert = (
+    x509.CertificateBuilder()
+    .subject_name(name)
+    .issuer_name(name)
+    .public_key(key.public_key())
+    .serial_number(x509.random_serial_number())
+    .not_valid_before(now - datetime.timedelta(days=1))
+    .not_valid_after(now + datetime.timedelta(days=1))
+    .sign(key, hashes.SHA256())
+)
+
+builder = (
+    pkcs7.PKCS7SignatureBuilder()
+    .set_data(b"PADIT CVE-2023-49083 regression test")
+    .add_signer(cert, key, hashes.SHA256())
+)
+
+sig_no_certs = builder.sign(
+    serialization.Encoding.DER,
+    [pkcs7.PKCS7Options.NoCerts],
+)
+
+loaded = pkcs7.load_der_pkcs7_certificates(sig_no_certs)
+
+if loaded != []:
+    raise AssertionError(
+        "CVE-2023-49083 regression: expected empty certificate list, got %r"
+        % (loaded,)
+    )
+
 print(">>> cryptography version verified: %s" % cryptography.__version__)
 print(">>> cryptography OpenSSL backend: %s" % backend.openssl_version_text())
 print("CRYPTOGRAPHY 3.3.2 SYSTEM OPENSSL 3 TEST: PASS")
+print("CRYPTOGRAPHY CVE-2023-49083 REGRESSION TEST: PASS")
 PYCRYPTOGRAPHY
 
 ###############################################################################
