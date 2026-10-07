@@ -228,6 +228,7 @@ UJSON_REQUIREMENT_RE='^[[:space:]]*ujson==2\.0\.3([[:space:]]*(#.*)?)?$'
 CRYPTOGRAPHY_REQUIREMENT_RE='^[[:space:]]*cryptography==3\.3\.2([[:space:]]*(#.*)?)?$'
 CFFI_REQUIREMENT_RE='^[[:space:]]*cffi==1\.15\.1([[:space:]]*(#.*)?)?$'
 LXML_REQUIREMENT_RE='^[[:space:]]*lxml==5\.0\.2([[:space:]]*(#.*)?)?$'
+JINJA2_REQUIREMENT_RE='^[[:space:]]*Jinja2==2\.11\.3([[:space:]]*(#.*)?)?$'
 
 UJSON_REQ_COUNT="$(
     grep -Ec "${UJSON_REQUIREMENT_RE}" \
@@ -261,7 +262,15 @@ LXML_REQ_COUNT="$(
 [ "${LXML_REQ_COUNT}" = "1" ] \
     || die "Expected exactly one lxml==5.0.2 requirement, found ${LXML_REQ_COUNT}"
 
-grep -Ev "${UJSON_REQUIREMENT_RE}|${CRYPTOGRAPHY_REQUIREMENT_RE}|${CFFI_REQUIREMENT_RE}|${LXML_REQUIREMENT_RE}" \
+JINJA2_REQ_COUNT="$(
+    grep -Ec "${JINJA2_REQUIREMENT_RE}" \
+        "${REPO_ROOT}/requirements-server.txt" || true
+)"
+
+[ "${JINJA2_REQ_COUNT}" = "1" ] \
+    || die "Expected exactly one Jinja2==2.11.3 requirement, found ${JINJA2_REQ_COUNT}"
+
+grep -Ev "${UJSON_REQUIREMENT_RE}|${CRYPTOGRAPHY_REQUIREMENT_RE}|${CFFI_REQUIREMENT_RE}|${LXML_REQUIREMENT_RE}|${JINJA2_REQUIREMENT_RE}" \
     "${REPO_ROOT}/requirements-server.txt" \
     > "${SERVER_REQUIREMENTS}"
 
@@ -657,7 +666,127 @@ PYUJSON
 echo ">>> ujson security backports verified."
 
 ###############################################################################
-# 13. Build patched lxml 5.0.2 from source
+# 13. Build Jinja2 2.11.3 with xmlattr security backports
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Building patched Jinja2 2.11.3 from source"
+echo "============================================================"
+
+JINJA2_VERSION="2.11.3"
+JINJA2_BUILD_DIR="${BUILD_ROOT}/jinja2-${JINJA2_VERSION}-source"
+JINJA2_SDIST_SHA256="a6d58433de0ae800347cab1fa3043cebbabe8baa9d29e668f1c768cb87a333c6"
+
+JINJA2_PATCH="${REPO_ROOT}/utils/patch-jinja2-2.11.3/CVE-2024-22195-CVE-2024-34064.patch"
+JINJA2_PATCH_SHA256="1fc110b20b369ffadc501ea06f6cc88c9fa7d09a7965472c7f6388fb2cc5248f"
+
+[ -f "${JINJA2_PATCH}" ] \
+    || die "Jinja2 security patch not found: ${JINJA2_PATCH}"
+
+ACTUAL_JINJA2_PATCH_SHA256="$(
+    sha256sum "${JINJA2_PATCH}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_JINJA2_PATCH_SHA256}" = "${JINJA2_PATCH_SHA256}" ] \
+    || die "Unexpected SHA256 for Jinja2 patch: ${ACTUAL_JINJA2_PATCH_SHA256}"
+
+rm -rf "${JINJA2_BUILD_DIR}"
+mkdir -p "${JINJA2_BUILD_DIR}"
+cd "${JINJA2_BUILD_DIR}"
+
+run "${PIP}" download \
+    --no-deps \
+    --no-binary=:all: \
+    "Jinja2==${JINJA2_VERSION}"
+
+JINJA2_SDIST="Jinja2-${JINJA2_VERSION}.tar.gz"
+
+[ -f "${JINJA2_SDIST}" ] \
+    || die "Jinja2 source archive not found: ${JINJA2_SDIST}"
+
+ACTUAL_JINJA2_SDIST_SHA256="$(
+    sha256sum "${JINJA2_SDIST}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_JINJA2_SDIST_SHA256}" = "${JINJA2_SDIST_SHA256}" ] \
+    || die "Unexpected SHA256 for Jinja2 source archive: ${ACTUAL_JINJA2_SDIST_SHA256}"
+
+tar -xf "${JINJA2_SDIST}"
+
+JINJA2_SRC_DIR="${JINJA2_BUILD_DIR}/Jinja2-${JINJA2_VERSION}"
+
+[ -d "${JINJA2_SRC_DIR}" ] \
+    || die "Jinja2 source directory not found: ${JINJA2_SRC_DIR}"
+
+(
+    cd "${JINJA2_SRC_DIR}"
+    patch --dry-run -p1 < "${JINJA2_PATCH}" >/dev/null
+    patch -p1 < "${JINJA2_PATCH}"
+)
+
+echo ">>> Jinja2 CVE-2024-22195/CVE-2024-34064 backport applied."
+
+JINJA2_WHEELHOUSE="${JINJA2_BUILD_DIR}/wheelhouse"
+mkdir -p "${JINJA2_WHEELHOUSE}"
+
+run "${PIP}" wheel \
+    --no-deps \
+    --no-cache-dir \
+    --wheel-dir "${JINJA2_WHEELHOUSE}" \
+    "${JINJA2_SRC_DIR}"
+
+run "${PIP}" install \
+    --force-reinstall \
+    --no-index \
+    --no-deps \
+    --find-links "${JINJA2_WHEELHOUSE}" \
+    "Jinja2==${JINJA2_VERSION}"
+
+"${PYTHON}" - <<'PYJINJA2'
+import jinja2
+from jinja2 import Environment
+
+expected = "2.11.3"
+
+if jinja2.__version__ != expected:
+    raise SystemExit(
+        "Unexpected Jinja2 version: %s (expected %s)"
+        % (jinja2.__version__, expected)
+    )
+
+env = Environment()
+
+good = env.from_string("{{ attrs|xmlattr }}").render(
+    attrs={u"class": u"ok", u"data-id": u"42"}
+)
+
+if 'class="ok"' not in good or 'data-id="42"' not in good:
+    raise AssertionError("Valid xmlattr regression: %r" % (good,))
+
+for sep in (u"\t", u"\n", u"\f", u" ", u"/", u">", u"="):
+    key = u"class%sonclick" % sep
+
+    try:
+        env.from_string("{{ attrs|xmlattr }}").render(
+            attrs={key: u"alert(1)"}
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError(
+            "Invalid xmlattr key unexpectedly accepted: %r" % (key,)
+        )
+
+print(">>> Jinja2 version verified: %s" % jinja2.__version__)
+print("CVE-2024-22195 REGRESSION TEST: PASS")
+print("CVE-2024-34064 REGRESSION TEST: PASS")
+PYJINJA2
+
+echo ">>> Jinja2 2.11.3 patched build verified."
+
+###############################################################################
+# 14. Build patched lxml 5.0.2 from source
 ###############################################################################
 
 echo
@@ -836,7 +965,7 @@ PYLXML
 echo ">>> lxml 5.0.2 patched build verified."
 
 ###############################################################################
-# 14. Apply urllib3 CVE-2026-97689 compatibility backport
+# 15. Apply urllib3 CVE-2026-97689 compatibility backport
 ###############################################################################
 
 echo
@@ -891,7 +1020,7 @@ grep -q 'Response chunk trailer line exceeded maximum allowed length' \
 echo ">>> urllib3 CVE-2026-97689 backport verified."
 
 ###############################################################################
-# 15. Apply urllib3 CVE-2025-66418 decompression-chain backport
+# 16. Apply urllib3 CVE-2025-66418 decompression-chain backport
 ###############################################################################
 
 echo
@@ -928,7 +1057,7 @@ grep -q 'Too many content encodings in the chain' \
 echo ">>> urllib3 CVE-2025-66418 backport verified."
 
 ###############################################################################
-# 16. Apply urllib3 CVE-2025-66471 streaming decompression backport
+# 17. Apply urllib3 CVE-2025-66471 streaming decompression backport
 ###############################################################################
 
 echo
@@ -988,7 +1117,7 @@ REQUESTS_VERSION="$("${PYTHON}" -c 'import requests; print(requests.__version__)
 echo ">>> requests version verified: ${REQUESTS_VERSION}"
 
 ###############################################################################
-# 17. Apply requests CVE-2023-32681 proxy authorization leak backport
+# 18. Apply requests CVE-2023-32681 proxy authorization leak backport
 ###############################################################################
 
 echo
@@ -1061,7 +1190,7 @@ PYTEST
 echo ">>> requests CVE-2023-32681 backport verified."
 
 ###############################################################################
-# 18. Apply requests CVE-2024-35195 TLS pool isolation backport
+# 19. Apply requests CVE-2024-35195 TLS pool isolation backport
 ###############################################################################
 
 echo
@@ -1133,7 +1262,7 @@ PYTEST
 echo ">>> requests CVE-2024-35195 backport verified."
 
 ###############################################################################
-# 19. Apply requests CVE-2024-47081 netrc hostname backport
+# 20. Apply requests CVE-2024-47081 netrc hostname backport
 ###############################################################################
 
 echo
@@ -1211,7 +1340,7 @@ PYTEST
 echo ">>> requests CVE-2024-47081 backport verified."
 
 ###############################################################################
-# 20. Apply requests CVE-2026-25645 temporary-file backport
+# 21. Apply requests CVE-2026-25645 temporary-file backport
 ###############################################################################
 
 echo
@@ -1305,7 +1434,7 @@ PYTEST
 echo ">>> requests CVE-2026-25645 backport verified."
 
 ###############################################################################
-# 21. Apply Werkzeug CVE-2023-23934 cookie parsing backport
+# 22. Apply Werkzeug CVE-2023-23934 cookie parsing backport
 ###############################################################################
 
 echo
@@ -1384,7 +1513,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-23934 backport verified."
 
 ###############################################################################
-# 22. Apply Werkzeug CVE-2023-25577 multipart part limit backport
+# 23. Apply Werkzeug CVE-2023-25577 multipart part limit backport
 ###############################################################################
 
 echo
@@ -1487,7 +1616,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-25577 backport verified."
 
 ###############################################################################
-# 23. Apply Werkzeug CVE-2024-34069 debugger host trust backport
+# 24. Apply Werkzeug CVE-2024-34069 debugger host trust backport
 ###############################################################################
 
 echo
@@ -1580,7 +1709,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2024-34069 backport verified."
 
 ###############################################################################
-# 24. Apply consolidated Werkzeug safe_join security backports
+# 25. Apply consolidated Werkzeug safe_join security backports
 #     CVE-2024-49766, CVE-2025-66221, CVE-2026-21860,
 #     CVE-2026-27199, CVE-2026-102598
 ###############################################################################
@@ -1683,7 +1812,7 @@ PYTEST
 echo ">>> Werkzeug safe_join security backports verified."
 
 ###############################################################################
-# 25. Apply eventlet CVE-2025-58068 trailer parsing backport
+# 26. Apply eventlet CVE-2025-58068 trailer parsing backport
 ###############################################################################
 
 echo
@@ -1764,7 +1893,7 @@ PYTEST
 echo ">>> eventlet CVE-2025-58068 backport verified."
 
 ###############################################################################
-# 26. Apply Eventlet/dnspython CVE-2023-29483 TuDoor backport
+# 27. Apply Eventlet/dnspython CVE-2023-29483 TuDoor backport
 ###############################################################################
 
 echo
@@ -2118,7 +2247,7 @@ PYTEST
 echo ">>> Eventlet/dnspython CVE-2023-29483 backport verified."
 
 ###############################################################################
-# 27. Apply python-socketio CVE-2026-48804 backport
+# 28. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -2212,7 +2341,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 28. Verify critical packages
+# 29. Verify critical packages
 ###############################################################################
 
 echo
@@ -2253,7 +2382,7 @@ if failed:
 PY
 
 ###############################################################################
-# 29. Apply PADIT cryptography compatibility patch
+# 30. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -2277,7 +2406,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 30. Apply PADIT socketIO client patch if present
+# 31. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -2307,7 +2436,7 @@ else
 fi
 
 ###############################################################################
-# 31. Basic Python runtime validation
+# 32. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -2338,7 +2467,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 32. PADIT server import validation
+# 33. PADIT server import validation
 ###############################################################################
 
 echo
@@ -2379,7 +2508,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 33. PADIT server component validation
+# 34. PADIT server component validation
 ###############################################################################
 
 echo
@@ -2397,7 +2526,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 34. Socket.IO validation
+# 35. Socket.IO validation
 ###############################################################################
 
 echo
@@ -2412,7 +2541,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 35. PADIT crypto functional test
+# 36. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -2488,7 +2617,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 36. Generate runtime inventory
+# 37. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -2545,7 +2674,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 37. Final status
+# 38. Final status
 ###############################################################################
 
 echo
