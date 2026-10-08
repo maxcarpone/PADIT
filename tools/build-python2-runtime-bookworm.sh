@@ -2932,6 +2932,18 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
+# M01. Validate modernized server dependencies
+###############################################################################
+
+echo
+echo ">>> Validating PADIT server dependencies M01"
+
+PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
+    "${REPO_ROOT}/utils/test-server-dependencies-m01.py"
+
+echo "PADIT M01 dependency validation: PASS"
+
+###############################################################################
 # 39. Generate runtime inventory
 ###############################################################################
 

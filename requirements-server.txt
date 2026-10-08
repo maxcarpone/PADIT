@@ -12,7 +12,7 @@ Flask-SocketIO==4.2.1
 future==0.18.3
 greenlet==0.4.15
 huey==1.10.2
-iniparse==0.4
+iniparse==0.5
 itsdangerous==1.1.0
 Jinja2==2.11.3
 lxml==5.0.2
@@ -24,12 +24,12 @@ pefile==2016.3.28
 psutil==6.1.1
 psycopg2==2.8.6
 pyOpenSSL==19.0.0
-pyparsing==2.2.0
+pyparsing==2.4.7
 python-engineio==3.11.2
 python-socketio==4.4.0
 pytz==2017.2
 requests==2.27.1
-six==1.11.0
+six==1.17.0
 ujson==2.0.3
 urllib3==1.26.20
 wakeonlan==0.2.2
