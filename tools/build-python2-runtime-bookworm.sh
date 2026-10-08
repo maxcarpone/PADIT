@@ -1012,26 +1012,26 @@ if "Cookie" not in delete_response.vary:
 with app.test_request_context("/"):
     ctx = _request_ctx_stack.top
 
-    ctx._session["user"] = "alice"
-    ctx._session.modified = False
-    ctx._session.accessed = False
+    ctx.session["user"] = "alice"
+    ctx.session.modified = False
+    ctx.session.accessed = False
 
     if ("user" in session) is not True:
         raise AssertionError("session containment lookup failed")
 
-    if not ctx._session.accessed:
+    if not ctx.session.accessed:
         raise AssertionError(
             "session containment lookup did not mark session accessed"
         )
 
-    ctx._session.accessed = False
+    ctx.session.accessed = False
 
     if len(session) != 1:
         raise AssertionError(
             "Unexpected session length: %r" % len(session)
         )
 
-    if not ctx._session.accessed:
+    if not ctx.session.accessed:
         raise AssertionError(
             "session len lookup did not mark session accessed"
         )
