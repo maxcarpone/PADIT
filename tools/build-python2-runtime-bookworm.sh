@@ -2975,6 +2975,14 @@ PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
 
 echo "PADIT M05 dependency validation: PASS"
 
+echo
+echo ">>> Validating PADIT server dependencies M06"
+
+PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
+    "${REPO_ROOT}/utils/test-server-dependencies-m06.py"
+
+echo "PADIT M06 dependency validation: PASS"
+
 ###############################################################################
 # 39. Generate runtime inventory
 ###############################################################################

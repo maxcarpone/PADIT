@@ -143,11 +143,21 @@ def get_wapt_exe_version(exe):
         pe = None
         try:
             pe = pefile.PE(exe)
-            version = pe.FileInfo[0].StringTable[
-                0].entries['FileVersion'].strip()
-            if not version:
-                version = pe.FileInfo[0].StringTable[
-                    0].entries['ProductVersion'].strip()
+            file_info = pe.FileInfo
+
+            # pefile >= 2019 may nest FileInfo structures in lists.
+            if file_info and isinstance(file_info[0], list):
+                file_info = file_info[0]
+
+            for entry in file_info:
+                for table in getattr(entry, 'StringTable', []):
+                    entries = table.entries
+                    version = (entries.get('FileVersion') or
+                               entries.get('ProductVersion') or '').strip()
+                    if version:
+                        break
+                if version:
+                    break
         except:
             pass
         if pe is not None:
