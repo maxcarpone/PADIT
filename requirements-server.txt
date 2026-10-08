@@ -7,9 +7,9 @@ cryptography==3.3.2
 eventlet==0.33.3
 Flask==1.1.4
 Flask-Babel==0.11.2
-Flask-Login==0.4.1
+Flask-Login==0.5.0
 Flask-SocketIO==4.2.1
-future==0.18.3
+future==1.0.0
 greenlet==0.4.15
 huey==1.10.2
 iniparse==0.5
@@ -17,8 +17,8 @@ itsdangerous==1.1.0
 Jinja2==2.11.3
 lxml==5.0.2
 MarkupSafe==1.0
-netifaces==0.10.6
-passlib==1.7.1
+netifaces==0.11.0
+passlib==1.7.4
 peewee==3.11.2
 pefile==2016.3.28
 psutil==6.1.1
@@ -27,12 +27,12 @@ pyOpenSSL==19.0.0
 pyparsing==2.4.7
 python-engineio==3.11.2
 python-socketio==4.4.0
-pytz==2017.2
+pytz==2026.5
 requests==2.27.1
 six==1.17.0
 ujson==2.0.3
 urllib3==1.26.20
-wakeonlan==0.2.2
+wakeonlan==1.1.6
 Werkzeug==1.0.1
 wsgiref==0.1.2
 WTForms==2.1

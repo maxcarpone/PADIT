@@ -101,7 +101,7 @@ from waptserver.decorators import requires_auth,authenticate,gzipped,require_wap
 
 import waptserver.config
 
-import wakeonlan.wol
+from wakeonlan import send_magic_packet
 
 # socketio is loaded conditionally if iwe are running in app mode, not uwsgi mode
 socketio = None
@@ -1529,7 +1529,7 @@ def trigger_wakeonlan():
                             host['computer_fqdn'],
                             str(port.strip())
                         ))
-                    wakeonlan.wol.send_magic_packet(*macs, port=int(port))
+                    send_magic_packet(*macs, port=int(port))
                     for line in host['host_info']['networking']:
                         if 'addr' in line:
                             for i in line['addr']:
@@ -1546,7 +1546,7 @@ def trigger_wakeonlan():
                                         broadcast
                                     ))
 
-                                wakeonlan.wol.send_magic_packet(
+                                send_magic_packet(
                                     *
                                     macs,
                                     ip_address='%s' %
