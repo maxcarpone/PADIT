@@ -28,14 +28,16 @@
 ## 3. Current server source and runtime — 2026-10-08
 
 - Host: **Waptworm**, repository `/git/paditdev`, branch `release/1.8.3`.
-- Local validated source HEAD: **`de33ed9f`**. Previous modernization commit: **`14da06e8`**. Last checked remote tracking tip: **`bc03a837`**; verify and push before claiming synchronization.
-- Builder: `tools/build-python2-runtime-bookworm.sh` (40 numbered stages plus M01–M03 regression checks).
-- Runtime: `/git/paditdev/build/python2-runtime-server-bookworm` — Python **2.7.18**, system OpenSSL **3.0.22**.
-- Validated pre-modernization backup: `/git/padit-python2-runtime-pre-m01` (bit-for-bit comparison passed at backup time).
-- Full consolidated build **2026-10-08**: **exit 0**, `BUILD SUCCESS`, `All PADIT runtime tests passed`; runtime inventory generated; size **222M**.
-- Build log: `/tmp/padit-bookworm-m01-m03-build.log`; recorded exit code `/tmp/padit-bookworm-m01-m03-build.rc`.
+- Validated source HEAD before this documentation update: **`5d7708fb`**.
+- Builder: `tools/build-python2-runtime-bookworm.sh`; permanent regression tests **M01–M06**.
+- Runtime: `/git/paditdev/build/python2-runtime-server-bookworm` — Python **2.7.18**, OpenSSL **3.0.22**.
+- Backups: `/git/padit-python2-runtime-pre-m01` and `build/python2-runtime-server-bookworm-pre-m04`.
+- Consolidated M04–M06 rebuild on **2026-10-08**: **exit 0**, `BUILD SUCCESS`, `All PADIT runtime tests passed`; size **222M**.
+- Build log: `/tmp/padit-bookworm-m04-m06-build.log`; exit code: `/tmp/padit-bookworm-m04-m06-build.rc`.
 - Inventory: `build/python2-runtime-server-bookworm/WAPT-runtime-inventory.txt`.
-- Python binary SHA256 reported: `e036f6079c12a5cfd0da7074ccf400093f162d0e9a4a6a9fc43962674973f2ee`.
+- Python binary SHA256: `92c1d7665993f96c9ee44d44811c77454ec80b08046deb35a32d4f0775e9f0a0`.
+- All six permanent modernization tests **M01–M06 PASS** in the full rebuilt runtime.
+- The runtime build PASS does **not** establish a new Debian package, installed-server or migration validation.
 
 ### Server CVE remediation
 
@@ -46,29 +48,42 @@
 
 ## 4. Non-CVE server dependency modernization
 
-The 40 declared server requirements and relevant transitive dependencies were inventoried in a modernization matrix: current version / last Python-2.7-compatible candidate / latest upstream / action and caveats. Version compatibility metadata is sometimes incomplete; test rather than assume.
+The server dependency modernization matrix distinguishes installed versions,
+Python-2-compatible ceilings, upstream versions and recommended actions.
 
-| Lot | Dependency | Previous → installed | Git commit | Test |
-|---|---|---|---|---|
-| M01 | `six` | 1.11.0 → 1.17.0 | `14da06e8` | PASS |
-| M01 | `pyparsing` | 2.2.0 → 2.4.7 | `14da06e8` | PASS |
-| M01 | `iniparse` | 0.4 → 0.5 | `14da06e8` | PASS |
-| M02 | `passlib` | 1.7.1 → 1.7.4 | `de33ed9f` | PASS |
-| M02 | `netifaces` | 0.10.6 → 0.11.0 | `de33ed9f` | PASS |
-| M02 | `Flask-Login` | 0.4.1 → 0.5.0 | `de33ed9f` | PASS |
-| M03 | `pytz` | 2017.2 → 2026.5 | `de33ed9f` | PASS |
-| M03 | `future` | 0.18.3 → 1.0.0 | `de33ed9f` | PASS |
-| M03 | `wakeonlan` | 0.2.2 → 1.1.6 | `de33ed9f` | PASS (mock UDP) |
+| Lot | Dependency | Previous → validated | Git commit |
+|---|---|---|---|
+| M01 | `six`, `pyparsing`, `iniparse` | 1.11.0 → 1.17.0; 2.2.0 → 2.4.7; 0.4 → 0.5 | `14da06e8` |
+| M02 | `passlib`, `netifaces`, `Flask-Login` | 1.7.1 → 1.7.4; 0.10.6 → 0.11.0; 0.4.1 → 0.5.0 | `de33ed9f` |
+| M03 | `pytz`, `future`, `wakeonlan` | 2017.2 → 2026.5; 0.18.3 → 1.0.0; 0.2.2 → 1.1.6 | `de33ed9f` |
+| M04 | `Flask-Babel` | 0.11.2 → 1.0.0 | `adf886e6` |
+| M05 | `click`, `WTForms` | 6.7 → 7.1.2; 2.1 → 2.3.3 | `56ce18b2` |
+| M06 | `pefile` | 2016.3.28 → 2019.4.18 | `5d7708fb` |
 
-Permanent tests: `utils/test-server-dependencies-m01.py`, `-m02.py`, `-m03.py`; builder runs them before the inventory. Isolated and combined functional checks passed; all three passed in the **full consolidated build**.
+**All lots M01–M06:** permanent tests
+`utils/test-server-dependencies-m01.py` through `-m06.py`;
+all six PASS in the consolidated Bookworm runtime rebuild.
 
-**WOL API migration:** `waptserver/server.py` now imports `send_magic_packet` from `wakeonlan` and updates its two server calls. Tested legacy 0.2.2 output: 126 bytes; new 1.1.6: standard 102 bytes, with identical first 102 bytes. Network behavior was simulated using mocked sockets, **not** verified against a real pilot host. Windows/Unix agents unchanged.
+**M03 / Wake-on-LAN:** migrated `waptserver/server.py` to
+`wakeonlan.send_magic_packet`. Mocked UDP tests PASS; real-host
+operational validation remains pending.
 
-**Other observations:** non-blocking `PasslibRuntimeWarning` (SHA256 name); cryptography Python-2 deprecation warning. Do not mistake warnings for new PASS evidence.
+**M04 / Flask-Babel:** fixes the pre-existing `ImmutableDict` import
+failure with Werkzeug 1.0.1. Real French translation and session-based
+locale selection PASS. Untranslated Polish server catalog removed in
+commit `c9082f81`; German catalog retained.
+
+**M06 / pefile:** `get_wapt_exe_version()` now accepts both historical
+and nested `FileInfo` structures, retaining `FileVersion` priority and
+`ProductVersion` fallback. Real `waptdeploy.exe` version extraction
+returned `1.8.3.7531` with both pefile versions. Permanent regression
+test PASS.
+
+**Caveat:** runtime rebuild validation is distinct from deployed-server
+functionality, Debian package validation and migration testing.
 
 ## 5. Open items and boundaries
 
-1. **Flask-Babel / ImmutableDict:** `import flask_babel` raises `ImportError: cannot import name ImmutableDict` in *both* the pre-M01 baseline and M01 candidate runtime. Investigate actual import chain, actual server usage, and a compatible correction separately; don't attribute to M01–M03.
 2. **WOL operational pilot:** exercise server-initiated wake on a controlled host; verify configured ports, broadcast reachability and real-device behavior.
 3. **`certifi`/trust-store audit:** pinned legacy bundle; distinguish `requests` HTTPS verification from PADIT certificate and CRL validation. Do not globally swap trust roots without a targeted review.
 4. **Further server modernization:** candidates in matrix; tests isolated in `/tmp`, cross-tests in combination, dedicated permanent tests, **one full rebuild per consolidated batch**. Potential cleanup `argparse`/`wsgiref` from requirements is not yet done.
@@ -89,11 +104,17 @@ After the successful build, the only remaining known untracked Waptworm files we
 
 ## 7. Exact next action
 
-1. Review and adopt a compact active checkpoint **only after** preserving the original historic evidence, preferably as `WAPT_HISTORY.md`; ensure historical references remain traceable.
-2. Confirm branch, HEAD, worktrees and remote state on Waptworm/VM106; push the validated `14da06e8` and `de33ed9f` commits when intended, then synchronize VM106 safely.
-3. Investigate pre-existing `Flask-Babel / ImmutableDict` failure and its server impact, without mixing it into prior completed M01–M03 tests.
-4. Continue the server dependency matrix in bounded batches; avoid a rebuild per dependency.
-5. Keep the new Bookworm packaging/install and real-WOL pilot as explicit separate acceptance barriers.
+1. Commit this checkpoint update, then synchronize `release/1.8.3`
+   with GitHub and VM106 deliberately; last observed remote tracking
+   HEAD before synchronization: `9939e7e6`.
+2. Begin **M07 — Huey**: inspect server task and consumer APIs before
+   evaluating a Python-2-compatible candidate in isolation.
+3. Continue the server dependency modernization matrix, with isolated
+   tests, permanent regressions and consolidated runtime builds.
+4. Complete the real Wake-on-LAN pilot and targeted `certifi`/trust
+   audit separately.
+5. Keep new Bookworm package installation, upgrade, server functionality
+   and migration as separate acceptance gates.
 
 ## 8. Resume protocol
 
