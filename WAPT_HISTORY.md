@@ -1,0 +1,9818 @@
+# WAPT 1.8.2 Modernization â€” Technical Checkpoint
+
+**Checkpoint date:** 2026-09-21
+**Purpose:** authoritative save-state for resuming the WAPT Community modernization project without replaying the historical conversation.
+
+## 1. Project objective
+
+Modernize the WAPT 1.8.2 Community codebase while preserving compatibility with existing deployments and a reproducible migration path.
+
+Production context:
+
+- 9 existing WAPT servers.
+- Historical production OS: Debian 10.13 Buster.
+- Historical production WAPT: 1.8.2.7393.
+- Transitional Python 2 compatibility is intentional; Python 3 modernization is a later phase.
+- Community edition is the target; Enterprise is not.
+
+Target migration concept:
+
+1.  Debian 10 / WAPT 7393.
+2.  Debian 10 / autonomous rebuilt Python-2-compatible WAPT.
+3.  Debian 11.
+4.  Debian 12 transitional runtime/package.
+5.  Later Debian 13 / Python 3 modernization.
+
+## 2. Main WAPT repository â€” authoritative state
+
+Repository:
+
+``` text
+https://github.com/maxcarpone/WAPT
+```
+
+Windows working tree:
+
+``` text
+C:\git\waptdev
+```
+
+Branch:
+
+``` text
+branch-1.8.2
+```
+
+Authoritative HEAD before this checkpoint commit:
+
+``` text
+895cb7597 Fix read-only SoGrid data loading
+```
+
+Natural Git commit count:
+
+``` text
+7402
+```
+
+Remote before publishing this checkpoint is still:
+
+``` text
+origin/branch-1.8.2 = 2ea908bf6 Add WAPT technical checkpoint
+```
+
+Therefore the following validated technical commits still need to be pushed with the checkpoint:
+
+``` text
+532404ef0 Fix VC90 CRT manifest for 9.0.30729.6161
+06f71f280 Update SoGrid Lazarus 1.8 dependencies
+895cb7597 Fix read-only SoGrid data loading
+```
+
+Historical reference commits:
+
+``` text
+75a5de09  historical build 7393
+566bcad8  historical build 7394
+4bbf306a  historical build 7395
+3882380da Fix Community waptconsole build without Enterprise units
+74bfc5ef6 Fix waptexit build with Lazarus 1.8.2
+0ea123e0b Use WAPT-compatible SoGrid fork
+2ea908bf6 Add WAPT technical checkpoint
+532404ef0 VC90 CRT manifest fix / natural build 7400
+06f71f280 SoGrid Lazarus package dependency fix / natural build 7401
+895cb7597 read-only SoGrid fix / natural build 7402
+```
+
+### Build-number mechanism â€” RESOLVED
+
+The historical mechanism was traced through `create_version_full.py`, `lazbuild.py` and `waptdevutils.py`.
+
+Rule:
+
+``` text
+WAPT build number = number of Git commits reachable from the commit being built
+```
+
+Historical verification:
+
+``` text
+7393 commit -> count 7393
+7394 commit -> count 7394
+7395 commit -> count 7395
+895cb7597 -> count 7402
+```
+
+Current release version:
+
+``` text
+1.8.2.7402
+```
+
+Do not force arbitrary build numbers. Finalize source first, then let the historical Git-count mechanism determine the build number.
+
+A future real 1.8.3/1.9 release requires changing the canonical semantic version (`__version__`); the fourth component remains the Git commit count and does not reset.
+
+## 3. Current Git working tree state
+
+After restoring Lazarus-generated `.lpi`, `.ico` and `waptconsole.sha256` side effects:
+
+``` text
+ M submodules/pltis_synapse
+```
+
+This is the expected state.
+
+`pltis_synapse` is intentionally checked out at a public commit different from the parent repository's historical/private gitlink. Do not â€œfixâ€ or commit it accidentally.
+
+Submodule snapshot before checkpoint:
+
+``` text
+-540d1814813f2cd5a2445910989f50cfaf1a9228 submodules/pltis_sogrid
++14589d4b7b5886242552021e5a1a637b1ea4c82f submodules/pltis_synapse (heads/master)
+```
+
+The `-` on SoGrid means it is not initialized through normal submodule metadata in that checkout; the parent gitlink itself is correct.
+
+Never use:
+
+``` text
+git add .
+```
+
+## 4. SoGrid â€” FINAL 7402 STATE
+
+Fork:
+
+``` text
+https://github.com/maxcarpone/pltis_sogrid
+```
+
+Branch:
+
+``` text
+wapt-1.8.2-compat
+```
+
+Compatibility reconstruction:
+
+``` text
+68f6e98a63ce9db1769053ed5cbdef7e5d51509e
+```
+
+Lazarus package dependency fix:
+
+``` text
+e2fa563...
+```
+
+Final read-only LoadData fix:
+
+``` text
+540d1814813f2cd5a2445910989f50cfaf1a9228
+Fix loading read-only SoGrid data
+```
+
+Parent WAPT commit recording the final SoGrid gitlink:
+
+``` text
+895cb7597 Fix read-only SoGrid data loading
+```
+
+### Root cause and final fix
+
+WAPTConsole's Edit Machine dialog showed an empty `Paquets disponibles` grid even though Python package search returned the expected package.
+
+`uviseditpackage.GridPackages` uses `toReadOnly`. VirtualTrees' `SetChildCount` is a no-op while `toReadOnly` is set. The final fix in `TSOGrid.LoadData` temporarily removes `toReadOnly` while clearing/loading `RootNodeCount`, then restores it before focus restoration.
+
+The nil-data branch similarly removes/re-adds `toReadOnly` around `Clear`.
+
+Runtime validation in the real WAPTConsole confirmed that `deb10-waptupgrade` is visibly displayed in the available-packages grid.
+
+### Historical confirmation
+
+The original developers restored missing history in the official SoGrid repository. The exact historical commit was recovered:
+
+``` text
+3dfe40c453350c9db1eb025c9b9db9402552092a
+Fix loading data in grid when toReadOnly is set Prevent duplicated rows when KeyFieldsNames is set
+```
+
+It is reachable from official `origin/master`.
+
+The historical `LoadData` implementation uses the same temporary `toReadOnly` removal/restoration mechanism independently reconstructed for 7402.
+
+Do not cherry-pick the whole historical commit: it also changes `AddRows`, `NodesForKey`, `Clear`, etc., while the reconstructed branch contains later/different API changes. The final 7402 LoadData patch is runtime validated and historically confirmed.
+
+**Freeze SoGrid for 7402.** Do not rework its history before final release validation. A later cleanup/rebase against restored official history is optional.
+
+### Encoding/EOL
+
+The working `sogrid.pas` uses CRLF. Do not normalize the whole file and do not use PowerShell `Set-Content` on legacy Pascal files where encoding/EOL matter.
+
+## 5. Other Lazarus submodules
+
+Synapse expected historical/private gitlink differs from the public checkout in use:
+
+``` text
+public checkout: 14589d4b7b5886242552021e5a1a637b1ea4c82f
+```
+
+The divergence is intentional. Do not commit it accidentally.
+
+LCL Extensions and Enterprise may appear uninitialized (`-` prefix). Enterprise is not part of this Community reconstruction.
+
+Do not fork every `pltis_*` dependency blindly; only make a dependency reproducible when needed.
+
+## 6. Debian 12 transitional Python 2 runtime
+
+Reference host:
+
+``` text
+Debian GNU/Linux 12.15 (bookworm)
+Kernel 6.1.0-32-amd64
+amd64 / x86_64
+GCC 12.2.0
+GNU Make 4.3
+Python 3.11.2
+OpenSSL 3.0.20
+```
+
+Python 2.7.18 was built from source.
+
+Consolidated runtime:
+
+``` text
+/git/waptdev/build/python2-runtime-server
+```
+
+Key validated legacy packages include:
+
+``` text
+cryptography==2.5
+pyOpenSSL==19.0.0
+asn1crypto==1.5.1
+cffi==1.11.5
+dnspython==1.16.0
+Flask==1.1.1
+Flask-Login==0.4.1
+Flask-SocketIO==4.2.1
+Flask-Babel==0.11.2
+Babel==2.9.1
+eventlet==0.25.1
+gevent==1.4.0
+greenlet==0.4.15
+passlib==1.7.1
+six==1.16.0
+future==0.16.0
+enum34==1.1.10
+chardet==4.0.0
+certifi==2021.10.8
+setproctitle==1.1.10
+```
+
+Additional resolved dependencies include `requests`, `psutil`, and `netifaces`.
+
+Known non-blocking absence:
+
+``` text
+lzma
+```
+
+Validated:
+
+- Python 2 SSL works with OpenSSL 3.0.20.
+- `cryptography==2.5` works with the WAPT verification patch.
+- `pyOpenSSL==19.0.0` imports.
+- `waptcrypto` functional API loads.
+- CA / CSR / client certificate / signing / verification test passed.
+- `waptserver` imports.
+- final runtime report: `All WAPT runtime tests passed.`
+
+## 7. Debian server package state
+
+Bookworm reference build:
+
+``` text
+branch: build/debian12-bookworm
+commit: 5da9f66b
+```
+
+Buster reference build:
+
+``` text
+branch: build/debian10-buster
+commit: 907d4e78
+```
+
+Validated Buster package:
+
+``` text
+/git/waptdev/waptserver/deb/tis-waptserver-1.8.2.7397-907d4e78-debian-10-amd64.deb
+```
+
+SHA256:
+
+``` text
+7445288003d062e7a8afa29d1b8395cdf0b3705b0bc526d49b3a17e214a37733
+```
+
+Installed runtime:
+
+``` text
+/opt/wapt/bin/python -> Python 2.7.18
+```
+
+## 8. Debian 10 lab server
+
+``` text
+hostname: wapt-deb10
+FQDN: wapt-deb10.genevoix-signoret-vinci.fr.lan
+IP: 192.168.220.12/22
+gateway: 192.168.223.254
+```
+
+Installed:
+
+- rebuilt Buster WAPT server package;
+- PostgreSQL 11;
+- nginx.
+
+Validated:
+
+- WAPT server active/enabled on localhost:8080;
+- nginx on 80/443;
+- PostgreSQL 11 on localhost:5432;
+- WAPT role/database present;
+- HTTPS portal reachable;
+- unauthenticated registration mode selected (historical WAPT 1.3 behavior).
+
+Fresh DB marker discrepancy remains:
+
+``` text
+fresh lab: OK (1.8.2.0)
+historical production screenshot: OK (1.8.2.1)
+```
+
+Do not hand-edit the DB marker. This is deferred server cleanup.
+
+## 9. Portal agent publication â€” RESOLVED FOR LAB
+
+The lab portal originally fell back to an old historical WAPT setup when no local setup was published.
+
+After the final Windows release work, downloading the agent through the normal web interface produced:
+
+``` text
+waptagent.exe
+FileVersion    1.8.2.7402
+ProductVersion 1.8.2.7402
+ProductName    WAPTAgent
+```
+
+This exact portal-delivered agent was used for the successful VM105 production-style migration test described below.
+
+For production, preserve the requirement that the server serves the locally validated setup/agent and does not depend on an obsolete external fallback.
+
+## 10. Windows build workstation
+
+``` text
+Windows 11 25H2 AMD64
+Repo: C:\git\waptdev
+Git: 2.55.0.windows.5
+Python: C:\Python27\python.exe (2.7.18 x86)
+Build venv: C:\wapt-build-test
+Lazarus 1.8.2
+FPC 3.0.4 i386-win32
+Lazarus: C:\lazarus
+Inno Setup 5.6.0
+ISCC: C:\git\binaries_cache\iscc\app\ISCC.exe
+```
+
+Historical OpenSSL 1.0.2u i386 was recovered for Windows requirements.
+
+NSSM restored under:
+
+``` text
+waptservice\win32\nssm.exe
+waptservice\win64\nssm.exe
+```
+
+`ujson==1.35` was built with VC9.
+
+## 11. Windows Lazarus build chain â€” FINAL 7402
+
+Nine Lazarus projects/modules are part of the final build:
+
+``` text
+wapt-get\waptget.lpi                         -> wapt-get.exe
+wapt-get\waptguihelper.lpi                   -> waptguihelper.pyd
+waptdeploy\waptdeploy.lpi                    -> waptdeploy.exe
+wapttray\wapttray.lpi                        -> wapttray.exe
+waptconsole\waptconsole.lpi                  -> waptconsole.exe
+waptexit\waptexit.lpi                        -> waptexit.exe
+waptself\waptself.lpi                        -> waptself.exe
+waptmessage\waptmessage.lpi                  -> waptmessage.exe
+waptsetup\waptsetuputil\waptsetuputil.lpi   -> waptsetuputil.dll
+```
+
+All nine final artifacts were rebuilt with:
+
+``` text
+FileVersion    1.8.2.7402
+ProductVersion 1.8.2
+```
+
+Important build behavior:
+
+- `lazbuild.py` must be invoked **one project at a time**.
+- Passing multiple project paths in one invocation returned silently without rebuilding them.
+- Use `C:\wapt-build-test\Scripts\python.exe .\lazbuild.py ...` because system `C:\Python27` lacks GitPython.
+- `waptself` once triggered an intermittent Lazarus `EAccessViolation` / exit 217; rerunning it alone immediately succeeded with no source changes. Treat this as a transient lazbuild crash unless reproduced.
+- `waptsetuputil` emits the known `WARNING: No compiler options`; final metadata/output are correct.
+
+Direct bare `lazbuild.exe` is useful for diagnostics, but final version metadata must be produced through the historical wrapper mechanism.
+
+## 12. VC90 CRT â€” RESOLVED
+
+The VC90 manifest was corrected to match the recovered QFE DLLs:
+
+``` text
+9.0.30729.6161
+```
+
+Files:
+
+``` text
+msvcr90.dll
+msvcp90.dll
+msvcm90.dll
+Microsoft.VC90.CRT.manifest
+```
+
+Committed in:
+
+``` text
+532404ef0 Fix VC90 CRT manifest for 9.0.30729.6161
+```
+
+Do not blindly replace every other historical manifest reference to `9.0.21022.8`; only change a manifest when its actual payload requires it.
+
+## 13. Authenticode signing â€” FINAL 7402
+
+Windows SDK SignTool:
+
+``` text
+C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe
+```
+
+Lab signing certificate:
+
+``` text
+Subject: CN=WAPT Lab Code Signing
+Thumbprint: D8B8C49EEB204125D7609365D4CF604E8B7056AC
+```
+
+All nine final 7402 Lazarus artifacts were SHA-256 signed and verified successfully.
+
+No timestamp was used for the lab validation.
+
+The lab public certificate was trusted in LocalMachine Root + TrustedPublisher.
+
+Never commit:
+
+``` text
+wapt-lab-codesign.pfx
+wapt-lab-codesign.cer
+```
+
+The PFX/private key is a local lab artifact only.
+
+The `waptconsole.exe` manifest still contains:
+
+``` xml
+<requestedExecutionLevel level="asInvoker" uiAccess="true"/>
+```
+
+Do not remove `uiAccess=true` merely to bypass signing. The unsigned launch failure on Windows 11 25H2 was resolved by signing.
+
+For a production release, use the production code-signing certificate and preferably modern RFC3161 timestamping if compatible with the deployment requirements.
+
+## 14. version-full â€” FINAL 7402
+
+Generated with:
+
+``` powershell
+C:\wapt-build-test\Scripts\python.exe .\create_version_full.py
+```
+
+Validated:
+
+``` text
+version-full = 1.8.2.7402
+git rev-list --count HEAD = 7402
+HEAD = 895cb7597 Fix read-only SoGrid data loading
+```
+
+`version-full` is a generated/local artifact and is excluded locally; do not commit it unless release policy is deliberately changed.
+
+## 15. Final WAPTSetup 7402
+
+Historical setup build mechanism recovered from PowerShell history:
+
+``` powershell
+& "C:\git\binaries_cache\iscc\app\ISCC.exe" .\waptsetup\waptsetup.iss
+```
+
+`create_setup_simple.py` was not used; attempts failed because of historical environment assumptions (`git.repo` / `active_directory`).
+
+Final installer:
+
+``` text
+C:\git\waptdev\waptsetup\waptsetup.exe
+```
+
+Metadata:
+
+``` text
+FileVersion    1.8.2.7402
+ProductVersion 1.8.2.7402
+ProductName    WAPTSetup
+```
+
+Final installer was signed with the lab Authenticode certificate and verified successfully.
+
+Final SHA256:
+
+``` text
+ADD5FC3F6D81E394FD821EAA3AC7A3D3543DA9438C2AA474FAAE2B95DD41083C
+```
+
+This hash is an important release checkpoint.
+
+## 16. WAPT package signing and waptupgrade numbering
+
+Do not confuse three independent layers:
+
+1.  Lazarus PE `FileVersion` / build metadata.
+2.  `version-full`.
+3.  WAPT package revision suffix after `-`.
+
+`waptdevutils.py::build_waptupgrade_package()` reads the actual `wapt-get.exe` FileVersion, obtains the latest existing package revision, then increments it with `entry.inc_build()`.
+
+Therefore the suffix is a **package release counter**, not the WAPT Git build number.
+
+Final package:
+
+``` text
+deb10-waptupgrade 1.8.2.7402-49
+```
+
+Intermediate packages encountered during validation:
+
+``` text
+1.8.2.7401-46  historical/intermediate
+1.8.2.7401-47  prior valid
+1.8.2.7401-48  intermediate generated from installed 7401 console
+1.8.2.7402-49  FINAL
+```
+
+Do not force the final suffix back to a lower number.
+
+Final server file:
+
+``` text
+/var/www/wapt/deb10-waptupgrade_1.8.2.7402-49_all_1d9f09b71bd4a0f075b1bb1b7ba1cf2a.wapt
+```
+
+Recorded size:
+
+``` text
+27771279 bytes
+```
+
+MD5:
+
+``` text
+1d9f09b71bd4a0f075b1bb1b7ba1cf2a
+```
+
+Package metadata:
+
+``` text
+package: deb10-waptupgrade
+version: 1.8.2.7402-49
+architecture: all
+section: base
+priority: critical
+target_os: windows
+min_wapt_version: 1.7
+signer: wapt-deb10-cert
+signer_fingerprint: 13388c40c2ede5c347b4455e5fb394bf2292e8c39fcb68545a6ab273122e3c11
+```
+
+Physical package presence and repository metadata were validated. Do not reopen â€œpackage/index missingâ€ without contradictory evidence.
+
+### WAPT signer vs Authenticode signer
+
+These are separate trust systems:
+
+- Authenticode signs Windows PE files.
+- WAPT package signing uses the WAPT personal certificate/private key.
+- Trusted WAPT package signer certificates live in the WAPT `ssl` trust root.
+- `ssl\server` is HTTPS trust and is separate.
+
+Current WAPT signer:
+
+``` text
+CN: wapt-deb10-cert
+fingerprint: 13388c40c2ede5c347b4455e5fb394bf2292e8c39fcb68545a6ab273122e3c11
+```
+
+## 17. WAPTConsole functional validation â€” FINAL 7402
+
+The final signed Community console:
+
+- launches on Windows 11 25H2;
+- authenticates to the Debian 10 lab server;
+- displays hosts and package state;
+- generates certificates/agents;
+- creates and uploads waptupgrade packages;
+- correctly displays available packages in Edit Machine after the SoGrid fix;
+- can assign/save host dependencies;
+- can trigger package installation through the normal console workflow.
+
+Final console metadata:
+
+``` text
+FileVersion 1.8.2.7402
+ProductVersion 1.8.2
+Community Edition
+```
+
+The SoGrid â€œPaquets disponiblesâ€ defect is considered resolved for 7402.
+
+## 18. Production-style Windows migration validation â€” PASS
+
+### Test machine
+
+VM105:
+
+``` text
+hostname: vm105.genevoix-signoret-vinci.fr.lan
+UUID: 070A8580-54D0-4BD9-B3BA-49EE41C23D04
+IP: 192.168.220.5
+```
+
+The VM was restored to an authentic production-connected WAPT 1.8.2.7393 snapshot before the final test.
+
+Initial state:
+
+``` text
+Wrapper Win32.exe : wapt-get 1.8.2.7393
+WAPTService: Running
+repo_url=https://172.20.127.81/wapt
+wapt_server=https://172.20.127.81
+```
+
+The stale VM105 server entry from earlier diagnostics was deleted from the lab WAPT console before the final test.
+
+### Real deployment path tested
+
+The agent was downloaded through the normal lab web interface:
+
+``` text
+waptagent.exe
+FileVersion    1.8.2.7402
+ProductVersion 1.8.2.7402
+ProductName    WAPTAgent
+```
+
+It was installed directly **over the authentic 7393 installation**, with no manual pre-edit of `wapt-get.ini` and no manual stop/register/update preparation.
+
+Result:
+
+- installation completed;
+- VM105 automatically returned to the WAPT console;
+- `wapt-get.exe --version` became 1.8.2.7402;
+- `WAPTService` was running;
+- the generated agent replaced the old production endpoints with the lab endpoints.
+
+Resulting configuration:
+
+``` ini
+[global]
+repo_url=https://wapt-deb10.genevoix-signoret-vinci.fr.lan/wapt
+send_usage_report=1
+use_hostpackages=1
+wapt_server=https://wapt-deb10.genevoix-signoret-vinci.fr.lan
+use_kerberos=0
+check_certificates_validity=1
+verify_cert=0
+use_repo_rules=0
+max_gpo_script_wait=180
+pre_shutdown_timeout=180
+hiberboot_enabled=0
+
+[wapt-templates]
+repo_url=https://store.wapt.fr/wapt
+verify_cert=1
+```
+
+### Host package / upgrade package validation
+
+The final host package dependency was assigned through WAPTConsole.
+
+Host package:
+
+``` text
+070A8580-54D0-4BD9-B3BA-49EE41C23D04
+version 3
+depends: deb10-waptupgrade
+signer: wapt-deb10-cert
+signer_fingerprint: 13388c40c2ede5c347b4455e5fb394bf2292e8c39fcb68545a6ab273122e3c11
+```
+
+WAPTConsole showed:
+
+``` text
+deb10-waptupgrade 1.8.2.7402-49
+```
+
+The normal console workflow installed it successfully. Final console state:
+
+- VM105: `OK`;
+- host package: installed/green;
+- `deb10-waptupgrade 1.8.2.7402-49`: installed/green;
+- audit task: Done;
+- host reachable.
+
+Final client checks:
+
+``` text
+wapt-get.exe --version -> 1.8.2.7402
+wapt-get.exe list-upgrade -> no pending upgrades
+```
+
+During the final package workflow `WAPTService` was observed temporarily `Stopped`, then returned to:
+
+``` text
+Running
+```
+
+without manual intervention.
+
+### Final verdict
+
+**PASS â€” production-style Windows migration from authentic WAPT 1.8.2.7393 to the rebuilt WAPT 1.8.2.7402 is validated.**
+
+Validated path:
+
+``` text
+authentic 7393 client
+    -> portal-delivered waptagent.exe 7402
+    -> install over existing WAPT
+    -> automatic registration on new server
+    -> host package assignment
+    -> deb10-waptupgrade 1.8.2.7402-49
+    -> final host OK / service Running / no pending upgrade
+```
+
+This is the preferred evidence for the real migration workflow.
+
+## 19. UnknownIssuer diagnostic episode â€” NON-BLOCKING / CLOSED
+
+During an earlier, more artificial VM105 test path, WAPT 7393 logged:
+
+``` text
+Error merging Packages from .../wapt-host into db:
+EWaptCertificateUnknownIssuer:
+None of certificates ("wapt-deb10-cert") are trusted.
+```
+
+Investigation established:
+
+- the host package was signed by `wapt-deb10-cert`;
+- its control fingerprint was the expected `13388c40...e3c11`;
+- `WAPT/certificate.crt` contained the same self-signed certificate;
+- the 7393 runtime's `authorized_certificates()` contained the same certificate/fingerprint;
+- the error originates in the certificate-chain validation path when the relevant `SSLCABundle` does not accept the pinned certificate;
+- `_update_db()` purges a repository before calling `repo.packages()`, but the exact rollback/disappearance chronology was not conclusively established.
+
+The final restored-VM production-style migration succeeded without requiring a code change for this episode.
+
+**Classification:** diagnostic artifact/non-blocking for the validated 7402 release path.
+
+Do not reopen this investigation unless the same failure is reproduced in the real deployment workflow.
+
+## 20. Known-good build/release commands and rules
+
+Build metadata:
+
+``` powershell
+C:\wapt-build-test\Scripts\python.exe .\create_version_full.py
+```
+
+Final Lazarus builds:
+
+- invoke `lazbuild.py` one project at a time;
+- use the build venv Python;
+- Community edition;
+- let the Git commit count supply the natural build number.
+
+Direct diagnostic console rebuild:
+
+``` powershell
+& "C:\lazarus\lazbuild.exe" `
+  --primary-config-path="C:\Users\Maintenance\AppData\Local\lazarus" `
+  -B `
+  "C:\git\waptdev\waptconsole\waptconsole.lpi"
+```
+
+Final setup:
+
+``` powershell
+& "C:\git\binaries_cache\iscc\app\ISCC.exe" .\waptsetup\waptsetup.iss
+```
+
+Important rules:
+
+- no `git add .`;
+- restore Lazarus-generated `.lpi/.ico/hash` changes after build unless intentionally changed;
+- do not commit lab signing keys/certificates;
+- do not normalize legacy Pascal EOLs casually;
+- do not remove `uiAccess=true`;
+- do not change Synapse accidentally;
+- do not reinstall/change Indy without a concrete blocker;
+- do not treat all nine Lazarus outputs as EXEs: one is a PYD and one is a DLL;
+- do not force package/build numbers;
+- do not rebuild 7402 after adding a parent WAPT commit unless intentionally creating a new build number.
+
+## 21. Debian 10 production-like server migration â€” VALIDATED
+
+The Windows 7402 milestone remains frozen and validated. The production-like Debian 10 server migration milestone has now also been completed successfully.
+
+### Final rebuilt Debian 10 server package
+
+The first rebuilt Buster package was found to contain a temporary runtime-validation `conf/waptserver.ini`. Because `createdeb.py` copied the complete runtime into the package, `dpkg -i` could overwrite the persistent production configuration.
+
+The defect was fixed in:
+
+``` text
+88170eee1738b8193966221cbcb03a18c9da4230
+Prevent Debian upgrade from overwriting waptserver config
+```
+
+The Buster and Bookworm runtime builders now remove the temporary configuration after runtime tests. `waptserver/deb/createdeb.py` also refuses to build if `runtime_dir/conf/waptserver.ini` is present.
+
+Final traceable Buster package:
+
+``` text
+tis-waptserver-1.8.2.7398-88170eee-debian-10-amd64.deb
+Version: 1.8.2.7398-88170eee-debian-10-amd64
+Architecture: amd64
+SHA256: fb9406d37c50dfaaa3ee6aec417ac49f2b986730648bcfaf8c3c26be6266a823
+Tag: server-buster-7398-validated
+```
+
+`dpkg-deb -c` confirmed that this package does **not** contain `/opt/wapt/conf/waptserver.ini`.
+
+A clean production-like 7393 -> 7398 upgrade confirmed that the historical `waptserver.ini` is preserved bit-for-bit.
+
+### Debian 10 migration script V1.0
+
+Migration tool:
+
+``` text
+tools/waptserver-migrate-buster.sh
+SCRIPT_VERSION="1.0"
+BACKUP_FORMAT_VERSION="1"
+SOURCE_BUILD="7393"
+validated target build: 7398
+```
+
+Release commit:
+
+``` text
+cc96ac9f1011036358088dea5ed8906916df955b
+Release Debian 10 WAPT migration script 1.0
+```
+
+Script SHA256:
+
+``` text
+e2a53b66a5348bc9789fcef6e6ce2704b03c36632a2ecb351f69507287f7ff55
+```
+
+Annotated release tag:
+
+``` text
+server-buster-migration-7393-7398-validated
+```
+
+Supported modes:
+
+``` text
+precheck
+backup
+check-backup
+check-package
+upgrade
+```
+
+The script performs source validation, verified PostgreSQL/configuration backups, exact target package validation, controlled `dpkg -i`, and post-upgrade checks. It intentionally does **not** run `postconf` and does not perform automatic rollback.
+
+### Real production-clone validation
+
+The final migration was tested on an isolated clone of a real historical production server rather than only on the synthetic Debian 10 lab.
+
+Historical baseline:
+
+``` text
+Debian: 10 Buster
+WAPT: 1.8.2.7393
+Python: 2.7.16
+DB marker: "1.8.2.1"
+
+hostgroups: 3623
+hostpackagesstatus: 25099
+hosts: 675
+hostsoftwares: 105247
+packages: 1056
+waptusers: 1
+```
+
+Final V1.0 migration result:
+
+``` text
+7393 -> 7398: PASS
+RC: 0
+Installed: 1.8.2.7398-88170eee-debian-10-amd64
+waptserver.ini: preserved
+DB marker: "1.8.2.1"
+controlled DB counts: preserved
+```
+
+A format-1 migration backup was also created and independently validated:
+
+``` text
+/var/www/wapt-backups/migration-7393-7398-20260916-115658
+```
+
+Its manifest and SHA256 checks passed.
+
+### Isolated clone topology and persistent safety
+
+The real production clone is VM1900 and is now named:
+
+``` text
+scrab-clone
+```
+
+The true production server `scrab` must never be used for migration experiments.
+
+The clone is attached only to the isolated Proxmox bridge:
+
+``` text
+hyp3 vmbr999:       10.99.99.1/24
+scrab-clone eth0:   10.99.99.2/24
+default route:      none
+```
+
+The historical production interface configuration initially returned after the first reboot because the lab address had only been applied dynamically. The original configuration was saved as:
+
+``` text
+/etc/network/interfaces.pre-isolation
+```
+
+Persistent `/etc/network/interfaces` is now:
+
+``` text
+auto lo
+iface lo inet loopback
+
+allow-hotplug eth0
+iface eth0 inet static
+    address 10.99.99.2
+    netmask 255.255.255.0
+```
+
+A subsequent reboot confirmed `10.99.99.2/24` with only the local `10.99.99.0/24` route and no default route.
+
+The static and transient hostname were synchronized to `scrab-clone`.
+
+**Never reconnect this clone to production `vmbr17`.**
+
+### Post-reboot 7398 validation
+
+After reboot, the migrated server remained functional:
+
+``` text
+waptserver.service: active/running
+wapttasks.service:  active/running
+nginx:              active
+PostgreSQL WAPT DB: accessible
+DB marker:          "1.8.2.1"
+HTTPS:              HTTP/1.1 200 OK
+```
+
+Processes observed included both `wapttasks` and `waptserver`.
+
+An earlier observation that `wapptasks.service` could not be found was transient and is superseded by the explicit post-reboot validation above.
+
+### Agent 7402 / console 7402 against server 7398
+
+VM106 was tested against the isolated clone without replacing its normal production-oriented `wapt-get.ini`. A separate temporary configuration was used through an SSH HTTPS tunnel:
+
+``` text
+VM106 localhost:8443
+    -> hyp3
+    -> 10.99.99.2:443
+    -> nginx
+    -> waptserver 7398
+```
+
+Validated operations:
+
+``` text
+HTTPS:                         PASS
+agent 7402 repository update: PASS
+agent 7402 registration:      PASS
+agent 7402 update-status:     PASS
+server DB receives VM106:     PASS
+console 7402 loads VM106:     PASS
+realtime reachability:        PASS
+```
+
+The historical repository package-signing certificate required explicit trust on the agent:
+
+``` text
+CN: 0790007d
+SHA256:
+1F:D8:56:F8:7E:68:B4:68:83:96:39:28:7A:A0:8E:44:13:86:9C:81:D7:8E:06:9C:D6:B1:91:7C:DD:45:67:34
+```
+
+The certificate embedded in the repository `Packages` archive is not automatically trusted by the agent. Explicitly restoring the relevant WAPT trust certificate is therefore part of the disaster-recovery requirements.
+
+### Socket.IO and port 8088 â€” clarified
+
+Server-side realtime communication uses:
+
+``` text
+agent / console
+    -> HTTPS + Socket.IO on 443
+    -> nginx /socket.io
+    -> 127.0.0.1:8080
+    -> waptserver
+```
+
+There is no required server-side WAPT port 8088.
+
+Port `8088` is the local HTTP listener of the Windows WAPTService.
+
+A temporary foreground WAPTService on VM106 using the isolated test configuration successfully established Socket.IO connectivity to `scrab-clone`; the console then showed VM106 as reachable.
+
+The temporary second service produced a local SQLite `database is locked` message because the normal WAPTService remained active simultaneously. This was a deliberate test artifact, not a server defect. Only the temporary process was terminated afterward.
+
+### Current validated chain
+
+The following path is now validated:
+
+``` text
+historical Debian 10 / WAPT 7393
+    -> verified migration backup
+    -> controlled migration V1.0
+    -> rebuilt Debian 10 / WAPT 7398
+    -> historical DB/config preserved
+    -> reboot survives
+    -> agent 7402 interoperates
+    -> console 7402 interoperates
+    -> HTTPS / Socket.IO interoperates
+```
+
+This closes the production-like **in-place Debian 10 migration validation** milestone.
+
+Remaining work before Debian 11 is now focused on proving autonomous reconstruction and disaster recovery:
+
+1. install WAPT 7398 on a genuinely clean Debian 10 VM;
+2. identify/document all OS and PostgreSQL prerequisites;
+3. validate fresh server initialization;
+4. restore historical 7393 DB/configuration/TLS/repository data onto the fresh server;
+5. validate the restored server with console 7402 and agent 7402;
+6. validate restoration from an evolved 7398 migration backup;
+7. derive a reproducible fresh-install/disaster-recovery procedure;
+8. only then begin Debian 10 -> Debian 11.
+
+Build-environment reproducibility, SoGrid historical realignment and Python 3 modernization remain later work and must not alter the frozen Windows 7402 release.
+
+## 22. Debian 10 fresh-install packaging preparation
+
+Historical installation documentation confirms that a normal WAPT 1.8 Debian server installation used both `tis-waptserver` and `tis-waptsetup`. The fresh-install/DR validation must therefore include `tis-waptsetup`; validating `tis-waptserver` alone would not reproduce the historical installation model.
+
+### Historical waptsetup naming
+
+Repository history establishes why the server-side Windows installer is named `waptsetup-tis.exe`.
+
+Commit `46619c63df691451d4945d0818026e2e86fad9cf` (`waptsetup.deb : correctifs`) explicitly changed the packaged executable from `waptsetup.exe` to `waptsetup-tis.exe` to avoid overwriting a potentially customized `waptsetup.exe`.
+
+Therefore:
+
+``` text
+Windows build output:       waptsetup.exe
+official server-side copy:  waptsetup-tis.exe
+```
+
+This is historical behavior and must be preserved.
+
+### Reconstructed tis-waptsetup 7402
+
+An isolated worktree was created at the immutable Windows tag:
+
+``` text
+v1.8.2.7402
+895cb7597cf8d12ed149a3913dbfe197d39e5b62
+git rev-count = 7402
+```
+
+A temporary local build branch pointing exactly at that commit was required because the historical builder uses GitPython `active_branch`.
+
+The validated Windows 7402 artifacts were supplied to the builder:
+
+``` text
+waptsetup-tis.exe
+SHA256 ADD5FC3F6D81E394FD821EAA3AC7A3D3543DA9438C2AA474FAAE2B95DD41083C
+
+waptdeploy.exe
+SHA256 C2C05314C9DBB8CF2118257C66D4CBD0FA6F75705D337B4131126552ED1A138D
+```
+
+The historical Debian builder successfully produced:
+
+``` text
+tis-waptsetup-windows-1.8.2.7402-895cb759.deb
+Package:      tis-waptsetup
+Version:      1.8.2.7402
+Architecture: all
+Depends:      nginx
+SHA256: d51c8beaf1aedb6950d650e251afbf00f8baf85476851452d4502f8f51512b7e
+```
+
+Package extraction confirmed bit-for-bit that the embedded executables have exactly the validated 7402 hashes above. A preserved copy exists under `build/artifacts/debian10/` with the same package SHA256.
+
+This package is a validated reconstruction artifact for fresh-install testing. It is not yet declared the final autonomous Debian release package.
+
+### Server/setup version relationship
+
+Historical `waptserver/deb/createdeb.py` and `waptsetup/deb/createdeb.py` both derive the fourth version component from `r.active_branch.commit.count()`.
+
+The historical production installation also used matching build numbers:
+
+``` text
+tis-waptserver 1.8.2.7393-...
+tis-waptsetup  1.8.2.7393
+```
+
+The current reconstructed artifacts intentionally come from two different development milestones:
+
+``` text
+Debian 10 validation server: 1.8.2.7398
+Windows validated release:   1.8.2.7402
+reconstructed setup package: 1.8.2.7402
+```
+
+Do not artificially rename 7398 to 7402.
+
+Git history currently shows that the Windows 7402 lineage and Debian 10 lineage diverge from `4bbf306ad8342fc5637236c2f45aee9073ef0291`, with:
+
+``` text
+Windows 7402 side: 7 commits
+Debian 10 side:    10 commits
+Debian 10 HEAD:    cc96ac9f1011036358088dea5ed8906916df955b
+Debian 10 rev-count: 7405
+```
+
+A future autonomous release should reunify the validated lineages and then build server/setup consistently from a common release state with a natural build number greater than 7405.
+
+Do not perform that reunification until fresh-install and disaster-recovery validation is complete.
+
+### Windows code-signing status
+
+The validated Windows 7402 executables are currently signed using the temporary self-signed laboratory code-signing certificate.
+
+They remain valid functional/build-reference artifacts, but this signature must not silently become the final distribution trust model.
+
+Before freezing an autonomous production release, explicitly review the Windows code-signing strategy and revalidate any artifacts whose Authenticode signature or resulting SHA256 changes.
+
+
+## 23. Exact next action
+
+The immediate next milestone is:
+
+``` text
+FRESH DEBIAN 10 INSTALLATION + DISASTER-RECOVERY VALIDATION
+```
+
+Do **not** begin Debian 11 yet.
+
+Create or use a genuinely clean, isolated Debian 10 VM with:
+
+``` text
+no inherited /opt/wapt
+no inherited WAPT PostgreSQL database
+no inherited WAPT configuration
+no inherited WAPT repository
+```
+
+Then proceed in this order:
+
+``` text
+1. Inventory the pristine Debian 10 system.
+2. Determine exact PostgreSQL/system prerequisites for WAPT 7398.
+3. Install and initialize the preserved rebuilt WAPT 7398 artifacts.
+4. Validate services, HTTPS, database and basic console/agent interoperability.
+5. Restore the historical 7393 database, configuration, TLS material and repository.
+6. Validate the restored server with console 7402 and agent 7402.
+7. Validate restoration from a 7398-format migration backup.
+8. Document the reproducible fresh-install + disaster-recovery procedure.
+9. Only after PASS, begin Debian 10 -> Debian 11.
+```
+
+Keep all tests isolated. Never perform this validation on the true production server `scrab`.
+
+### 23.1 Fresh Debian 10 installation validation - PASS (2026-09-17)
+
+A genuinely pristine Debian 10 VM `wapt-deb10` was used. Before installation, no WAPT, PostgreSQL or nginx packages/services were present.
+
+Validated local packages:
+
+``` text
+tis-waptserver 1.8.2.7398-88170eee-debian-10-amd64
+SHA256 fb9406d37c50dfaaa3ee6aec417ac49f2b986730648bcfaf8c3c26be6266a823
+
+tis-waptsetup 1.8.2.7402
+SHA256 d51c8beaf1aedb6950d650e251afbf00f8baf85476851452d4502f8f51512b7e
+```
+
+APT successfully resolved and installed both packages together. Before `postconf.sh`, PostgreSQL 11/main existed on 5432, nginx was running, waptserver was installed but inactive, and `/opt/wapt/conf/waptserver.ini` did not exist. This confirms that corrected server package 7398 does not inject the temporary validation configuration. `waptsetup-tis.exe` and `waptdeploy.exe` were present under `/var/www/wapt/`.
+
+Interactive `/opt/wapt/waptserver/scripts/postconf.sh` completed successfully with unauthenticated registration (historical compatibility mode), nginx configuration, FQDN `wapt-deb10.genevoix-signoret-vinci.fr.lan`, and startup of waptserver/wapttasks.
+
+Validated after postconf:
+
+``` text
+PostgreSQL 11/main: online / 5432
+WAPT database:       created
+waptserver:          active/running
+wapttasks:           active/running
+nginx:               active/running
+nginx:               80 / 443
+waptserver:          127.0.0.1:8080
+local HTTPS:         HTTP 200
+VM106 HTTPS:         HTTP 200
+```
+
+### Fresh Windows client and agent publication
+
+VM106's existing WAPT installation was removed. `waptsetup-tis.exe` was downloaded directly from the fresh server portal and installed with:
+
+``` text
+repository: https://wapt-deb10.genevoix-signoret-vinci.fr.lan/wapt
+server:     https://wapt-deb10.genevoix-signoret-vinci.fr.lan/
+```
+
+VM106 successfully registered in the fresh database:
+
+``` text
+computer_fqdn: vm106.genevoix-signoret-vinci.fr.lan
+UUID:          3154B5EF-2BAD-44A5-80FF-E31A6D7FCA1A
+```
+
+The original production 7393 setup and rebuilt 7402 setup were compared at the installation-options screen. Both expose the same choices and neither exposes a third Wizard choice. The Wizard shown in documentation is therefore not evidence of a regression in reconstructed 7402.
+
+A new WAPT package-signing identity dedicated to this fresh environment was generated from WAPTConsole:
+
+``` text
+C:\private-wapt-deb10-fresh
+basename: wapt-deb10-fresh
+```
+
+Its certificate was copied to the WAPT authorized package certificate store. The older `C:\private\wapt-deb10-cert.*` files dated 2026-09-14 were deliberately not reused.
+
+Before agent generation the portal showed `Version WAPT Agent: N/A`. WAPTConsole 1.8.2.7402 then generated and published:
+
+``` text
+/var/www/wapt/waptagent.exe
+FileVersion:    1.8.2.7402
+ProductVersion: 1.8.2.7402
+SHA256: 8b046b85f129ba3104aa2592c94a23fd56f6787913159112e02c1454718a1e92
+```
+
+After generation the portal showed `Version WAPT Agent: 1.8.2.7402`, exposed the Agent WAPT download, and advertised the matching SHA256.
+
+Executable comparison confirmed that both the historical production 7393 `waptagent.exe` and freshly generated 7402 `waptagent.exe` are Authenticode `NotSigned`. Production 7393 setup/deploy are signed by TRANQUIL I.T. SYSTEMS; rebuilt 7402 setup/deploy are signed by the temporary `WAPT Lab Code Signing` certificate.
+
+### Console/package deployment validation
+
+WAPTConsole 1.8.2.7402 connected successfully to the fresh server and displayed VM106. An initial HTTP 401 was traced to a stale console configuration still pointing to `localhost:8443`; correcting the endpoint to the fresh-server FQDN resolved it.
+
+The console assigned and successfully deployed:
+
+``` text
+deb10-waptupgrade 1.8.2.7402-45
+```
+
+to VM106. The task completed, the package was reported installed, and VM106 returned to status `OK`.
+
+Validated chain:
+
+``` text
+pristine Debian 10
+ -> tis-waptserver 7398 + tis-waptsetup 7402
+ -> interactive postconf
+ -> HTTPS / PostgreSQL / WAPT services
+ -> setup downloaded from fresh portal
+ -> fresh Windows installation + registration
+ -> fresh package-signing identity
+ -> waptagent.exe 7402 generation/publication
+ -> console 7402
+ -> successful package deployment to VM106
+```
+
+Result:
+
+``` text
+FRESH DEBIAN 10 INSTALLATION + WINDOWS CLIENT + PACKAGE DEPLOYMENT: PASS
+```
+
+### Remaining work before Debian 11
+
+1. Trace why this fresh repository currently exposes `deb10-waptupgrade 1.8.2.7402-45`. The checkpoint already establishes that the suffix is a WAPT package revision counter, not the Git build number.
+2. Restore historical 7393 DB/configuration/TLS/repository onto a clean reconstructed server and validate with console/agent 7402.
+3. Validate restoration from an evolved 7398-format migration backup.
+4. Document the reproducible fresh-install + disaster-recovery procedure.
+5. Evaluate autonomous distribution without an external website: Git-synchronized installation versus a project-owned APT repository.
+6. Only after disaster-recovery PASS, begin Debian 10 -> Debian 11.
+
+## 24. Debian 10 historical DR validation — PASS (2026-09-18)
+
+The fresh Debian 10 installation from section 23.1 was subsequently used
+to validate a real disaster-recovery scenario from the historical WAPT
+1.8.2.7393 production state.
+
+The true production server `scrab` was never used for restoration tests.
+Historical data came from the isolated `scrab-clone` and from the verified
+migration backup:
+
+``` text
+/var/www/wapt-backups/migration-7393-7398-20260916-115658
+```
+
+Verified backup payload:
+
+``` text
+wapt-scrab.dump
+SHA256 da015083db04e82be26b93be1cd2fe29718b011a15e4002706bd305d860f01d1
+
+wapt-config-scrab.tar.gz
+SHA256 64d15a21e400746d42daa0f3a003b1a47a999a0ff389a1e68e8a94a86b59c783
+```
+
+Historical database marker:
+
+``` text
+"1.8.2.1"
+```
+
+Historical controlled counts:
+
+``` text
+hosts:               675
+hostgroups:          3623
+hostpackagesstatus:  25099
+hostsoftwares:       105247
+packages:            1056
+waptusers:           1
+```
+
+### PostgreSQL restore procedure — validated
+
+The historical dump cannot simply be restored as the `wapt` role because
+the dump needs sufficient privileges for objects such as the `hstore`
+extension.
+
+The validated procedure is:
+
+1. create the target database owned by `wapt`;
+2. remove the default `public` schema before restore because the dump
+   recreates it;
+3. run `pg_restore --no-owner` as the PostgreSQL superuser;
+4. transfer ownership only for restored WAPT application tables and
+   sequences to `wapt`;
+5. restore the required schema ACL.
+
+The schema ACL was an important finding. `waptserver` initially failed
+with:
+
+``` text
+relation "serverattribs" does not exist
+```
+
+although `public.serverattribs` existed. The restored `public` schema did
+not grant the WAPT role the required access.
+
+Validated correction:
+
+``` sql
+GRANT USAGE, CREATE ON SCHEMA public TO wapt;
+```
+
+Do **not** use a global:
+
+``` text
+REASSIGN OWNED BY postgres TO wapt
+```
+
+because PostgreSQL owns system objects which must remain PostgreSQL-owned.
+
+After the targeted ownership/ACL corrections, the historical WAPT
+database was fully usable and its controlled counts matched the source.
+Later changes in `hostpackagesstatus` are attributable to normal lab
+client activity after restoration, not restore corruption.
+
+### Historical configuration and TLS restore
+
+The historical WAPT configuration, client CA, TLS material and nginx
+configuration were restored from the verified backup.
+
+The historical server certificate remains:
+
+``` text
+CN=scrab.genevoix-signoret-vinci.fr.lan
+```
+
+This is intentionally preserved during faithful DR. In the laboratory,
+the restored server is addressed as
+`wapt-deb10.genevoix-signoret-vinci.fr.lan`, so strict hostname
+verification would not match. Do not alter production DNS or server
+identity merely to make the laboratory hostname match.
+
+The historical restored `waptserver.ini` retains its historical
+permissions during faithful validation. Permission hardening is a later
+modernization task, not part of the faithful DR proof.
+
+### Historical repository restore — bit-for-bit validation
+
+The migration backup does not contain the complete historical package
+repository, so `/var/www/wapt` was transferred separately from the
+isolated production clone.
+
+Repository size was approximately 13 GiB.
+
+Integrity was proven using sorted SHA256 manifests on both source and
+destination:
+
+``` text
+source files:       847
+destination files:  847
+
+manifest SHA256:
+8a67e8518ff96b47e40ac1c101c38113173183b67ed09ceafb91a0d86b725f67
+```
+
+Historical `/var/www/wapt/Packages` SHA256:
+
+``` text
+fbcb45ba5eca2ec6d2f183e951ffcdbe8ad9686d811bd4b1bc4f36f67ab364b1
+```
+
+The embedded historical package-signing certificate is:
+
+``` text
+CN: 0790007d
+fingerprint:
+1fd856f87e68b468839639287aa08e4413869c81d78e069cd6b1917cdd456734
+```
+
+The certificate embedded in the repository index does not automatically
+establish client trust. Historical clients already trusting this
+certificate can consume the restored repository normally.
+
+### Package-signing key architecture — clarified
+
+The historical `0790007d` package-signing private key is **not** part of
+the WAPT server backup.
+
+The server contains other private-key roles:
+
+``` text
+client-certificate CA private key
+HTTPS/TLS server private key
+```
+
+These are distinct from the administrator's WAPT package-signing key.
+
+Historical operational behavior was confirmed: the package-signing
+certificate/private key belongs to the administrator/console environment
+and must be backed up separately if signing continuity is required.
+
+For this DR validation the historical administrator certificate/private
+key was recovered from the administrative backup and loaded into
+WAPTConsole 1.8.2.7402.
+
+### waptupgrade revision baseline — corrected and validated
+
+The historical source template contained:
+
+``` text
+waptupgrade/WAPT/control
+version : 1.8.2.1-44
+```
+
+On a completely empty repository this caused a freshly generated package
+to start at:
+
+``` text
+deb10-waptupgrade 1.8.2.7402-45
+```
+
+The source baseline was corrected to:
+
+``` text
+version : 1.8.2.1-0
+```
+
+Commit:
+
+``` text
+6591839b9 Reset waptupgrade package revision baseline
+```
+
+A real generation against an empty repository then produced:
+
+``` text
+deb10-waptupgrade 1.8.2.7402-1
+```
+
+This does not rewrite historical package history. When the restored
+historical repository contains:
+
+``` text
+0790007d-waptupgrade 1.8.2.7393-16
+```
+
+the normal WAPT revision-continuity mechanism correctly generates:
+
+``` text
+0790007d-waptupgrade 1.8.2.7402-17
+```
+
+signed by:
+
+``` text
+0790007d
+fingerprint:
+1fd856f87e68b468839639287aa08e4413869c81d78e069cd6b1917cdd456734
+```
+
+The previously validated `deb10-waptupgrade 1.8.2.7402-49` remains a
+valid historical reconstruction milestone and must not be rewritten.
+
+### Repository restore rule for Setup/Deploy
+
+A complete historical `/var/www/wapt` restore overwrote two files owned
+by the installed target `tis-waptsetup` package:
+
+``` text
+/var/www/wapt/waptsetup-tis.exe
+/var/www/wapt/waptdeploy.exe
+```
+
+This was proven by:
+
+``` text
+dpkg -V tis-waptsetup
+```
+
+which reported MD5 mismatches after the repository restore.
+
+For the current validation, reinstalling the target
+`tis-waptsetup 1.8.2.7402` restored the exact validated files:
+
+``` text
+waptsetup-tis.exe
+SHA256 add5fc3f6d81e394fd821eaa3ac7a3d3543da9438c2aa474faae2b95dd41083c
+
+waptdeploy.exe
+SHA256 c2c05314c9dbb8cf2118257c66d4cbd0fa6f75705d337b4131126552ed1a138d
+```
+
+After correction:
+
+``` text
+dpkg -V tis-waptsetup
+```
+
+returned no output.
+
+The **final DR procedure should not require this corrective reinstall**.
+When restoring the historical repository, exclude:
+
+``` text
+wapt/waptsetup-tis.exe
+wapt/waptdeploy.exe
+```
+
+so that the target files installed by `tis-waptsetup` remain untouched.
+
+`waptagent.exe` is intentionally different: it should be regenerated
+after restoration from the target/current WAPT console.
+
+### Agent regeneration requirement
+
+After restoring an older WAPT environment onto a newer reconstructed
+target, the administrator must explicitly:
+
+``` text
+1. open the target/current WAPT console;
+2. load/verify the intended package-signing certificate;
+3. verify the authorized package-certificate bundle;
+4. regenerate waptagent.exe and the waptupgrade package.
+```
+
+This requirement must be difficult to miss in the final DR tooling.
+Decide later whether it is implemented as an end-of-restore message or
+popup, a dedicated Markdown procedure, or both.
+
+The DR-generated target agent used in this validation is:
+
+``` text
+FileVersion: 1.8.2.7402
+SHA256:
+857a2c3a06defc674ba6b1991bcc208449a6464b014e07c3d43801fed83dfab7
+```
+
+Inspection on a clean Windows system confirmed that generated agents
+bundle certificates from the console's authorized certificates
+directory. The package signer selected by the console and the authorized
+certificate bundle embedded into the agent are separate concepts.
+
+### Reboot validation — PASS
+
+The faithfully restored server survived a complete reboot.
+
+Validated after reboot:
+
+``` text
+waptserver:          active/running
+wapttasks:           active/running
+nginx:               active/running
+postgresql:          active
+PostgreSQL 11/main:  5432 online
+DB marker:           "1.8.2.1"
+HTTPS:               HTTP 200
+repository files:    847
+historical Packages: SHA256 preserved
+```
+
+An initially inconsistent `systemctl` observation for `wapttasks` was
+transient. The unit existed, was enabled and its process had started at
+boot. `daemon-reload` did not start the service.
+
+### True historical client 7393 -> 7402 migration — PASS
+
+VM104 was selected as a genuine laboratory client still running:
+
+``` text
+hostname: VM104
+IP: 192.168.220.4
+initial WAPT: 1.8.2.7393
+```
+
+Its WAPT trust store already contained the genuine historical package
+certificate:
+
+``` text
+0790007d-20181217-150755.crt
+```
+
+Only VM104's internal WAPT endpoints were redirected from true production
+to the reconstructed laboratory server. Production DNS and the true
+production server were not modified.
+
+Initial main WAPT configuration after redirection:
+
+``` ini
+[global]
+repo_url=https://wapt-deb10.genevoix-signoret-vinci.fr.lan/wapt
+wapt_server=https://wapt-deb10.genevoix-signoret-vinci.fr.lan
+verify_cert=0
+
+[wapt-templates]
+repo_url=https://store.wapt.fr/wapt
+verify_cert=1
+```
+
+The authentic 7393 client successfully read the restored repository:
+
+``` text
+Total packages: 167
+Added:
+  0790007d-waptupgrade (=1.8.2.7402-17)
+Removed: none
+Discarded packages count: 11
+```
+
+Both historical and new package versions were visible with the expected
+historical signer/fingerprint.
+
+#### Important dry-run finding
+
+Running:
+
+``` text
+wapt-get -d install 0790007d-waptupgrade
+```
+
+correctly skipped `setup.install()` but nevertheless recorded
+`0790007d-waptupgrade 1.8.2.7402-17` as `OK` in the local WAPT database.
+
+The following normal install was therefore skipped although the actual
+agent binary was still 7393.
+
+**Do not use `-d / --dry-run` as a preflight for a real WAPT agent
+upgrade.**
+
+The supported `-f / --force` option was then used for the real test.
+
+The package created the scheduled task `fullwaptupgrade` under
+`NT AUTHORITY\SYSTEM` and reported:
+
+``` text
+Setting up upgrade from WAPT version 1.8.2.7393 to 1.8.2.7402.
+```
+
+After the scheduled task executed:
+
+``` text
+wapt-get.exe --version -> 1.8.2.7402
+WAPTService -> Running / Automatic
+fullwaptupgrade temporary task -> removed
+console 7402 -> VM104 Reachable OK
+0790007d-waptupgrade 1.8.2.7402-17 -> installed / OK
+```
+
+A final repository update from the upgraded client returned:
+
+``` text
+Total packages: 167
+Added packages: none
+Removed packages: none
+Discarded packages count: 11
+Pending operations: none
+```
+
+This proves the complete historical migration path:
+
+``` text
+authentic client 7393
+    -> historical 0790007d trust
+    -> reconstructed Debian 10 server 7398
+    -> restored historical DB/config/TLS/repository
+    -> console 7402 with historical package-signing key
+    -> regenerated waptagent.exe 7402
+    -> 0790007d-waptupgrade 1.8.2.7402-17
+    -> scheduled self-upgrade
+    -> client 7402
+    -> WAPTService Running
+    -> console Reachable OK
+    -> repository update PASS
+```
+
+**PASS — fresh Debian 10 reconstruction + historical 7393 disaster
+recovery + authentic client 7393 -> 7402 migration are validated
+end-to-end.**
+
+### Production-isolation conclusion
+
+The restored production database contains historical production hosts,
+but this does not redirect those hosts to the laboratory server. WAPT
+agents initiate connections using their own configured repository/server
+URLs.
+
+The true production `scrab` address/DNS remains untouched. Only explicitly
+reconfigured laboratory clients connect to `wapt-deb10`.
+
+Never change production DNS or reconnect isolated clones as part of this
+validation.
+
+## 25. Consolidated autonomous release direction
+
+The existing version numbers remain meaningful validation milestones:
+
+``` text
+7398 = Debian 10 reconstructed server/migration milestone
+7402 = validated Windows client/console/setup milestone
+```
+
+Do not artificially rename the 7398 server to 7402.
+
+After all remaining Debian 10 DR work is complete, the first deliberately
+consolidated autonomous release is planned as:
+
+``` text
+1.8.3
+```
+
+Before freezing 1.8.3:
+
+1. reunify the validated Windows and Debian source lineages;
+2. build server/setup/client artifacts consistently from the common
+   release state;
+3. provide an autonomous installation/distribution mechanism which does
+   not depend on obsolete external WAPT repositories;
+4. explicitly review the final Windows Authenticode signing strategy;
+5. keep Authenticode trust and WAPT package-signing trust distinct;
+6. implement an explicit, idempotent database migration from marker
+   `1.8.2.1` to at least `1.8.3.0`, even if no new tables or schema DDL
+   are required;
+7. validate the consolidated release before beginning Debian 11.
+
+Do not alter the historical DR database marker during faithful 7393
+validation. Its correct value remains:
+
+``` text
+1.8.2.1
+```
+
+## 26. Post-DR backup/restore tooling — current state (2026-09-18)
+
+The historical 7393 disaster-recovery path and authentic Windows client
+7393 -> 7402 migration are closed and validated. The strategy was revised:
+do **not** immediately reset `wapt-deb10` merely to repeat a restore from an
+evolved 7398 backup before the final DR mechanism exists.
+
+The new order is:
+
+``` text
+historical 7393 DR validation
+    -> reproducible autonomous DR backup/restore tooling
+    -> end-to-end validation of that final mechanism with an evolved 7398 backup
+    -> freeze Debian 10 DR
+    -> consolidate 1.8.3
+    -> Debian 11
+```
+
+Keep the current validated `wapt-deb10` state until the restore mechanism is
+ready for its final validation.
+
+### 26.1 DR backup/restore architecture
+
+The existing migration script V1.0 remains frozen. Generic DR tooling is
+separate:
+
+``` text
+tools/waptserver-backup.sh
+future: tools/waptserver-restore.sh
+future: higher-level administrative orchestrator if useful
+```
+
+Administrative scripts requiring root follow this convention:
+
+``` text
+already root -> continue unchanged
+non-root + sudo -> re-exec through sudo preserving arguments
+sudo unavailable/refused -> stop before modifications
+```
+
+Do not modify the frozen migration V1.0 merely to retrofit this convention.
+
+The DR bundle format is versioned independently:
+
+``` text
+BACKUP_FORMAT_VERSION="1"
+```
+
+A backup with repository included contains conceptually:
+
+``` text
+wapt-dr-<hostname>-<timestamp>/
+├── manifest.ini
+├── SHA256SUMS
+├── database/wapt.dump
+├── config/waptserver.ini
+├── config/nginx/wapt.conf
+├── certificates/client-ca/
+├── certificates/server-tls/
+├── repository/wapt/
+└── metadata/
+    ├── system.txt
+    ├── packages.txt
+    ├── database.txt
+    ├── repository.txt
+    └── repository-manifest.sha256
+```
+
+Repository content is included by default by the `backup` mode and can be
+omitted explicitly with `backup-no-repository`. Even when omitted, a per-file
+SHA256 repository manifest is retained.
+
+The administrator-visible backup consists of:
+
+``` text
+wapt-dr-<hostname>-<timestamp>.tar
+wapt-dr-<hostname>-<timestamp>.tar.sha256
+```
+
+The SHA256 sidecar is deliberately retained because it permits immediate
+integrity verification after transport or archival.
+
+Backup-bundle security is independent of historical source permissions:
+
+``` text
+bundle directories: 0700 root:root
+bundle files:       0600 root:root
+final tar:          0600 root:root
+SHA256 sidecar:     0600 root:root
+```
+
+The backup preserves historical repository content faithfully. Selective
+modern target policy belongs to restore, not backup.
+
+### 26.2 Restore policy already decided
+
+The future restore tool must preserve target-version authority where
+appropriate.
+
+Historical repository restore must **not** overwrite the active files owned by
+the target `tis-waptsetup` package:
+
+``` text
+/var/www/wapt/waptsetup-tis.exe
+/var/www/wapt/waptdeploy.exe
+```
+
+Historical `waptagent.exe` may exist in the restored repository, but the final
+administrative procedure must explicitly require regeneration of the agent
+from the target/current console after trust has been reviewed.
+
+Historical nginx configuration in the backup is reference material; restore
+must not blindly overwrite the target nginx configuration.
+
+`waptserver.ini` must also be restored selectively rather than blindly:
+historical identity/policy values must be retained while target runtime/path
+settings remain authoritative.
+
+The historical package-signing private key remains an external
+administrator/console asset and is not a WAPT server-backup payload.
+
+The historical package prefix must be recorded and surfaced to the
+administrator. Current historical value:
+
+``` text
+0790007d
+```
+
+Final operational repository permission policy planned for 1.8.3:
+
+``` text
+directories: 0750 wapt:www-data
+files:       0640 wapt:www-data
+```
+
+Restore must reapply deliberate operational permissions rather than reproduce
+the historical 0640/0644 mixture.
+
+### 26.3 PostgreSQL restore contract
+
+Source PostgreSQL version and port are **metadata**, not target configuration.
+
+The restore tool must detect and use the target PostgreSQL runtime/cluster and
+port. It must never restore the source PostgreSQL port or cluster configuration
+blindly.
+
+Example:
+
+``` text
+source: PostgreSQL 9.6 / port 5432
+target: PostgreSQL 18 / port 5433
+
+=> logical WAPT database restore targets PostgreSQL 18 / port 5433
+```
+
+Cross-major logical restoration still requires explicit compatibility
+validation for extensions, data types and other PostgreSQL objects before it
+can be guaranteed.
+
+The validated historical database restoration rules remain:
+
+``` text
+create target DB owned by wapt
+remove default public schema before pg_restore
+pg_restore --no-owner as PostgreSQL superuser
+targeted ownership correction for WAPT tables/sequences
+GRANT USAGE, CREATE ON SCHEMA public TO wapt
+```
+
+Never globally `REASSIGN OWNED BY postgres TO wapt`.
+
+### 26.4 `waptserver-backup.sh` development and validation
+
+The standalone backup tool was developed incrementally on the isolated
+`scrab-clone`.
+
+Important milestones:
+
+``` text
+V0.1    precheck validated
+V0.2    backup-no-repository introduced; PostgreSQL protected-directory issue found
+V0.2.1  PostgreSQL dump fixed; real no-repository backup passed
+V0.3    secure bundle normalization, repository SHA manifest, package-prefix detection
+V0.3.1  neutral PostgreSQL working directory; clean no-repository backup passed
+V0.4.x  final tar archive + repository-included mode + staging cleanup
+V0.4.3  staging moved to backup filesystem + free-space preflight
+```
+
+A failed full-backup attempt while staging under `/tmp` filled the root
+filesystem during repository copy. It was a controlled, source-safe failure
+and exposed an architectural defect. The final design stages under the backup
+destination filesystem, never inside the source repository.
+
+For a full repository backup, free-space preflight requires:
+
+``` text
+2 * repository_size + 2 GiB safety margin
+```
+
+The factor 2 accounts for the repository staging copy plus the final tar.
+
+### 26.5 Full V0.4.3 validation — PASS
+
+The full backup was validated on `scrab-clone` against the real historical
+repository.
+
+Source characteristics:
+
+``` text
+server:              tis-waptserver 1.8.2.7398-88170eee-debian-10-amd64
+database:            PostgreSQL 9.6 / port 5432
+DB marker:           1.8.2.1
+repository files:    847
+repository bytes:    13246063582
+historical prefix:   0790007d
+```
+
+Controlled database counts during the backup validation:
+
+``` text
+hostgroups:          3623
+hostpackagesstatus:  25101
+hosts:               675
+hostsoftwares:       105247
+packages:            1056
+waptusers:           1
+```
+
+The `hostpackagesstatus` difference from the original 25099 baseline is
+expected laboratory activity after restoration/migration, not backup
+corruption.
+
+Free-space preflight:
+
+``` text
+available bytes: 49810874368
+required bytes:  28639610812
+```
+
+The repository copy was verified against its 847-entry SHA256 manifest before
+archive creation.
+
+Final validated archive:
+
+``` text
+/var/www/wapt-backups/wapt-dr-scrab-clone-20260918-123430.tar
+```
+
+SHA256:
+
+``` text
+a8809c603e377ec643cdfb44405179111a97bc4a410968132a638d4aedbe146b
+```
+
+Independent post-run validation confirmed:
+
+``` text
+archive exists and is readable
+tar structure is valid
+repository is included
+temporary staging directory is absent
+/var/www has 35 GiB free after completion
+```
+
+The repository SHA manifest generated independently by the backup tool again
+matched the previously proven historical repository manifest:
+
+``` text
+8a67e8518ff96b47e40ac1c101c38113173183b67ed09ceafb91a0d86b725f67
+```
+
+### 26.6 Backup V1.0 — FROZEN
+
+After full V0.4.3 validation, the script was promoted to:
+
+``` text
+tools/waptserver-backup.sh
+SCRIPT_VERSION="1.0"
+```
+
+There was **no functional code change** between the validated V0.4.3 and V1.0;
+only the script-version value changed.
+
+V0.4.3 SHA256:
+
+``` text
+19bfa8ca8b277b4cd5e7bf8212e667c0ccc8f2155606ee1f29d4a5e8564d7490
+```
+
+V1.0 SHA256:
+
+``` text
+db8f75aa04fad3e7aa1419e446ddcf3fa19716565237e9ef3a7bde3a5fd8eede
+```
+
+`bash -n` passed.
+
+Wapster commit:
+
+``` text
+226b2cc1 Add validated WAPT server DR backup tool
+branch: build/debian10-buster
+```
+
+The authoritative checkpoint is **not** the untracked copy on Wapster.
+The checkpoint reference remains the tracked file on VM106
+`C:\git\waptdev\WAPT_CHECKPOINT.md`, updated from this document at major
+milestones.
+
+At the time of the V1.0 backup commit, Wapster working-tree status was:
+
+``` text
+?? WAPT_CHECKPOINT.md
+```
+
+The untracked Wapster checkpoint is an older duplicate and must not be
+accidentally committed.
+
+## 27. Exact next action
+
+The historical 7393 DR path is closed and `waptserver-backup.sh` V1.0 is now
+validated/frozen.
+
+The immediate milestone is:
+
+``` text
+DESIGN AND IMPLEMENT THE REPRODUCIBLE WAPT SERVER RESTORE TOOL
+```
+
+Proceed in this order:
+
+``` text
+1. Commit/push the updated authoritative checkpoint separately from Wapster work.
+2. Design `tools/waptserver-restore.sh` around BACKUP_FORMAT_VERSION=1.
+3. Implement non-destructive validation/check mode first.
+4. Implement safety backup + controlled restore sequencing.
+5. Restore the logical WAPT DB into the detected target PostgreSQL runtime/port.
+6. Restore historical identity/config selectively.
+7. Restore repository while preserving target waptsetup-tis.exe/waptdeploy.exe.
+8. Reapply deliberate target operational permissions.
+9. Produce an explicit post-restore administrative report:
+   - historical package signer/private key reminder;
+   - authorized certificate review;
+   - historical package-prefix verification;
+   - regenerate waptagent.exe;
+   - generate/publish the current <prefix>-waptupgrade package;
+   - test at least one historical client.
+10. Use an evolved 7398 backup as the end-to-end validation of the final DR mechanism.
+11. Freeze the Debian 10 DR procedure only after that PASS.
+12. Consolidate the validated lineages into release 1.8.3.
+13. Only then begin Debian 11.
+```
+
+Do not reset the currently validated `wapt-deb10` merely to perform another
+manual restore before the final restore mechanism exists.
+
+Do not begin Debian 11 yet.
+
+## 28. Resume protocol for a new ChatGPT thread
+
+Attach this checkpoint and send:
+
+``` text
+Gipity, on reprend le projet WAPT à partir du checkpoint joint.
+Considère WAPT_CHECKPOINT.md comme l'état technique faisant autorité.
+Ne recommence pas les investigations déjà validées sauf si une contradiction apparaît.
+On reprend à la section "Exact next action".
+Réponses courtes, une étape à la fois.
+```
+
+If later work contradicts this file, update the checkpoint at the next major
+milestone instead of silently rewriting history.
+
+## 29. DR restore check tooling — validated milestone (2026-09-18)
+
+Development of `tools/waptserver-restore.sh` began with a deliberately
+non-destructive `--check` mode. No target WAPT database, configuration,
+repository or services are modified by this mode.
+
+The first validation exposed an important staging constraint: extracting a
+repository-bearing DR bundle under `/tmp` can exhaust the root filesystem.
+On `scrab-clone`, `/` had only about 6 GiB free while `/var/www` had about
+35 GiB free. Restore-check staging was therefore moved to:
+
+``` text
+/var/www
+```
+
+The check now performs a free-space preflight before full extraction using:
+
+``` text
+required = archive size + 2 GiB safety margin
+```
+
+For the validated archive:
+
+``` text
+archive:
+  /var/www/wapt-backups/wapt-dr-scrab-clone-20260918-123430.tar
+
+archive size:
+  13264957440 bytes
+
+free space:
+  36545908736 bytes
+
+required:
+  15412441088 bytes
+```
+
+The manifest parser was also simplified for compatibility with the Debian 10
+AWK environment and the controlled format-1 INI syntax. The validated parser
+reads values such as `format_version` directly from the `key = value` fields.
+
+### 29.1 Full `--check` validation — PASS
+
+The final check run on `scrab-clone` completed successfully:
+
+``` text
+WAPT Server DR restore check v0.1.5
+CHECK PASSED
+No target WAPT data was modified.
+```
+
+Validated controls:
+
+``` text
+archive present/non-empty:             PASS
+archive SHA256 sidecar:                PASS
+tar readability:                       PASS
+archive path traversal protection:     PASS
+single bundle root:                    PASS
+manifest format precheck:              PASS
+/var/www free-space preflight:         PASS
+full bundle extraction:                PASS
+required bundle files:                 PASS
+BACKUP_FORMAT_VERSION=1:               PASS
+mandatory identity files:              PASS
+repository manifest SHA256:            PASS
+repository per-file SHA256 (847):      PASS
+bundle SHA256SUMS:                      PASS
+PostgreSQL dump readable by pg_restore: PASS
+```
+
+Source metadata recovered correctly by the restore checker:
+
+``` text
+hostname:               scrab-clone
+FQDN:                   scrab-clone.genevoix-signoret-vinci.fr.lan
+Debian:                 10
+WAPT server:            1.8.2.7398-88170eee-debian-10-amd64
+DB marker:              "1.8.2.1"
+source PostgreSQL:      9.6
+source PostgreSQL port: 5432 (metadata only)
+package prefix:         0790007d
+repository included:    yes
+repository files:       847
+```
+
+The exact script that passed this validation was frozen as a reference on
+`scrab-clone`, transferred bit-for-bit through VM106 and then installed in
+the Wapster development tree.
+
+Validated script SHA256:
+
+``` text
+7fc62c4dd46e42bf9ea4daff7cf229e5d8732837bb3430d35d88cf91e09b5b88
+```
+
+Wapster commit:
+
+``` text
+faf4335b Add validated WAPT server DR restore check
+branch: build/debian10-buster
+```
+
+The branch was pushed successfully:
+
+``` text
+cc96ac9f..faf4335b  build/debian10-buster -> build/debian10-buster
+```
+
+This push also publishes the previously committed backup V1.0 milestone:
+
+``` text
+226b2cc1 Add validated WAPT server DR backup tool
+```
+
+Wapster remains clean for tracked files; its old duplicate checkpoint remains
+untracked and must not be committed:
+
+``` text
+?? WAPT_CHECKPOINT.md
+```
+
+VM106 remains the authoritative checkpoint working tree. Its intentional
+`submodules/pltis_synapse` modification must remain untouched.
+
+### 29.2 Restore development status
+
+`tools/waptserver-restore.sh` is **not V1.0 yet**. Version 0.1.5 validates only
+the non-destructive archive/check path. Do not promote it to V1.0 until the
+actual controlled restore path has been implemented and validated end-to-end.
+
+The next implementation phase must add the real restore sequencing while
+preserving all policies already established in sections 24–27:
+
+``` text
+1. detect/validate target environment and target PostgreSQL runtime/port;
+2. create a safety backup before modifications;
+3. stop WAPT services in controlled order;
+4. restore the logical WAPT database into the target PostgreSQL runtime;
+5. apply targeted WAPT ownership and public-schema ACL;
+6. selectively restore historical identity/policy configuration;
+7. restore historical CA/TLS identity;
+8. restore repository while preserving target:
+     waptsetup-tis.exe
+     waptdeploy.exe
+9. reapply deliberate operational permissions;
+10. restart and validate PostgreSQL/WAPT/nginx services and HTTPS;
+11. emit an explicit post-restore administrative report covering:
+     historical package-signing private key;
+     authorized certificate review;
+     package prefix;
+     regeneration of waptagent.exe;
+     generation/publication of current <prefix>-waptupgrade;
+     validation with at least one historical client.
+```
+
+The first real destructive validation must remain isolated and must never
+target the true production `scrab`.
+
+## 30. Exact next action
+
+The current immediate milestone is now:
+
+``` text
+IMPLEMENT THE CONTROLLED --restore PATH IN tools/waptserver-restore.sh
+```
+
+The archive/check layer is validated and committed. Continue development from
+commit:
+
+``` text
+faf4335b
+```
+
+Do not redo the validated `--check` investigation unless a contradiction
+appears. Develop the destructive restore path incrementally, preserve the
+existing safety checks, and keep the script in the 0.x development series
+until a complete real DR restore passes.
+
+After the real restore mechanism is validated:
+
+``` text
+evolved 7398 backup
+    -> validated restore tool
+    -> complete reconstructed target validation
+    -> historical client validation
+    -> freeze restore V1.0
+    -> freeze Debian 10 DR
+    -> consolidate release 1.8.3
+    -> Debian 11
+```
+
+Do not begin Debian 11 yet.
+## 31. Restore target precheck — V0.2.1 functionally validated (2026-09-18)
+
+Restore development continued from the committed V0.1.5 `--check` milestone.
+The next objective was to validate the **target** before allowing any
+destructive restore operation.
+
+A V0.2 development interface added:
+
+``` text
+--check
+--restore
+```
+
+At this stage `--restore` remained deliberately non-destructive and exited
+after target validation.
+
+### 31.1 PostgreSQL target-selection contract implemented
+
+The first V0.2 candidate assumed exactly one online PostgreSQL cluster. This
+was rejected before repository integration because it would be unnecessarily
+strict on systems containing several legitimate clusters.
+
+V0.2.1 instead:
+
+``` text
+1. enumerates online clusters reported by pg_lsclusters;
+2. tests each cluster on its actual runtime port;
+3. selects the unique online cluster containing an accessible database named wapt;
+4. fails if zero or more than one matching WAPT database is found;
+5. uses that detected cluster/version/port for all subsequent target operations.
+```
+
+This implements the previously agreed DR contract:
+
+``` text
+source PostgreSQL version/port = backup metadata only
+target PostgreSQL runtime/port = detected from the restore target
+```
+
+It therefore does not blindly reuse a source port or PostgreSQL major version.
+
+### 31.2 Real target used for validation
+
+Target:
+
+``` text
+hostname:               wapt-deb10
+Debian:                 10.13
+tis-waptserver:         1.8.2.7398-88170eee-debian-10-amd64
+tis-waptsetup:          1.8.2.7402
+target PostgreSQL:      11.22 (Debian 11.22-0+deb10u2)
+target cluster:         11/main
+target port:            5432
+target WAPT DB owner:   wapt
+target DB marker:       "1.8.2.1"
+waptserver.service:     active
+```
+
+The source DR archive was the validated Backup V1.0 artifact produced on
+`scrab-clone`:
+
+``` text
+/tmp/wapt-dr-scrab-clone-20260918-123430.tar
+/tmp/wapt-dr-scrab-clone-20260918-123430.tar.sha256
+```
+
+The archive was transferred through the isolated lab path:
+
+``` text
+scrab-clone -> hyp3 -> wapt-deb10
+```
+
+No production server was involved.
+
+The archive occupied about 13 GiB. Before the check, the target filesystem
+state was approximately:
+
+``` text
+filesystem: /dev/vda2
+size:       62 GiB
+used:       39 GiB
+free:       20 GiB
+usage:      67%
+
+/tmp/wapt-dr-scrab-clone-20260918-123430.tar: ~13 GiB
+/var/www/wapt:                                      ~13 GiB
+```
+
+There were no significant stale DR staging trees to remove. Only small
+previous-test artifacts existed:
+
+``` text
+/var/www/wapt-fresh-before-dr: ~80 MiB
+/root/pre-dr-fresh:            ~104 KiB
+```
+
+### 31.3 V0.2.1 `--restore` precheck — PASS
+
+The non-destructive target-precheck run completed successfully.
+
+Important output:
+
+``` text
+Source PostgreSQL:      9.6
+Source PostgreSQL port: 5432 (metadata only)
+
+Target Debian:          10
+Target WAPT server:     1.8.2.7398-88170eee-debian-10-amd64
+Target WAPT setup:      1.8.2.7402
+Target PostgreSQL:      11.22 (Debian 11.22-0+deb10u2)
+Target PG cluster:      11/main
+Target PostgreSQL port: 5432
+Target DB owner:        wapt
+Target DB marker:       "1.8.2.1"
+
+[ OK ] Restore target precheck passed
+
+RESTORE PRECHECK PASSED
+No target WAPT data was modified.
+```
+
+This experimentally proves that the restore checker distinguishes source
+PostgreSQL metadata from the actual target runtime.
+
+The run also repeated the already-established format-1 archive checks,
+including repository and bundle SHA256 validation. These integrity checks are
+retained for safety, but avoid asking the administrator to perform additional
+manual SHA256 passes over the 13 GiB archive unless they are actually needed.
+The scripted integrity controls are sufficient during normal restore workflow.
+
+The large extraction again used `/var/www`, never `/tmp`.
+
+After completion:
+
+``` text
+df -h / -> about 20 GiB free again
+find /var/www -maxdepth 1 -type d -name '.wapt-dr-restore-*' -> no result
+```
+
+Therefore cleanup of the temporary extraction tree is also validated.
+
+The initial V0.2.1 test binary still displayed `v0.2` because the internal
+version string had not been incremented when the PostgreSQL-selection logic
+was changed. This was corrected afterward to:
+
+``` text
+SCRIPT_VERSION="0.2.1"
+```
+
+No second 13 GiB validation run is required merely for that version-string
+correction.
+
+On Wapster, the corrected V0.2.1 was copied into:
+
+``` text
+tools/waptserver-restore.sh
+```
+
+Current tracked/untracked state at that point:
+
+``` text
+ M tools/waptserver-restore.sh
+?? WAPT_CHECKPOINT.md
+```
+
+The untracked Wapster `WAPT_CHECKPOINT.md` remains the known old duplicate and
+must not be committed. VM106 remains the authoritative checkpoint working
+tree.
+
+V0.2.1 has **not** been committed as a separate milestone. The last committed
+restore baseline remains:
+
+``` text
+faf4335b Add validated WAPT server DR restore check
+```
+
+## 32. Lightweight target safety-backup design and V0.3 candidate
+
+Before implementing destructive restore operations, the target safety-backup
+policy was clarified.
+
+### 32.1 Safety-backup scope
+
+A fresh reconstruction target is expected to have little or no historical
+package payload in `/var/www/wapt`; the important package-owned artifacts are
+primarily:
+
+``` text
+/var/www/wapt/waptsetup-tis.exe
+/var/www/wapt/waptdeploy.exe
+```
+
+The current `wapt-deb10` contains about 13 GiB only because it has already
+served as the manual historical DR validation target.
+
+Duplicating the entire current repository before every restore would therefore
+consume large amounts of disk space without matching the normal clean-target
+scenario.
+
+The agreed safety-backup contract is:
+
+``` text
+SAFETY BACKUP = mutable critical target state, WITHOUT repository package payload
+DR ARCHIVE     = complete restoration source, optionally including repository
+```
+
+The safety backup should contain:
+
+``` text
+- logical PostgreSQL dump of the current target WAPT database;
+- /opt/wapt/conf;
+- target WAPT server TLS directory;
+- target nginx WAPT configuration as reference;
+- target Debian/WAPT/PostgreSQL/cluster/port/DB-marker metadata;
+- lightweight repository inventory;
+- target waptsetup-tis.exe if present;
+- target waptdeploy.exe if present.
+```
+
+It deliberately does **not** copy the package/repository payload.
+
+This safety archive is intended to protect the target's critical mutable state
+before destructive restore work. By design, it is **not** a bit-for-bit
+rollback copy of the previous repository payload, and the script/report must
+not imply otherwise.
+
+This resolves the disk-space problem on the current 62 GiB `wapt-deb10`
+without weakening the main DR archive.
+
+### 32.2 Repository restore authority remains unchanged
+
+During the later real repository restore, historical content from the DR
+archive must still preserve the target package-owned files:
+
+``` text
+waptsetup-tis.exe
+waptdeploy.exe
+```
+
+Those files remain authoritative from the target `tis-waptsetup` package,
+currently 1.8.2.7402.
+
+Historical `waptagent.exe` may be restored temporarily with repository
+content, but the final administrative procedure must require regeneration
+from the current console after authorized-certificate review.
+
+### 32.3 V0.3 candidate prepared — NOT YET EXECUTION-VALIDATED
+
+A complete V0.3 candidate was generated from the validated V0.2.1 development
+state.
+
+Candidate script SHA256:
+
+``` text
+9d89b2deee2b499be4d43f429be5e6276aae9af61811abc781867f41fe23f6ca
+```
+
+Wapster validation performed:
+
+``` text
+sha256sum: expected value matched
+bash -n:   PASS
+diff V0.2.1 -> V0.3: reviewed
+```
+
+V0.3 adds:
+
+``` text
+- SCRIPT_VERSION="0.3";
+- automatic sudo re-exec for --restore when not already root;
+- creation of /var/www/wapt-backups if needed;
+- secure lightweight target safety-backup staging;
+- target PostgreSQL custom-format dump;
+- capture of /opt/wapt/conf;
+- capture of /opt/wapt/waptserver/ssl;
+- capture of nginx WAPT configuration when present;
+- copy of waptsetup-tis.exe and waptdeploy.exe when present;
+- target metadata;
+- repository inventory only, not repository payload;
+- 0700 safety-backup directories and 0600 files/archive;
+- structural tar validation;
+- pg_restore readability validation of the DB dump inside the safety archive;
+- cleanup of safety-backup staging;
+- deliberate barrier after successful safety backup.
+```
+
+The intended V0.3 terminal barrier is:
+
+``` text
+SAFETY BACKUP PASSED
+Destructive restore operations are not implemented yet in v0.3.
+Target database, configuration and repository were NOT replaced.
+```
+
+V0.3 does **not** yet:
+
+``` text
+- stop WAPT/nginx services;
+- drop or replace the target database;
+- restore the source database;
+- merge waptserver.ini;
+- restore historical CA/TLS identity;
+- restore repository content;
+- change operational repository permissions;
+- perform final service/HTTPS/client validation.
+```
+
+Therefore V0.3 is currently:
+
+``` text
+SYNTAX VALIDATED + DIFF REVIEWED
+NOT YET EXECUTION-VALIDATED
+NOT COMMITTED
+```
+
+Do not describe it as a validated restore milestone until the lightweight
+safety-backup run has actually passed on the isolated target.
+
+## 33. Exact next action — weekend resume point
+
+The project is deliberately stopped at a safe boundary. No destructive restore
+operation is in progress.
+
+The immediate next milestone is:
+
+``` text
+EXECUTE AND VALIDATE V0.3 LIGHTWEIGHT TARGET SAFETY BACKUP
+```
+
+Resume in this order:
+
+``` text
+1. Keep the validated V0.2.1 state as the functional target-precheck reference.
+2. Transfer/use the already reviewed V0.3 candidate on isolated wapt-deb10.
+3. Run V0.3 --restore against the validated format-1 DR archive.
+4. Confirm:
+     - target precheck still passes;
+     - safety DB dump is valid;
+     - critical target config/identity is captured;
+     - package-owned setup/deploy artifacts are captured when present;
+     - repository payload is NOT duplicated;
+     - safety archive is structurally valid;
+     - staging is cleaned;
+     - no target DB/config/repository has been replaced.
+5. Inspect safety archive size and free-space recovery.
+6. If PASS, preserve the exact V0.3 script and record the validation milestone.
+7. Only then implement the next destructive-development phase:
+     - controlled service stop;
+     - logical DB replacement into detected target PostgreSQL runtime;
+     - targeted ownership/schema ACL repair;
+     - deliberate barrier and validation before config/repository restoration.
+8. Continue incrementally through selective config/identity restore,
+   repository restore preserving waptsetup-tis.exe/waptdeploy.exe,
+   operational permissions, restart and final administrative report.
+9. After a complete real DR restore passes, validate with an evolved 7398
+   backup and at least one historical client.
+10. Freeze restore V1.0 and Debian 10 DR only after those PASS results.
+11. Consolidate the first autonomous release as 1.8.3.
+12. Only then begin Debian 11.
+```
+
+Important weekend/restart rules:
+
+``` text
+- true production scrab remains untouched;
+- scrab-clone remains isolated on vmbr999 with no default route;
+- large restore staging belongs under /var/www, never /tmp;
+- source PostgreSQL version/port are metadata only;
+- detect the target cluster containing database wapt;
+- do not duplicate the repository in the lightweight safety backup;
+- preserve target waptsetup-tis.exe and waptdeploy.exe during repository restore;
+- do not commit Wapster's untracked duplicate WAPT_CHECKPOINT.md;
+- VM106 C:\git\waptdev\WAPT_CHECKPOINT.md is the authoritative checkpoint;
+- do not begin Debian 11.
+```
+
+The resume protocol remains:
+
+``` text
+Gipity, on reprend le projet WAPT à partir du checkpoint joint.
+Considère WAPT_CHECKPOINT.md comme l'état technique faisant autorité.
+Ne recommence pas les investigations déjà validées sauf si une contradiction apparaît.
+On reprend à la section "Exact next action".
+Réponses courtes, une étape à la fois.
+```
+## 34. Restore target safety backup — V0.3.1 validated and committed (2026-09-21)
+
+Development resumed from the V0.3 candidate described in section 32.
+
+The first real V0.3 `--restore` run completed all archive and target prechecks,
+then created the lightweight target safety backup, but failed only during its
+final embedded-dump readability check:
+
+``` text
+[FAIL] Database dump inside target safety-backup archive is not readable
+```
+
+The safety archive itself was valid. The defect was the validation command:
+
+``` text
+tar -xOf .../wapt.dump | pg_restore -l -
+```
+
+In this context `pg_restore -l -` treated `-` as an input filename rather than
+reading the archive from standard input. Independent checks proved both the
+staged dump and the dump streamed from the generated tar were readable.
+
+V0.3.1 changed only:
+
+``` text
+SCRIPT_VERSION="0.3" -> "0.3.1"
+pg_restore -l -      -> pg_restore -l
+```
+
+Validated V0.3.1 SHA256:
+
+``` text
+40c927865dd0a6e6062a423a24b53c7dbe0d95fd7158370a62b8df5ce8335c5a
+```
+
+The successful V0.3.1 run on isolated `wapt-deb10` produced:
+
+``` text
+/var/www/wapt-backups/wapt-target-safety-wapt-deb10-20260921-092815.tar
+```
+
+Validation result:
+
+``` text
+RESTORE PRECHECK PASSED
+Target safety backup created and structurally validated
+SAFETY BACKUP PASSED
+```
+
+Post-run checks confirmed:
+
+``` text
+safety archive size: about 45 MiB
+archive mode:        0600 root:root
+staging residue:     none
+free space /var/www: about 20 GiB
+waptserver:          active
+postgresql:          active
+nginx:               active
+```
+
+The lightweight archive contains critical mutable target state but deliberately
+does not contain repository package payload. It includes the logical WAPT DB
+dump, WAPT configuration, server TLS material, nginx WAPT configuration when
+present, target metadata, repository inventory and target
+`waptsetup-tis.exe`/`waptdeploy.exe` when present.
+
+The exact validated restore script was committed and pushed on
+`build/debian10-buster`:
+
+``` text
+c7f98b36 Add validated target safety backup to WAPT DR restore
+```
+
+The previous V0.3 failed-test archive was retained as diagnostic evidence; its
+temporary staging directory was removed.
+
+## 35. Controlled logical database restore — V0.4.4 validated and committed (2026-09-21)
+
+The next restore milestone deliberately implemented only the destructive
+database phase, retaining a hard stop before configuration, certificates,
+nginx and repository restoration.
+
+The intended sequence was:
+
+``` text
+validated archive/target prechecks
+-> validated lightweight target safety backup
+-> stop WAPT application services
+-> keep PostgreSQL active
+-> replace logical WAPT database on detected target PostgreSQL cluster/port
+-> targeted ownership/schema ACL repair
+-> validate DB marker and essential table counts
+-> STOP BARRIER before config/identity/repository restore
+```
+
+Target PostgreSQL remained authoritative:
+
+``` text
+target PostgreSQL: 11/main
+target port:       5432
+source PostgreSQL: 9.6 / 5432 (metadata only)
+```
+
+### 35.1 V0.4/V0.4.1 PostgreSQL 11 compatibility finding
+
+Before destructive execution, the sequence-owner validation was checked on the
+real PostgreSQL 11 target. PostgreSQL 11 does not expose
+`sequence_owner` through `information_schema.sequences`.
+
+The validation was corrected to use:
+
+``` text
+pg_class
+pg_namespace
+pg_get_userbyid(c.relowner)
+```
+
+The corrected query was tested directly on PostgreSQL 11 and returned zero
+non-WAPT-owned public sequences.
+
+V0.4.1 SHA256:
+
+``` text
+4dc1bcebf66e406ace9812f915b54762818e9e267668cb10af841007248e386b
+```
+
+### 35.2 First destructive run — controlled failure and root cause
+
+V0.4.1 successfully:
+
+``` text
+created/validated a new target safety backup
+stopped WAPT application services
+kept PostgreSQL active
+dropped/recreated database wapt
+removed the default public schema
+```
+
+It then failed before importing any dump data:
+
+``` text
+pg_restore: could not open input file .../database/wapt.dump: Permission denied
+[FAIL] Database restore failed
+```
+
+The extracted DR staging tree is intentionally private to root. The
+`postgres` user therefore could not traverse the root-owned staging path to
+open the dump directly.
+
+This did **not** justify weakening staging permissions. The design was fixed
+instead so root reads the protected dump and streams it to `pg_restore`
+running as `postgres`:
+
+``` text
+root-readable dump -> stdin -> pg_restore as postgres
+```
+
+V0.4.2 implemented this change.
+
+After the V0.4.1 interruption:
+
+``` text
+waptserver: inactive
+wapttasks:  failed/stopped
+postgresql: active
+nginx:      active
+database wapt: exists, 0 public tables
+```
+
+The pre-failure safety backup was preserved:
+
+``` text
+/var/www/wapt-backups/wapt-target-safety-wapt-deb10-20260921-094608.tar
+```
+
+### 35.3 Controlled interrupted-restore recovery
+
+V0.4.2 initially could not resume because the normal target precheck required
+`waptserver` to be active.
+
+V0.4.3 added a deliberately narrow recovery rule:
+
+``` text
+if waptserver is inactive:
+    detect the real target PostgreSQL WAPT database;
+    require exactly 0 public tables;
+    only then accept the state as an interrupted database restore.
+```
+
+It does not broadly permit restoring over an arbitrary inactive WAPT server.
+
+The first V0.4.3 resume correctly recognized:
+
+``` text
+waptserver inactive
+target database has 0 public tables
+interrupted restore state accepted
+```
+
+It then stopped during the normal target DB-marker check because an empty
+interrupted database has no `serverattribs` table.
+
+V0.4.4 therefore skips the **target pre-restore marker** only after the exact
+empty interrupted-restore state above has already been accepted. The source
+marker remains validated from the DR archive, and the restored marker is still
+required and validated after `pg_restore`.
+
+Validated V0.4.4 SHA256:
+
+``` text
+7cfbefc52e5dafaf39a119a30c81ca485af54fd2298039a24cbe2556f27fc842
+```
+
+### 35.4 V0.4.4 destructive DB restore — PASS
+
+The V0.4.4 resume completed successfully.
+
+A fresh lightweight target safety backup was created and validated:
+
+``` text
+/var/www/wapt-backups/wapt-target-safety-wapt-deb10-20260921-101625.tar
+```
+
+The logical database was restored into:
+
+``` text
+PostgreSQL cluster: 11/main
+port:               5432
+database owner:     wapt
+```
+
+The restore used `pg_restore --no-owner` as PostgreSQL superuser, followed by
+targeted WAPT ownership corrections and:
+
+``` sql
+GRANT USAGE, CREATE ON SCHEMA public TO wapt;
+```
+
+No global `REASSIGN OWNED BY postgres TO wapt` was used.
+
+Post-restore validation:
+
+``` text
+DB marker:           "1.8.2.1"
+
+hostgroups:          3623
+hostpackagesstatus:  25101
+hosts:               675
+hostsoftwares:       105247
+packages:            1056
+waptusers:           1
+```
+
+The script reported:
+
+``` text
+[ OK ] Logical database restore completed
+[ OK ] Restored database ownership, schema ACL, marker and essential tables validated
+
+DATABASE RESTORE PASSED
+```
+
+The result matches the evolved 7398 backup baseline established by Backup
+V1.0.
+
+At the intentional stop barrier:
+
+``` text
+waptserver/wapttasks remain stopped
+PostgreSQL remains active
+target configuration not yet restored
+target certificates/TLS not yet restored
+target nginx configuration not replaced
+target repository not yet restored
+```
+
+Temporary restore staging cleanup was also validated:
+
+``` text
+find /var/www -maxdepth 1 -name '.wapt-dr-restore-*'
+-> no output
+```
+
+The protected root-only staging permissions were **not** weakened. The
+permission issue was solved by streaming the DB dump rather than granting
+`postgres` access to the staging tree.
+
+The exact validated script was committed and pushed:
+
+``` text
+cbc158fc Add validated WAPT database restore phase
+branch: build/debian10-buster
+```
+
+Current Wapster tracked state after push is clean. Its old duplicate checkpoint
+remains intentionally untracked:
+
+``` text
+?? WAPT_CHECKPOINT.md
+```
+
+Do not commit that Wapster duplicate. VM106 remains the authoritative
+checkpoint working tree.
+
+## 36. Exact next action — post-V0.4.4 database barrier
+
+The current `wapt-deb10` restore is intentionally paused after successful
+database replacement.
+
+Current known state:
+
+``` text
+database:            restored and validated from evolved 7398 DR archive
+DB marker:           "1.8.2.1"
+PostgreSQL 11/main:  active on 5432
+waptserver:          stopped
+wapttasks:           stopped/failed state from controlled stop
+nginx:               active
+config/identity:     not yet restored by the automated restore tool
+repository:          not yet restored by the automated restore tool
+```
+
+Do **not** restart WAPT services yet. The database is historical/restored while
+the remaining target configuration/identity/repository layers have not yet
+been applied by the automated restore sequence.
+
+The immediate implementation milestone is:
+
+``` text
+SELECTIVE CONFIGURATION / IDENTITY / REPOSITORY RESTORE
+```
+
+Proceed incrementally:
+
+``` text
+1. Preserve V0.4.4 / commit cbc158fc as the validated DB-restore rollback point.
+2. Implement selective waptserver.ini restoration:
+     - preserve target runtime/path/technical authority;
+     - restore historical identity/policy values deliberately.
+3. Restore historical client CA and server TLS identity deliberately.
+4. Keep target nginx configuration authoritative; historical nginx config is
+   reference material only.
+5. Restore repository content from the DR archive while preserving target:
+     waptsetup-tis.exe
+     waptdeploy.exe
+6. Reapply deliberate operational permissions:
+     repository directories 0750 wapt:www-data
+     repository files       0640 wapt:www-data
+     /opt/wapt/conf         0750 wapt:root
+     waptserver.ini         0640
+     client CA certificate  0644
+     client CA private key  0640
+     server TLS directory   0750 root:root
+     server TLS certificate 0644
+     server TLS private key 0600
+7. Validate restored configuration/identity/repository before restarting WAPT.
+8. Restart services in controlled order and validate PostgreSQL, WAPT, nginx,
+   HTTPS and repository access.
+9. Emit the final administrative report/reminders:
+     - historical package-signing private key remains external;
+     - review authorized package certificates;
+     - verify historical package prefix (`0790007d`);
+     - regenerate `waptagent.exe` from the current console;
+     - generate/publish the current `<prefix>-waptupgrade`;
+     - validate at least one historical client.
+10. Complete an end-to-end evolved-7398 restore validation.
+11. Only after the complete restore passes, promote restore tooling toward V1.0
+    and freeze Debian 10 DR.
+12. Then add/finalize the post-DR modernization roadmap and consolidate the
+    first autonomous release as 1.8.3.
+13. Do not begin Debian 11 yet.
+```
+
+Important continuity rules remain unchanged:
+
+``` text
+true production scrab remains untouched
+scrab-clone remains isolated on vmbr999 with no default route
+large restore staging belongs under /var/www, never /tmp
+source PostgreSQL version/port are metadata only
+target PostgreSQL cluster/port are detected dynamically
+safety backup does not duplicate repository payload
+target waptsetup-tis.exe and waptdeploy.exe remain authoritative
+Wapster's untracked WAPT_CHECKPOINT.md is not authoritative
+VM106 C:\git\waptdev\WAPT_CHECKPOINT.md remains authoritative
+```
+## 37. Selective configuration / identity restore — V0.5.1 validated (2026-09-21)
+
+Restore development continued from the validated V0.4.4 database barrier.
+
+V0.5.1 added resume-aware selective restoration of WAPT configuration and
+identity. Its validated SHA256 is:
+
+``` text
+0c30658dc7ec00725158c4ed5be3b69517fdfa93648158fa4e8c5e9cf689af70
+```
+
+The restore state machine now distinguishes:
+
+``` text
+normal
+interrupted-empty
+interrupted-partial
+post-database
+```
+
+A `post-database` state is accepted only when the restored database matches the
+source logical signature: DB marker, database/schema ownership and ACL, zero
+non-WAPT-owned application tables/sequences, and exact controlled source table
+counts. In that state the destructive database replacement is skipped.
+
+On the already restored `wapt-deb10`, V0.5.1 correctly detected:
+
+``` text
+post-database
+DATABASE RESTORE SKIPPED
+```
+
+and created a fresh lightweight safety backup:
+
+``` text
+/var/www/wapt-backups/wapt-target-safety-wapt-deb10-20260921-110332.tar
+```
+
+### 37.1 Selective `waptserver.ini` authority
+
+Target runtime/technical values remain authoritative, including:
+
+``` text
+chdir
+gid
+http-socket
+processes
+uid
+wapt_folder
+wapt_huey_db
+wapt_user
+waptwua_folder
+wsgi
+master
+enable-threads
+max-requests
+```
+
+Historical identity/policy values are restored deliberately, including:
+
+``` text
+server_uuid
+secret_key
+wapt_password
+allow_unauthenticated_connect
+allow_unauthenticated_registration
+clients_signing_certificate
+clients_signing_key
+```
+
+Validated restored identity/policy included:
+
+``` text
+server_uuid = 39904430-d99a-11e7-ae3b-0208840a277e
+allow_unauthenticated_connect = False
+allow_unauthenticated_registration = True
+clients_signing_key = /opt/wapt/conf/ca-scrab.genevoix-signoret-vinci.fr.lan.pem
+clients_signing_certificate = /opt/wapt/conf/ca-scrab.genevoix-signoret-vinci.fr.lan.crt
+```
+
+Historical client-CA material and historical server TLS material were restored.
+The target nginx configuration remained authoritative and was not replaced.
+
+Validated permission policy:
+
+``` text
+/opt/wapt/conf:                 0750 wapt:root
+waptserver.ini:                 0640
+client CA certificate:          0644
+client CA private key:          0640
+server TLS directory:           0750 root:root
+server TLS certificate:         0644
+server TLS private key:         0600
+```
+
+The historical server TLS certificate is self-signed and has:
+
+``` text
+CN = scrab.genevoix-signoret-vinci.fr.lan
+notBefore = Dec 5 08:56:54 2017 GMT
+notAfter  = Dec 3 08:56:54 2027 GMT
+```
+
+Preserve this certificate for faithful DR. Plan and validate renewal/replacement
+for the same WAPT service FQDN before **2027-12-03**. Do not confuse this HTTPS
+server certificate with the WAPT client-signing CA or the external package
+signing certificate/private key.
+
+At this stage `waptserver` and `wapttasks` intentionally remained stopped.
+
+## 38. Historical repository restore — V0.6.2 validated and committed (2026-09-21)
+
+Repository restoration was implemented while preserving the target-version
+files owned by `tis-waptsetup`:
+
+``` text
+/var/www/wapt/waptsetup-tis.exe
+/var/www/wapt/waptdeploy.exe
+```
+
+A V0.6.1 run restored the repository correctly but its final manifest
+validation reported exactly two mismatches because the manifest filter did not
+normalize `./` paths correctly. Diagnostics proved that the only mismatches
+were the two intentionally preserved target executables; the 13 GiB historical
+repository itself was not corrupted.
+
+V0.6.2 corrected the manifest filtering and added a resume check that avoids
+copying the 13 GiB payload again when the target already matches the source
+except for those two preserved files.
+
+Validated V0.6.2 SHA256:
+
+``` text
+63c67f60a7b232e1f77c6b01781503f3b4098ec9eb81896cea55598d1505b610
+```
+
+Validated result:
+
+``` text
+repository files: 847
+Packages SHA256:
+fbcb45ba5eca2ec6d2f183e951ffcdbe8ad9686d811bd4b1bc4f36f67ab364b1
+
+preserved waptsetup-tis.exe SHA256:
+add5fc3f6d81e394fd821eaa3ac7a3d3543da9438c2aa474faae2b95dd41083c
+
+preserved waptdeploy.exe SHA256:
+c2c05314c9dbb8cf2118257c66d4cbd0fa6f75705d337b4131126552ed1a138d
+```
+
+Operational repository permissions were reapplied as:
+
+``` text
+directories: 0750 wapt:www-data
+files:       0640 wapt:www-data
+```
+
+The exact validated repository phase was committed and pushed on
+`build/debian10-buster`:
+
+``` text
+74bbf2ae Add validated WAPT repository restore phase
+```
+
+At this barrier:
+
+``` text
+database:          restored/validated
+config/identity:   restored/validated
+repository:        restored/validated
+PostgreSQL/nginx:  active
+waptserver:        intentionally stopped
+wapttasks:         intentionally stopped
+```
+
+## 39. Service / FQDN / TLS validation — V0.7.2 PASS (2026-09-21)
+
+The final automated restore phase added controlled service startup and explicit
+WAPT service-identity validation.
+
+An important architectural distinction was proven:
+
+``` text
+source OS FQDN:    scrab-clone.genevoix-signoret-vinci.fr.lan
+WAPT service FQDN: scrab.genevoix-signoret-vinci.fr.lan
+target OS FQDN:    wapt-deb10.genevoix-signoret-vinci.fr.lan
+```
+
+The source OS hostname is **not** the WAPT service identity. For this historical
+backup format the WAPT service FQDN is derived from the restored TLS
+certificate CN.
+
+V0.7.1 first validated TLS key/certificate matching, certificate validity,
+nginx configuration, and service startup. Its first local HTTPS test returned
+HTTP 502 immediately after systemd reported `waptserver` active. Diagnostics
+showed:
+
+``` text
+nginx proxy target: 127.0.0.1:8080
+waptserver listener: 127.0.0.1:8080
+```
+
+and the same HTTPS request returned HTTP 200 shortly afterward. This proved a
+startup-readiness race rather than a broken proxy/backend configuration.
+
+V0.7.2 replaced the one-shot HTTPS test with a bounded application-readiness
+loop of up to 30 seconds.
+
+Validated V0.7.2 SHA256:
+
+``` text
+69f93032461f7ca2372377bae77d13b6898237a2110e4eb353b8d419a0a9b566
+```
+
+Final automated validation result:
+
+``` text
+restored TLS certificate/private key match: PASS
+restored TLS certificate currently valid:  PASS
+nginx configuration test:                  PASS
+waptserver active:                         PASS
+wapttasks active:                          PASS
+local HTTPS through historical FQDN:       HTTP 200
+repository validation:                     PASS
+```
+
+The restore reported:
+
+``` text
+RESTORE VALIDATION PASSED
+Database, configuration/identity, repository, TLS identity and local WAPT
+service startup are validated.
+```
+
+The exact validated script was committed and pushed:
+
+``` text
+bb05f691 Complete validated WAPT server DR restore
+branch: build/debian10-buster
+```
+
+The restore tool remains versioned:
+
+``` text
+tools/waptserver-restore.sh
+SCRIPT_VERSION="0.7.2"
+```
+
+Do not silently call it V1.0 yet. Promotion/freezing as Restore V1.0 is a
+separate explicit release action.
+
+## 40. WAPT DR architecture — service identity transplant
+
+The validated DR model is now explicitly:
+
+``` text
+transplant the logical WAPT service identity and data
+onto a fresh supported target OS installation
+```
+
+It is **not** a requirement to clone the original Linux machine identity.
+
+The critical continuity objects are:
+
+``` text
+WAPT database
+server_uuid
+secret_key
+wapt_password
+historical identity/policy configuration
+client CA certificate/private key where applicable
+server HTTPS/TLS certificate/private key
+historical repository and Packages index
+package-prefix continuity
+authorized package-certificate policy
+```
+
+The administrator's historical WAPT package-signing private key is a separate
+external administrative asset and is not expected inside the WAPT server
+backup.
+
+### 40.1 FQDN, hostname and IP rules
+
+The historical WAPT **service FQDN** must remain stable from the clients'
+perspective:
+
+``` text
+scrab.genevoix-signoret-vinci.fr.lan
+```
+
+The target Linux hostname does not need to be identical to the historical OS
+hostname. The validated laboratory target proves that
+`wapt-deb10.genevoix-signoret-vinci.fr.lan` can host the restored logical
+`scrab` WAPT identity.
+
+The IP address is likewise not intrinsically part of WAPT service identity.
+A replacement server may use a different IP if production DNS maps the
+historical WAPT service FQDN to the intended restored server and firewall/ACL
+rules permit the required traffic.
+
+Preserving the historical IP can still simplify environments where clients,
+firewalls or other infrastructure contain literal IP references, but this is
+an environmental compatibility issue rather than a WAPT identity requirement.
+
+Future backup-format evolution should record an explicit:
+
+``` text
+service_fqdn=
+```
+
+instead of requiring restore-time derivation from the TLS certificate CN.
+
+### 40.2 Mandatory pre-production cutover barrier
+
+The restore tool deliberately does **not** change production DNS or authorize
+production-client reconnection.
+
+Before cutover, explicitly validate:
+
+``` text
+1. historical WAPT service FQDN resolves to the intended restored server;
+2. network/firewall/ACL rules permit intended client traffic;
+3. TLS identity presented for that FQDN is the intended restored/renewed cert;
+4. authorized WAPT package certificates are reviewed;
+5. the intended external package-signing key/certificate is available;
+6. waptagent.exe is regenerated from the current console;
+7. the current <prefix>-waptupgrade package is generated/published;
+8. at least one historical client is validated before broad reconnection.
+```
+
+Current laboratory DNS resolution observed during V0.7.2:
+
+``` text
+scrab.genevoix-signoret-vinci.fr.lan -> 172.20.127.81
+```
+
+This was informational only and was not changed by the restore script.
+
+During service validation, some existing clients attempted connections and
+produced certificate-signature authentication failures. This does not invalidate
+the local restore PASS, but reinforces the requirement to keep production
+reconnection behind the explicit DNS/network/trust cutover barrier.
+
+## 41. Debian 10 DR status — automated restore milestone closed
+
+The following chain is now validated:
+
+``` text
+evolved WAPT 7398 Backup V1.0
+    -> format-1 archive + sidecar integrity validation
+    -> target precheck and dynamic PostgreSQL detection
+    -> lightweight target safety backup
+    -> logical DB restore / resume detection
+    -> targeted ownership + schema ACL repair
+    -> selective historical configuration/identity restore
+    -> historical CA/TLS restore
+    -> historical repository restore
+    -> preserve target waptsetup-tis.exe / waptdeploy.exe
+    -> operational permission normalization
+    -> controlled WAPT service startup
+    -> historical service-FQDN/TLS validation
+    -> local HTTPS HTTP 200
+    -> explicit pre-production cutover barrier
+```
+
+Together with the earlier manual historical DR and authentic VM104
+7393 -> 7402 client migration, this establishes a reproducible Debian 10 DR
+architecture.
+
+Frozen/validated backup tool:
+
+``` text
+tools/waptserver-backup.sh
+SCRIPT_VERSION="1.0"
+SHA256 db8f75aa04fad3e7aa1419e446ddcf3fa19716565237e9ef3a7bde3a5fd8eede
+commit 226b2cc1
+```
+
+Validated restore implementation:
+
+``` text
+tools/waptserver-restore.sh
+SCRIPT_VERSION="0.7.2"
+SHA256 69f93032461f7ca2372377bae77d13b6898237a2110e4eb353b8d419a0a9b566
+commit bb05f691
+```
+
+Do not rewrite the validated intermediate commits:
+
+``` text
+c7f98b36  target safety backup
+cbc158fc  logical database restore
+74bbf2ae  repository restore
+bb05f691  complete restore validation
+```
+
+## 42. Modernization roadmap — post Debian 10 DR
+
+The objective is to minimize the number of compatibility transitions required
+to move the nine historical Debian 10 / WAPT 1.8.2.7393 installations to a
+maintainable platform without breaking client/package continuity.
+
+Planned workstreams:
+
+``` text
+A. Close/freeze Debian 10 DR tooling and documentation.
+B. Consolidate the validated Windows and Debian lineages as WAPT 1.8.3.
+C. Validate real 7393 -> 1.8.3 server/client migration.
+D. Provide autonomous installation/distribution:
+     - synchronized Git/artifact path, and/or
+     - project-owned APT repository.
+E. Revisit final Windows Authenticode signing; keep lab signatures distinct
+   from production distribution trust.
+F. Implement explicit idempotent DB marker migration from 1.8.2.1 to at least
+   1.8.3.0 for the consolidated release.
+G. Validate Debian 10 -> Debian 11.
+H. Validate Debian 11 -> Debian 12.
+I. Evaluate direct restoration of a Debian 10 WAPT backup onto a fresh
+   Debian 12 target as a possible simpler migration path than chained
+   in-place OS upgrades.
+J. Inventory and modernize COTS/security dependencies:
+     Python runtime, OpenSSL, cryptography, mORMot, FPC/Lazarus and related
+     libraries/CVEs.
+K. Migrate the server from Python 2 to Python 3 with explicit compatibility
+   testing.
+L. Assess a later Python 3 Windows client migration separately from the
+   server migration; do not assume they must occur simultaneously.
+M. Maintain a compatibility matrix covering:
+     server version;
+     agent version;
+     console version;
+     package format/trust;
+     Python runtime;
+     Debian version;
+     PostgreSQL/database marker.
+N. Industrialize reproducible builds, automated validation, portable DR,
+   documentation and later CI/CD.
+```
+
+Do not decide the exact ordering of Python 3, Debian 12 and major COTS/OpenSSL
+changes until dependency/compatibility analysis is performed. Preserve the
+smallest safe number of intermediate releases.
+
+The first consolidated autonomous release remains:
+
+``` text
+1.8.3
+```
+
+The validated Windows 1.8.2.7402 artifacts remain signed with the temporary
+self-signed laboratory Authenticode certificate. Before final autonomous
+distribution, explicitly choose and validate the production signing strategy.
+
+## 43. Exact next action — new-thread resume point
+
+The Debian 10 disaster-recovery milestone is now frozen and documented.
+
+Frozen DR components:
+
+- Backup V1.0:
+  - script: `tools/waptserver-backup.sh`
+  - commit: `226b2cc1`
+  - SHA256:
+    `db8f75aa04fad3e7aa1419e446ddcf3fa19716565237e9ef3a7bde3a5fd8eede`
+- Restore V1.0:
+  - script: `tools/waptserver-restore.sh`
+  - commit: `50246dd1f95036ebb0b2a7cd27004deadac5a76a`
+  - tag: `server-buster-restore-v1.0`
+  - SHA256:
+    `06ff15a4b12b1c92b8f7885a5244e64a1859427093fbfcc19a986b77acdd2270`
+- Complete operational DR procedure:
+  - document: `WAPT_DR_DEBIAN10.md`
+  - commit: `46f0bb671`
+  - covers Backup V1.0, Restore V1.0, restore validation,
+    pre-production cutover barrier, client reconnection, trust assets and
+    operational limitations.
+
+The pre-production FQDN/DNS/TLS/client-reconnection barrier is mandatory.
+
+The validated historical WAPT TLS certificate expires on 2027-12-03 and must
+be renewed or replaced before that date while preserving the WAPT service
+FQDN semantics.
+
+The validated Debian and Windows lineages have now been reunified on
+`release/1.8.3`.
+
+The current validation milestone is:
+
+``` text
+VALIDATE WAPT 1.8.3 ON DEBIAN 10 BEFORE CONSOLIDATED RELEASE
+```
+
+### Debian 10 — validation initiale WAPT 1.8.3 / DB 1.8.3.0
+
+Test package:
+
+``` text
+tis-waptserver-1.8.3.7436-2377932b-debian-10-amd64
+SHA256: cef587f768f176d212faebfddeabcda2f7385ed38b16bca23717930fea750c83
+source commit: 2377932b1
+natural Git build count: 7436
+```
+
+Validated on Debian 10.13:
+
+1. Upgrade from fresh WAPT 1.8.2.7398:
+   - initial DB marker: `1.8.2`
+   - package upgrade to 1.8.3.7436: PASS
+   - postconf: PASS
+   - final DB marker: `1.8.3.0`
+   - waptserver, wapttasks, PostgreSQL and nginx active
+
+2. Fresh installation:
+   - pristine Debian 10.13
+   - direct installation of WAPT 1.8.3.7436: PASS
+   - postconf: PASS
+   - new DB initialized directly at `1.8.3.0`
+   - waptserver, wapttasks, PostgreSQL and nginx active
+
+3. Idempotence:
+   - postconf.sh executed again
+   - DB marker remained `1.8.3.0`: PASS
+
+Still required:
+
+``` text
+authentic historical DB migration:
+1.8.2.1 -> 1.8.3.0
+```
+
+This is the next Debian-side validation before release freeze.
+
+### Windows 1.8.3.7438 — build complet et signature validés
+
+Date:
+
+``` text
+2026-09-21
+```
+
+Common release line:
+
+``` text
+branch: release/1.8.3
+HEAD: b9abfc4ab
+git rev-list --count HEAD: 7438
+version: 1.8.3.7438
+```
+
+The complete Lazarus Windows build was performed from this common
+`release/1.8.3` state using the established historical build chain.
+
+Validated Lazarus artifacts:
+
+``` text
+wapt-get.exe
+waptguihelper.pyd
+waptdeploy.exe
+wapttray.exe
+waptconsole.exe
+waptexit.exe
+waptself.exe
+waptmessage.exe
+waptsetuputil.dll
+```
+
+The setup was also generated from the same release state:
+
+``` text
+waptsetup.exe
+```
+
+and preserved with the historical server-side naming:
+
+``` text
+waptsetup-tis.exe
+```
+
+The Windows artifacts were checked for the expected release identity:
+
+``` text
+FileVersion:    1.8.3.7438
+ProductVersion: 1.8.3
+ProductName:    WAPT Community Edition
+```
+
+The setup executable retains its installer identity:
+
+``` text
+ProductName:    WAPTSetup
+```
+
+The build produced the natural Git-derived build number; no artificial build
+number was forced.
+
+### Windows Authenticode validation
+
+All final Windows 1.8.3.7438 build artifacts requiring Authenticode signing
+were signed with the temporary laboratory certificate:
+
+``` text
+Subject:    CN=WAPT Lab Code Signing
+Thumbprint: D8B8C49EEB204125D7609365D4CF604E8B7056AC
+Algorithm:  SHA-256
+Timestamp:  none (laboratory validation)
+```
+
+SignTool `/pa` verification passed.
+
+The laboratory signing certificate/private key is validation-only and must not
+become the final distribution trust model.
+
+Do not commit:
+
+``` text
+wapt-lab-codesign.pfx
+wapt-lab-codesign.cer
+```
+
+Before the final autonomous 1.8.3 release, the production Authenticode
+strategy must be explicitly reviewed and validated. Any re-signing that
+changes PE signatures/hashes requires final artifact revalidation.
+
+The WAPT package-signing trust system remains separate from Windows
+Authenticode:
+
+``` text
+Authenticode -> Windows PE trust
+WAPT signer  -> WAPT package trust
+```
+
+Do not conflate the two.
+
+### Windows 1.8.3.7438 milestone status
+
+``` text
+Windows source line reunified:        PASS
+Natural Git build 7438:              PASS
+9 Lazarus artifacts rebuilt:         PASS
+waptsetup-tis.exe generated:         PASS
+Release metadata:                    PASS
+Lab Authenticode signing:            PASS
+SignTool verification:               PASS
+```
+
+This closes the **Windows build/signature validation** part of the
+1.8.3 consolidation milestone.
+
+It does **not** yet prove the complete 1.8.3 client migration path.
+
+Still required on the Windows side:
+
+``` text
+1. validate the final/common release setup and agent publication path;
+2. validate authentic WAPT 1.8.2.7393 -> 1.8.3 client migration;
+3. validate historical package-signing continuity;
+4. validate waptupgrade generation/install against the consolidated 1.8.3
+   server;
+5. perform final product identity/branding/signing review.
+```
+
+### 1.8.3 consolidation — exact remaining sequence
+
+The validated state is now:
+
+``` text
+Debian 10:
+    1.8.3.7436 package
+    fresh install: PASS
+    1.8.2.7398 -> 1.8.3.7436: PASS
+    DB marker 1.8.3.0: PASS
+    postconf idempotence: PASS
+    historical DB 1.8.2.1 -> 1.8.3.0: PENDING
+
+Windows:
+    common release/1.8.3 line: PASS
+    natural build 1.8.3.7438: PASS
+    complete Lazarus build: PASS
+    setup generation: PASS
+    lab Authenticode signing: PASS
+    authentic 7393 -> 1.8.3 migration: PENDING
+```
+
+Resume in this exact order:
+
+``` text
+1. Validate authentic historical DB migration from 1.8.2.1 to 1.8.3.0.
+2. Validate the common 1.8.3 server/setup/client artifacts together.
+3. Validate final Windows setup/agent publication and package-signing
+   continuity against the consolidated 1.8.3 server.
+4. Re-evaluate final Windows Authenticode signing and product
+   identity/branding.
+5. Validate authentic WAPT 1.8.2.7393 -> 1.8.3 migration, including the
+   historical client upgrade and final WAPTService state.
+6. Validate repository/package revision continuity and the current
+   `<prefix>-waptupgrade` generation/install path.
+7. Perform the final autonomous-distribution check:
+   installation must not depend on an obsolete external WAPT repository or
+   website.
+8. Update/finalize the release documentation and compatibility matrix.
+9. Freeze the first consolidated autonomous WAPT 1.8.3 release.
+10. Only after the consolidated Debian 10 release is validated and frozen,
+    begin Debian 11.
+```
+
+### Release 1.8.3 freeze criteria
+
+Do not tag/freeze 1.8.3 until all of the following are PASS:
+
+``` text
+[ ] common Debian + Windows source lineage validated
+[ ] Debian 10 fresh installation
+[ ] Debian 10 1.8.2.7398 -> 1.8.3 migration
+[ ] DB migration 1.8.2.1 -> 1.8.3.0
+[ ] DB migration idempotence
+[ ] Windows 1.8.3.7438 build
+[ ] setup/agent publication
+[ ] WAPT package-signing continuity
+[ ] authentic 7393 -> 1.8.3 client migration
+[ ] historical waptupgrade continuity
+[ ] WAPTService final state validated
+[ ] final Authenticode strategy reviewed
+[ ] autonomous installation/distribution validated
+[ ] release documentation updated
+[ ] compatibility matrix updated
+```
+
+Do not begin Debian 11 before this checklist is closed.
+
+## 44. Resume protocol for the next ChatGPT thread
+
+Attach this checkpoint and send:
+
+``` text
+Gipity, on reprend le projet WAPT à partir du checkpoint joint.
+Considère WAPT_CHECKPOINT.md comme l'état technique faisant autorité.
+Le jalon DR Debian 10 Backup V1.0 + Restore V1.0 est gelé et documenté
+dans WAPT_DR_DEBIAN10.md, commit 46f0bb671.
+On reprend à la section "Exact next action" pour la réunification des
+lignées Debian et Windows en vue de WAPT 1.8.3.
+Réponses courtes, une étape à la fois.
+```
+
+VM106 remains the authoritative checkpoint working tree:
+
+``` text
+C:\git\waptdev\WAPT_CHECKPOINT.md
+```
+
+Wapster's untracked `WAPT_CHECKPOINT.md` remains an obsolete duplicate and
+must not be committed.
+
+## 45. Windows build environment reproducibility - validated milestone (2026-09-22)
+
+A bounded Windows reconstruction milestone was completed before returning to
+the remaining Debian 10 release/DR validation.
+
+Objective:
+
+``` text
+clean Windows machine
+  -> controlled build-kit
+  -> controlled WAPT Git clone + Community submodules
+  -> autonomous Python 2 runtime
+  -> isolated Lazarus/FPC build
+  -> controlled Inno Setup
+  -> complete WAPT setup build
+  -> signing and verification
+```
+
+Historical `init_workdir.bat` is now an archaeological specification only.
+Do not run it as-is: it performs destructive cleanup, live dependency updates
+and downloads, assumes `C:\Python27`, mutates the checkout, and follows old
+bootstrap paths.
+
+### 45.1 Controlled build-kit
+
+Controlled root:
+
+``` text
+C:\wapt-build-kit
+```
+
+Main controlled inputs:
+
+``` text
+Git 2.55.0.windows.5
+SHA256 D065A4E23C3D9A6B5073D609B5BE0830227EC3CA053C083BA385061DDFAF94C6
+
+CPython 2.7.18 x86 MSI
+SHA256 D901802E90026E9BAD76B8A81F8DD7E43C7D7E8269D9281C9E9DF7A9C40480A9
+
+Lazarus 1.8.2 + FPC 3.0.4 win32 baseline
+SHA256 B91517C673453F5AA355FFB3952E040433A8CDBBC5239BE72C869B60131B4166
+
+Inno Setup 5.6.0 Unicode baseline
+SHA256 84A97B5820F83E7EB7258B69CC857C4F446DFB5C7C337C35E05A0CC304729346
+```
+
+Lazarus/FPC 1.8.2/3.0.4 and Inno Setup 5.6.0 are reproducible baselines,
+not permanent modernization targets. Modernization will be tested one
+component at a time after the clean baseline is proven.
+
+### 45.2 Community Git dependency chain - PASS
+
+Parent milestone:
+
+``` text
+branch: release/1.8.3
+commit: 9cc639f881a88b112c61d12a8a0d1d3085940b9f
+natural Git count: 7440
+message: Make WAPT Community submodules reproducible
+```
+
+All 16 Community submodules were initialized from a clean controlled clone.
+Do not use a blind recursive update that attempts obsolete Enterprise-only
+dependencies.
+
+### 45.3 Isolated Lazarus build - 9/9 PASS
+
+Fresh isolated Lazarus PCP:
+
+``` text
+C:\tmp\wapt-lazarus-clean
+```
+
+All 18 required Lazarus user packages were registered solely from the clean
+controlled clone. All nine Community projects then built successfully:
+
+``` text
+wapt-get.exe
+waptguihelper.pyd
+waptdeploy.exe
+wapttray.exe
+waptconsole.exe
+waptexit.exe
+waptself.exe
+waptmessage.exe
+waptsetuputil.dll
+```
+
+Validated metadata:
+
+``` text
+FileVersion:    1.8.3.7440
+ProductVersion: 1.8.3
+ProductName:    WAPT Community Edition
+```
+
+This proves that the Lazarus dependency/build chain is reproducible without
+the historical VM106 Lazarus user profile.
+
+### 45.4 Offline Python dependency set
+
+Controlled source wheelhouse:
+
+``` text
+C:\wapt-build-kit\python\wheelhouse
+files: 85
+manifest SHA256:
+FE4F2DAD7754875758F98E6F7E96FF9AD6771432756E55A0291890983BFAB5A0
+```
+
+Controlled prepared wheels:
+
+``` text
+C:\wapt-build-kit\python\built-wheels
+files: 85
+manifest SHA256:
+27D44C87C80712C64B565747FD816E119006DD68469BAECCC042F0F70A9A5CDB
+```
+
+The prepared wheel set was built using `--no-cache-dir --no-index` from the
+controlled wheelhouse.
+
+Runtime package BOM:
+
+``` text
+C:\wapt-build-kit\python\wapt-runtime-1.8.3-freeze.txt
+SHA256 6E83828FA2F8A17FF9D83505909D5CF580974E2AE01EF899912D3711789D7E9A
+```
+
+The freeze is a package BOM, not the complete assembly recipe.
+
+### 45.5 pywin32 228 target
+
+The selected WAPT 1.8.3 Windows Python target is now:
+
+``` text
+pywin32 228
+```
+
+pywin32 227 is retained only as a historical/fallback reference.
+
+Controlled pywin32 228 DLLs:
+
+``` text
+pythoncom27.dll
+SHA256 074F23F9710BBCF1447763829C0E3D16AFA5502EFC6F784077CF334F28CEFFB7
+
+pythoncomloader27.dll
+SHA256 CC5BA5439CFA435FC9BD442F6509EBDF83646DF0756093DFF6777775FD2246E6
+
+pywintypes27.dll
+SHA256 C4DB872FF7D301186516882EA06422AEE29E1C11B44A4D382ADDD5B801207818
+```
+
+Validated imports include pywin32, WMI, winshell, winsys, winkerberos, pyad,
+kerberos-sspi and WAPT runtime modules.
+
+### 45.6 Additional controlled Python inputs
+
+``` text
+ujson-1.35.pyd
+SHA256 F481A7AFB2DF7D834C2537D3DFA5CE1B22C0C40A83F4BD73602270A728951739
+
+active_directory-0.6.7.py
+SHA256 EDFE01A38139D79A2EAC7B6F409B0495A447536CBB004318811D5CAF5842A556
+
+python27.dll
+SHA256 8C81C84548CE191B11390EBAA71397D23662593B1C113AAA0392E40FF0F9307A
+```
+
+`active_directory.py` is an implicit WAPT dependency imported by
+`setuphelpers_windows.py` but absent from the historical requirements files.
+
+The WAPT SocketIO and cryptography compatibility patches remain required and
+are sourced from the controlled WAPT repository.
+
+### 45.7 Autonomous Windows Python/WAPT runtime - PASS
+
+A fresh runtime was reconstructed manually and then independently recreated by
+the scripted procedure.
+
+Validated properties:
+
+``` text
+Python 2.7.18 x86
+pywin32 228
+full local CPython stdlib and DLL directory
+local python27.dll
+no C:\Python27 entry in sys.path
+no PYTHONPATH dependency
+WAPT SocketIO patch applied
+WAPT cryptography patch applied
+ujson 1.35 controlled binary
+active_directory 0.6.7 controlled source
+waptutils 1.8.3
+waptcrypto import PASS
+waptpackage import PASS
+setuphelpers import PASS
+common import PASS
+wapt-get.py --help exit code 0
+```
+
+Tests were run outside the Git checkout so checkout imports could not hide
+missing runtime files. Loaded-module inspection confirmed `python27.dll` was
+loaded from the assembled runtime rather than `C:\Windows\SysWOW64`.
+
+### 45.8 External WAPT OpenSSL baseline - controlled
+
+Controlled archive:
+
+``` text
+C:\wapt-build-kit\runtime\openssl\openssl-1.0.2u-i386-win32.zip
+SHA256 644FEDF6FC567716EF25F4FC805E2AAAC5BB7D32D01349EAEB62802CD20AE81A
+```
+
+Validated extracted files:
+
+``` text
+openssl.exe
+SHA256 6063E160E812F3D57B67B77581E30F110FDFC708F763BB2FCC82FA9CAAC816A3
+
+libeay32.dll
+SHA256 5264A4A478383F501961F2BD9BEB1F77A43A487B76090561BBA2CBFE951E5305
+
+ssleay32.dll
+SHA256 0A4031AB00664CC5E202C8731798800F0475EF76800122CEBD71D249655D725F
+```
+
+`openssl.exe version` runs successfully from the assembled runtime and reports
+OpenSSL 1.0.2u. The `/usr/local/ssl/openssl.cnf` warning is non-blocking for
+this baseline. OpenSSL 1.0.2u remains a compatibility baseline, not the final
+modernization target.
+
+### 45.9 VC90 CRT, dmidecode and NSSM - controlled
+
+VC90 CRT 9.0.30729.6161:
+
+``` text
+msvcr90.dll
+SHA256 8E7FE1A1F3550C479FFD86A77BC9D10686D47F8727025BB891D8F4F0259354C8
+
+msvcp90.dll
+SHA256 06918CF99AD26CD6CF106881C0D5BDB212DC0BAC4549805C9F5906E3D03D152C
+
+msvcm90.dll
+SHA256 7A74DA389FBD10A710C294C2E914DC6F18E05F028F07958A2FA53AC44F0E4B90
+
+Microsoft.VC90.CRT.manifest
+SHA256 0C838C4262F99F27495A7C2A1BF4EC8F482D1C9BC2493C3C19B9360F1A06B8EB
+```
+
+Controlled dmidecode:
+
+``` text
+C:\wapt-build-kit\runtime\tools\dmidecode.exe
+SHA256 7E14292571834665F0788C1BDE495421F704FAB74679127CBE35AF65714587F2
+```
+
+Controlled NSSM:
+
+``` text
+win32 nssm.exe
+SHA256 BCE355F89B95D9F7C7441563D03A6CE6CD429DB865920F66561C0D90D1E0E285
+
+win64 nssm.exe
+SHA256 2900F26D2ED74F4D5DB77CBCCBD4F2185FCCE2625A1BE724120984AC2418989B
+```
+
+The historical `vc_redist` reference is not currently demonstrated to be a
+required build dependency: the active setup embeds the VC90 CRT files
+directly and the historical vcredist macro is disabled.
+
+### 45.10 Inno Setup reconstruction - 11/11 identical
+
+The controlled Inno Setup 5.6.0 Unicode installer was installed into an
+isolated directory. The 11 files historically used under
+`waptsetup\innosetup` were compared with the clean installation:
+
+``` text
+isbunzip.dll
+isbzip.dll
+ISCC.exe
+ISCmplr.dll
+islzma.dll
+islzma32.exe
+islzma64.exe
+ISPP.dll
+isscint.dll
+isunzlib.dll
+iszlib.dll
+```
+
+Result:
+
+``` text
+11/11 SHA256 comparisons: IDENTICAL
+```
+
+Therefore the historical `waptsetup\innosetup` tree can be regenerated from
+the controlled installer and is no longer an opaque VM106 dependency.
+
+### 45.11 Scripted replacement for runtime assembly - PASS
+
+The following files were added:
+
+``` text
+WINDOWS_BUILD_ENV.md
+WINDOWS_BUILD_RELEASE.md
+tools/build-windows-runtime.ps1
+```
+
+`tools/build-windows-runtime.ps1` is deliberately bounded to runtime assembly.
+It does not perform destructive Git cleanup, Internet dependency resolution,
+Lazarus compilation, final Inno setup compilation, or signing.
+
+It verifies controlled hashes, creates the Python 2.7 runtime, installs
+dependencies offline, selects pywin32 228, applies WAPT patches, embeds the
+CPython stdlib/DLLs, removes the virtualenv base-prefix dependency, installs
+controlled WAPT runtime files and external OpenSSL, and performs autonomy
+tests.
+
+A fresh scripted reconstruction completed successfully at:
+
+``` text
+C:\wapt-runtime-1.8.3-script-test
+```
+
+This is a real end-to-end assembly validation, not only a documentation or
+syntax check.
+
+### 45.12 Git milestone
+
+The documentation and validated runtime reconstruction script were committed
+and pushed as:
+
+``` text
+25ded718bd4aebf6821a375c1e59fb9d7ba0b2ed
+Add reproducible Windows build environment
+natural Git count: 7441
+```
+
+Remote verification:
+
+``` text
+origin/release/1.8.3
+25ded718bd4aebf6821a375c1e59fb9d7ba0b2ed
+```
+
+The preceding Community-submodule milestone is:
+
+``` text
+9cc639f881a88b112c61d12a8a0d1d3085940b9f
+Make WAPT Community submodules reproducible
+natural Git count: 7440
+```
+
+### 45.13 Intentional working-tree build residue
+
+The VM106 main checkout still contains uncommitted Windows build-generated
+changes including `revision.txt`, Lazarus `.lpi`/`.ico` files,
+`waptconsole.sha256`, and untracked `waptsetup\waptsetup-tis.exe`.
+
+These are intentional build residues and were not included in commit
+`25ded718b`.
+
+Continue to obey:
+
+``` text
+never git add .
+```
+
+### 45.14 VCForPython27 status
+
+VM106 has Microsoft Visual C++ Compiler Package for Python 2.7 9.0.1.30729
+installed, but it has not been promoted into the controlled build-kit.
+
+The prepared `built-wheels` are intended to make native compilation
+unnecessary on a future clean Windows build VM. This must be proven on that
+clean VM before declaring VCForPython27 unnecessary.
+
+### 45.15 Exact next Windows build action
+
+Do not resume random VM106 binary archaeology.
+
+Next milestone:
+
+``` text
+AUTOMATE COMPLETE PRODUCT/SETUP ASSEMBLY FROM CONTROLLED INPUTS
+```
+
+Sequence:
+
+``` text
+1. extend the controlled procedure from autonomous runtime to complete WAPT
+   product-tree assembly;
+2. populate controlled VC90 CRT, dmidecode and NSSM from the build-kit;
+3. regenerate the 11-file Inno Setup tree from the controlled installer;
+4. integrate the already validated isolated 9/9 Lazarus build;
+5. build the complete WAPT setup from the controlled tree;
+6. validate setup metadata and contents;
+7. keep signing as a separate explicit stage;
+8. perform the decisive proof on a genuinely clean Windows VM using only the
+   controlled build-kit, controlled Git clone and documented prerequisites.
+```
+
+Only the clean-VM proof can finally establish that VM106 and its installed
+VCForPython27 are no longer build dependencies.
+
+After this Windows reconstruction side-task reaches the clean-machine proof,
+return to the consolidated WAPT 1.8.3 release-validation sequence in section
+43.
+
+Do not begin Debian 11 before the consolidated 1.8.3 release criteria are
+closed.
+
+## 46. Complete automated Windows product/setup build — validated artifact (2026-09-22)
+
+Development continued from the reproducible autonomous Windows runtime
+milestone documented in section 45.
+
+The complete Community product/setup automation is now implemented in:
+
+``` text
+tools/build-windows-product.ps1
+```
+
+The validation source state is:
+
+``` text
+branch: release/1.8.3
+commit: 3fb53e53485552e8f2e20a0cca48e0d45d5da5dc
+natural Git count: 7442
+target version: 1.8.3.7442
+```
+
+The script creates and uses disposable isolated build state rather than building
+the Lazarus artifacts in the VM106 main checkout:
+
+``` text
+worktree:   C:\wapt-build-worktree-auto
+Lazarus PCP: C:\wapt-build-lazarus-pcp-auto
+product:    C:\wapt-product-1.8.3
+runtime:    C:\wapt-runtime-1.8.3-script-test
+```
+
+### 46.1 Community source and Lazarus build
+
+The automated pipeline successfully reached all of the following stages:
+
+``` text
+controlled runtime validation:              PASS
+isolated Git worktree creation:             PASS
+Community submodules initialization:        16/16 PASS
+Community submodule commit verification:    16/16 PASS
+isolated Lazarus PCP creation:               PASS
+Lazarus package registration:               17/17 PASS
+Lazarus Community builds:                    9/9 PASS
+Lazarus artifact validation:                 9/9 PASS
+complete product-tree assembly:              PASS
+controlled Inno Setup reconstruction:        PASS
+version-full generation:                     PASS
+revision.txt generation:                     PASS
+unsigned Community setup compilation:        PASS
+```
+
+A Lazarus output-path assumption was corrected during this validation.
+`lazbuild.py` places the nine resulting binaries at the root of the isolated
+worktree:
+
+``` text
+wapt-get.exe
+waptguihelper.pyd
+waptdeploy.exe
+wapttray.exe
+waptconsole.exe
+waptexit.exe
+waptself.exe
+waptmessage.exe
+waptsetuputil.dll
+```
+
+`build-windows-product.ps1` now validates and copies them from that actual
+location.
+
+Lazarus 1.8.2 package registration was also experimentally confirmed to require
+`--add-package-link` and the `.lpk` path as two separate command-line arguments.
+The automated isolated PCP successfully registered all 17 required Community
+packages using that syntax.
+
+### 46.2 Automated unsigned setup result
+
+The controlled Inno Setup stage completed successfully and produced:
+
+``` text
+C:\wapt-product-1.8.3\waptsetup\waptsetup.exe
+```
+
+Validated artifact:
+
+``` text
+FileVersion:    1.8.3.7442
+ProductVersion: 1.8.3.7442
+ProductName:    WAPTSetup
+size:           26676763 bytes
+SHA256:         8FB9FDEC1283ABEAE0F3F936C372F7AD86FF2B0B13BF1D4A10010FD091B590A2
+```
+
+The first automated run stopped only in the final metadata validator because
+Windows VersionInfo exposes these fixed-width strings with trailing spaces.
+
+Manual validation using `.Trim()` returned:
+
+``` text
+FileVersion PASS:    True
+ProductVersion PASS: True
+ProductName PASS:    True
+```
+
+The generated setup itself is therefore validated.
+
+The final validator in `tools/build-windows-product.ps1` has now been corrected
+to apply `.Trim()` to all three comparisons:
+
+``` text
+FileVersion
+ProductVersion
+ProductName
+```
+
+PowerShell parser validation after these corrections:
+
+``` text
+Parse errors: 0
+```
+
+No complete rebuild was performed after this final validator-only correction.
+Therefore the current milestone is deliberately described as:
+
+``` text
+complete automated product/setup construction: PASS
+resulting unsigned setup artifact:             PASS
+corrected final validator syntax:              PASS
+fresh zero-to-exit-0 run after correction:     NOT YET PERFORMED
+clean Windows VM proof:                        NOT YET PERFORMED
+```
+
+Do not repeat the expensive VM106 build solely to prove the `.Trim()` change.
+The decisive next execution should preferably be the clean-machine proof.
+
+### 46.3 Signing remains a separate stage
+
+The current automated setup is intentionally unsigned.
+
+Do not couple reproducible unsigned construction to the unresolved production
+Authenticode strategy.
+
+The intended later release sequence remains:
+
+``` text
+build and validate Lazarus artifacts
+assemble controlled product
+sign distributable binaries when explicitly requested
+build Inno setup
+sign final setup
+verify Authenticode
+generate final hashes/release manifest
+```
+
+The temporary laboratory self-signed certificate remains a validation tool,
+not the final production distribution trust decision.
+
+### 46.4 Historical next action - completed by clean-VM proof
+
+Do not resume Windows build archaeology and do not rebuild the already
+validated artifact merely to retest the final `.Trim()` comparisons.
+
+The next decisive Windows milestone is:
+
+``` text
+PROVE THE COMPLETE AUTOMATED BUILD ON A GENUINELY CLEAN WINDOWS VM
+```
+
+Sequence:
+
+``` text
+1. review and commit only the intended Windows product-build automation and
+   checkpoint/documentation changes; never use `git add .`;
+
+2. prepare a genuinely clean Windows build VM;
+
+3. provide only the controlled build-kit, controlled Git clone and explicitly
+   documented prerequisites;
+
+4. run the complete automated Windows build from fresh disposable paths;
+
+5. require tools/build-windows-product.ps1 to complete from start to final
+   validator with no manual intervention and exit successfully;
+
+6. verify the resulting 1.8.3 setup metadata, hashes and unsigned state;
+
+7. use the clean-machine result to determine whether VCForPython27 is truly no
+   longer an external build dependency;
+
+8. after the unsigned clean-machine build is proven, finalize and validate the
+   production Authenticode signing strategy;
+
+9. return to the consolidated WAPT 1.8.3 release-validation sequence documented
+   in section 43.
+```
+
+Do not begin Debian 11 before the consolidated WAPT 1.8.3 release criteria are
+closed.
+
+### 46.5 Clean Windows VM proof — PASS (2026-09-24)
+
+The decisive clean-machine proof was performed on VM107 from the committed and
+pushed Windows automation state:
+
+```text
+branch: release/1.8.3
+commit: 0e4ae52804099bbd956573e380ea2e34227e7e30
+natural Git count: 7443
+target version: 1.8.3.7443
+```
+
+VM107 was rolled back to a clean internal-network reference image and the
+historical WAPT client was removed before validation.
+
+Initial development-tool baseline:
+
+```text
+Git:             ABSENT
+Python:          ABSENT
+Python 2:        ABSENT
+Lazarus:         ABSENT
+FPC:             ABSENT
+ISCC:            ABSENT
+VCForPython27:   ABSENT
+```
+
+The controlled build-kit was copied to:
+
+```text
+C:\wapt-build-kit
+```
+
+The principal controlled installers were verified against the previously
+recorded SHA256 values:
+
+```text
+Git 2.55.0.5 x64:
+D065A4E23C3D9A6B5073D609B5BE0830227EC3CA053C083BA385061DDFAF94C6
+
+Python 2.7.18 x86:
+D901802E90026E9BAD76B8A81F8DD7E43C7D7E8269D9281C9E9DF7A9C40480A9
+
+Lazarus 1.8.2 / FPC 3.0.4:
+B91517C673453F5AA355FFB3952E040433A8CDBBC5239BE72C869B60131B4166
+
+Inno Setup 5.6.0 Unicode:
+84A97B5820F83E7EB7258B69CC857C4F446DFB5C7C337C35E05A0CC304729346
+```
+
+The repository was freshly cloned and verified:
+
+```text
+HEAD:  0e4ae52804099bbd956573e380ea2e34227e7e30
+count: 7443
+```
+
+Git 2.55.0.windows.5, Python 2.7.18 x86, Lazarus 1.8.2 and FPC 3.0.4 were
+installed from the controlled build-kit.
+
+The clean-machine test exposed one previously implicit bootstrap dependency:
+a fresh CPython 2.7.18 installation does not contain `virtualenv`.
+
+VM106 reference state was:
+
+```text
+virtualenv: 15.1.0
+```
+
+The matching universal wheel was acquired and its SHA256 verified:
+
+```text
+virtualenv-15.1.0-py2.py3-none-any.whl
+SHA256:
+39D88B533B422825D644087A21E78C45CF5AF0EF7A99A1FC9FBB7B481E5C85B0
+```
+
+It was then installed into the bootstrap Python using only the local wheel.
+
+This dependency must be retained in the controlled build-kit and incorporated
+into the future Windows build-environment preparation procedure.
+
+PowerShell script execution also required a process-local execution-policy
+bypass on the clean VM. No persistent execution-policy modification was
+required.
+
+The autonomous runtime was then rebuilt successfully:
+
+```text
+WAPT 1.8.3 AUTONOMOUS RUNTIME: PASS
+OpenSSL 1.0.2u:                 PASS
+VCForPython27 installed:        NO
+```
+
+This establishes that the Microsoft Visual C++ Compiler Package for Python 2.7
+previously present on VM106 is not required to reconstruct the validated
+runtime from the controlled wheel set.
+
+The complete product build was then executed from the fresh clone using:
+
+```powershell
+& .\tools\build-windows-product.ps1 -Force
+```
+
+The complete automated pipeline reached its final validator successfully with
+no manual intervention during the product build.
+
+Final clean-machine setup:
+
+```text
+path:
+C:\wapt-product-1.8.3\waptsetup\waptsetup.exe
+
+FileVersion:    1.8.3.7443
+ProductVersion: 1.8.3.7443
+ProductName:    WAPTSetup
+size:           26655923 bytes
+SHA256:         D65796F9EF79348FE77E3CC60C0F7898D502596AF007C709CFEF4477A4FAB575
+Authenticode:   NotSigned
+```
+
+Final clean-machine result:
+
+```text
+autonomous runtime reconstruction:           PASS
+VCForPython27 independence:                  PASS
+complete automated product/setup build:      PASS
+Lazarus Community build:                     PASS
+controlled Inno Setup reconstruction:        PASS
+final VersionInfo validator:                 PASS
+fresh zero-to-exit-0 product run:             PASS
+unsigned-state verification:                 PASS
+clean Windows VM proof:                      PASS
+```
+
+The Windows reproducibility objective is therefore validated.
+
+### 46.6 Follow-up corrections revealed by the clean-VM proof
+
+Before freezing the final Windows build procedure:
+
+1. retain `virtualenv-15.1.0-py2.py3-none-any.whl` as a controlled build-kit
+   input and validate its SHA256;
+
+2. automate preparation of a clean Windows build environment, preferably with:
+
+   ```text
+   tools\01-prepare-windows-build-environment.ps1
+   ```
+
+   The procedure should validate controlled installer hashes, install the
+   required build prerequisites, install `virtualenv 15.1.0` offline and handle
+   the required process-local PowerShell execution policy;
+
+3. do not add VCForPython27 to the controlled prerequisites;
+
+4. remove the temporary validation naming
+   `C:\wapt-runtime-1.8.3-script-test` from the final procedure and replace it
+   with a neutral production path such as:
+
+   ```text
+   C:\wapt-runtime-1.8.3
+   ```
+
+5. Inno Setup does not need to be installed globally for the product build.
+   `03-build-windows-product.ps1` reconstructs and uses its controlled Inno tree
+   from the build-kit installer. The global Inno installation performed during
+   the VM107 investigation was therefore unnecessary and must not become a
+   documented prerequisite;
+
+6. keep signing as a separate explicit stage. The clean-machine artifact is
+   intentionally unsigned.
+
+After these cleanup items are implemented and validated, update the Windows
+build documentation and return to the consolidated WAPT 1.8.3 release
+validation sequence.
+
+#### Clean-VM bootstrap automation validation — PASS (2026-09-24)
+
+A dedicated Windows build-environment bootstrap script was added:
+
+```text
+tools\01-prepare-windows-build-environment.ps1
+```
+
+The script validates the controlled bootstrap inputs by SHA256 and installs or
+validates:
+
+```text
+Git:        2.55.0.windows.5
+Python:     2.7.18 x86
+virtualenv: 15.1.0
+Lazarus:    1.8.2
+FPC:        3.0.4
+```
+
+It intentionally does not install VCForPython27 or a global Inno Setup.
+
+Validation was performed in two stages:
+
+```text
+VM106 already-prepared environment / idempotence: PASS
+VM107 clean rollback / complete bootstrap:         PASS
+```
+
+On the clean VM107 test, Git, Python, virtualenv and Lazarus/FPC were installed
+and validated automatically from `C:\wapt-build-kit`.
+
+The controlled virtualenv bootstrap wheel is:
+
+```text
+C:\wapt-build-kit\python\virtualenv-15.1.0-py2.py3-none-any.whl
+size:   1820727 bytes
+SHA256: 39D88B533B422825D644087A21E78C45CF5AF0EF7A99A1FC9FBB7B481E5C85B0
+```
+
+After bootstrap, Git was immediately usable from the same PowerShell session:
+
+```text
+git version 2.55.0.windows.5
+```
+
+A fresh clone of `release/1.8.3` on VM107 then reproduced the expected source
+state:
+
+```text
+HEAD:  0e4ae52804099bbd956573e380ea2e34227e7e30
+count: 7443
+```
+
+The temporary default runtime path in `tools\03-build-windows-product.ps1` was
+also changed from:
+
+```text
+C:\wapt-runtime-1.8.3-script-test
+```
+
+to:
+
+```text
+C:\wapt-runtime-1.8.3
+```
+
+Historical checkpoint references to the former validation path are retained
+unchanged.
+
+At this point the clean Windows environment reconstruction procedure is
+automated and validated.
+
+#### Final numbered Windows build-chain proof — PASS (2026-09-24)
+
+After introducing the explicit numbered build sequence, the complete Windows
+chain was validated on clean VM107:
+
+```text
+01 - prepare Windows build environment: PASS
+02 - build autonomous Python runtime:   PASS
+03 - build complete Windows product:    PASS
+```
+
+The autonomous runtime was successfully assembled at:
+
+```text
+C:\wapt-runtime-1.8.3
+```
+
+The final product build from Git natural count `7444` completed successfully.
+
+Final unsigned setup:
+
+```text
+FileVersion:    1.8.3.7444
+ProductVersion: 1.8.3.7444
+ProductName:    WAPTSetup
+Size:           26655898 bytes
+SHA256:         C904C7059F1FB0F308EC78DC78470C2B3B96A9F3F3D275B28468111759C54D0E
+```
+
+This clean-machine proof confirms:
+
+- VCForPython27 is not required;
+- a global Inno Setup installation is not required;
+- the autonomous runtime must be built before product assembly;
+- signing remains a separate explicit stage;
+- the clean-machine proof artifact is intentionally unsigned.
+
+The operational scripts are now numbered to make their required execution
+order explicit:
+
+```text
+tools\01-prepare-windows-build-environment.ps1
+tools\02-build-windows-runtime.ps1
+tools\03-build-windows-product.ps1
+```
+
+## 47. Consolidated 1.8.3 historical database migration milestone — PASS (2026-09-24)
+
+### 47.1 Final Windows build workflow state
+
+The Windows reconstruction workflow is now validated in the following explicit order:
+
+```text
+tools\01-prepare-windows-build-environment.ps1
+tools\02-build-windows-runtime.ps1
+tools\03-build-windows-product.ps1
+```
+
+The complete chain was proven on clean VM107.
+
+The final product build was performed from Git natural count `7444`.
+
+Validated unsigned Windows setup:
+
+```text
+C:\wapt-product-1.8.3\waptsetup\waptsetup.exe
+
+FileVersion:    1.8.3.7444
+ProductVersion: 1.8.3.7444
+ProductName:    WAPTSetup
+Size:           26655898 bytes
+SHA256:         C904C7059F1FB0F308EC78DC78470C2B3B96A9F3F3D275B28468111759C54D0E
+Authenticode:   NotSigned
+```
+
+Matching `waptdeploy.exe`:
+
+```text
+C:\wapt-product-1.8.3\waptdeploy.exe
+
+Size:   496659 bytes
+SHA256: 7F3785B86D763B62B3B0A0050910F5F76C5D1911D1C18A4F8810270DCD70F9A4
+```
+
+Signing remains a separate explicit release stage.
+
+The source/documentation branch was subsequently finalized at:
+
+```text
+branch: release/1.8.3
+HEAD:   144d3af2e56d551dae60063c9ced33a44590713c
+count:  7445
+```
+
+Git count `7445` contains the final script renaming/documentation changes.
+No functional Windows rebuild was performed after the validated `7444`
+product build, so no `1.8.3.7445` Windows binary is claimed.
+
+### 47.2 Reconstructed tis-waptsetup Debian package — PASS
+
+The validated Windows artifacts were transferred to Wapster and used with the
+historical Debian packaging mechanism.
+
+The expected Windows payload is:
+
+```text
+waptsetup-tis.exe
+waptdeploy.exe
+```
+
+The resulting package is:
+
+```text
+tis-waptsetup-windows-1.8.3.7445-144d3af2.deb
+
+Package:      tis-waptsetup
+Version:      1.8.3.7445
+Architecture: all
+Depends:      nginx
+SHA256:       c8698aae4c252c9d54ca702ec31244aadbcb7c9fdd059855462339e6fece6cb8
+```
+
+Package contents include:
+
+```text
+./var/www/wapt/waptdeploy.exe       496659 bytes
+./var/www/wapt/waptsetup-tis.exe 26655898 bytes
+```
+
+The packaged executables were extracted and their SHA256 values verified
+against the validated VM107 artifacts:
+
+```text
+waptsetup-tis.exe
+c904c7059f1fb0f308ec78dc78470c2b3b96a9f3f3d275b28468111759c54d0e
+
+waptdeploy.exe
+7f3785b86d763b62b3b0a0050910f5f76c5d1911d1c18a4f8810270dcd70f9a4
+```
+
+The Debian package was transferred to `wapt-deb10`, its SHA256 was verified
+again, and `tis-waptsetup 1.8.3.7445` was installed successfully.
+
+The installed Windows payload hashes were also verified.
+
+Result:
+
+```text
+reconstructed tis-waptsetup package: PASS
+Windows payload integrity:           PASS
+installation on Debian 10:           PASS
+```
+
+### 47.3 Authentic historical DB migration 1.8.2.1 -> 1.8.3.0 — PASS
+
+Migration target:
+
+```text
+Debian:         10.13
+host:           wapt-deb10
+tis-waptserver: 1.8.3.7436-2377932b-debian-10-amd64
+tis-waptsetup:  1.8.3.7445
+```
+
+The restored authentic historical database initially contained:
+
+```text
+db_version = "1.8.2.1"
+```
+
+Starting `waptserver` performed the database migration automatically.
+
+Immediately after startup:
+
+```text
+db_version = "1.8.3.0"
+```
+
+No manual database marker modification was performed.
+
+`waptserver` was then restarted to test migration idempotence.
+
+After restart:
+
+```text
+waptserver: active
+db_version = "1.8.3.0"
+```
+
+Therefore the authentic historical database migration and its restart
+idempotence are validated.
+
+Historical data remained present after migration. Final exact counts checked:
+
+```text
+hosts=675
+packages=1056
+hostpackagesstatus=25101
+```
+
+Final service validation:
+
+```text
+postgresql: active
+nginx:      active
+waptserver: active
+wapttasks:  active
+```
+
+Local HTTPS validation:
+
+```text
+https://localhost/
+HTTP 200
+```
+
+The final database marker remained:
+
+```text
+db_version="1.8.3.0"
+```
+
+No error-level journal entries were reported for `waptserver` or `wapttasks`
+during the migration validation window.
+
+Final result:
+
+```text
+historical DB 1.8.2.1 -> 1.8.3.0: PASS
+migration restart/idempotence:        PASS
+historical data preservation:         PASS
+WAPT server service:                  PASS
+WAPT task service:                    PASS
+nginx/PostgreSQL services:            PASS
+local HTTPS:                          PASS
+```
+
+This closes the previously pending requirement:
+
+```text
+Implement explicit idempotent DB marker migration from 1.8.2.1
+to at least 1.8.3.0 for the consolidated release.
+```
+
+### 47.4 Important service-name clarification
+
+The historical WAPT task service is named:
+
+```text
+wapttasks.service
+```
+
+and not:
+
+```text
+wapptasks.service
+```
+
+The validated service file is:
+
+```text
+/lib/systemd/system/wapttasks.service
+```
+
+and the service is enabled and operational.
+
+The installed `tis-waptserver` post-install procedure also uses:
+
+```text
+systemctl restart waptserver
+systemctl restart wapttasks
+```
+
+Future validation procedures must use the correct `wapttasks` service name.
+
+### 47.5 Consolidated Windows publication, agent generation and historical client migration — PASS
+
+The consolidated WAPT 1.8.3 Windows/server chain was validated end-to-end
+against the restored Debian 10 server.
+
+#### Server-published setup/deploy payload — PASS
+
+The installed `tis-waptsetup 1.8.3.7445` package publishes:
+
+```text
+/var/www/wapt/waptsetup-tis.exe
+/var/www/wapt/waptdeploy.exe
+```
+
+Their hashes exactly match the authoritative VM107 clean-build artifacts:
+
+```text
+waptsetup-tis.exe
+Size:   26655898 bytes
+SHA256: C904C7059F1FB0F308EC78DC78470C2B3B96A9F3F3D275B28468111759C54D0E
+
+waptdeploy.exe
+Size:   496659 bytes
+SHA256: 7F3785B86D763B62B3B0A0050910F5F76C5D1911D1C18A4F8810270DCD70F9A4
+```
+
+`dpkg -V tis-waptsetup` reported no integrity difference.
+
+Downloading the two files through the WAPT server HTTPS publication path
+produced the same hashes.
+
+The published setup reports:
+
+```text
+FileVersion:    1.8.3.7444
+ProductVersion: 1.8.3.7444
+ProductName:    WAPTSetup
+Authenticode:   NotSigned
+```
+
+A fresh Windows installation from this published setup completed successfully.
+
+Installed client state:
+
+```text
+Wrapper Win32.exe : wapt-get 1.8.3.7444
+wapt-get.py 1.8.3
+common.py 1.8.3
+setuphelpers.py 1.8.3
+
+WAPTService: Running / Automatic
+```
+
+Result:
+
+```text
+server/setup artifact consistency: PASS
+HTTPS publication integrity:       PASS
+fresh Windows setup installation:  PASS
+```
+
+#### waptconsole manifest / Authenticode behavior — validated
+
+The current `waptconsole.exe.manifest` behavior was tested without modifying
+the historical `uiAccess="true"` setting.
+
+Observed behavior:
+
+```text
+7444 unsigned + external manifest:
+Windows refuses launch with "Une référence a été renvoyée par le serveur"
+
+7444 unsigned + external manifest temporarily disabled:
+console launches and UI cosmetics are correct
+
+7444 signed with the LAB Authenticode certificate but certificate untrusted:
+Authenticode status UnknownError
+
+7444 signed with the LAB Authenticode certificate and certificate trusted:
+Authenticode Valid
+console launches correctly with external manifest intact
+UI cosmetics correct
+console authentication successful
+```
+
+Therefore:
+
+- there is no demonstrated Lazarus/UI regression in the 7444 build;
+- `UseXPManifest` must not be added merely to address this behavior;
+- the historical external manifest must not be altered;
+- `uiAccess="true"` must not be changed at this stage;
+- Authenticode signing is functionally relevant to launching
+  `waptconsole.exe` with the current manifest;
+- the temporary LAB certificate is validation-only and is not the final
+  release-signing identity.
+
+#### Historical package-signing identity restored — PASS
+
+The historical repository/package prefix was restored in the console:
+
+```text
+0790007d
+```
+
+The corresponding historical package-signing certificate and matching
+private key were selected externally.
+
+The console successfully verified that the selected private key matched the
+historical certificate.
+
+This package-signing identity is distinct from the temporary Windows
+Authenticode LAB certificate.
+
+The private package-signing key remains external and must not be embedded in
+the WAPT installation or committed to the repository.
+
+#### Generated WAPT agent and waptupgrade publication — PASS
+
+Using the consolidated 1.8.3.7444 console and the historical signing identity,
+the WAPT agent was generated successfully.
+
+The generation automatically published:
+
+```text
+/var/www/wapt/waptagent.exe
+
+Size:   26649873 bytes
+SHA256: D37C03763A5D95A2EB3B8357CBD621564DE7305034674E9F1691E6311618D1DF
+Type:   PE32 GUI Intel 80386
+```
+
+It also generated and published:
+
+```text
+0790007d-waptupgrade_1.8.3.7444-1_all_d6d85fb20c8c3aa096571c619dbe3366.wapt
+
+SHA256:
+4DBA928B1973BDAEA7BC1929893BCB39F2BE05EC72F3B639CC5DA3072C58E432
+```
+
+The generated package is a valid WAPT/ZIP archive and contains:
+
+```text
+patchs/waptdeploy.exe
+setup.py
+WAPT/icon.png
+WAPT/wapt.psproj
+waptagent.exe
+waptagent.sha256
+WAPT/control
+WAPT/certificate.crt
+WAPT/manifest.sha256
+WAPT/signature.sha256
+```
+
+Important control metadata:
+
+```text
+package:            0790007d-waptupgrade
+version:            1.8.3.7444-1
+architecture:       all
+priority:           critical
+target_os:          windows
+min_wapt_version:   1.7
+signer:             0790007d
+signer_fingerprint: 1fd856f87e68b468839639287aa08e4413869c81d78e069cd6b1917cdd456734
+```
+
+Generation also updated the server repository `Packages` index.
+
+Result:
+
+```text
+agent generation:                  PASS
+server-side agent publication:     PASS
+historical-prefix waptupgrade:     PASS
+package signature material:        PRESENT
+repository index regeneration:     PASS
+```
+
+#### Authentic historical client upgrade 1.8.2.7393 -> 1.8.3.7444 — PASS
+
+A Windows test client was installed with the authentic historical WAPT
+1.8.2.7393 agent and pointed at the reconstructed server.
+
+Initial state:
+
+```text
+Wrapper Win32.exe : wapt-get 1.8.2.7393
+wapt-get.py 1.8.2
+common.py 1.8.2
+setuphelpers.py 1.8.2
+
+wapt-get.exe:
+FileVersion:    1.8.2.7393
+ProductVersion: 1.8.2
+
+WAPTService:
+Running / Automatic
+```
+
+The client used:
+
+```text
+repo_url=https://wapt-deb10.genevoix-signoret-vinci.fr.lan/wapt
+wapt_server=https://wapt-deb10.genevoix-signoret-vinci.fr.lan/
+```
+
+The package:
+
+```text
+0790007d-waptupgrade 1.8.3.7444-1
+```
+
+was assigned to the historical client and its installation was launched
+directly from the WAPT 1.8.3.7444 console.
+
+After deployment:
+
+```text
+Wrapper Win32.exe : wapt-get 1.8.3.7444
+wapt-get.py 1.8.3
+common.py 1.8.3
+setuphelpers.py 1.8.3
+
+wapt-get.exe:
+FileVersion:    1.8.3.7444
+ProductVersion: 1.8.3
+```
+
+During the upgrade, `WAPTService` entered a temporary stopped state while the
+agent was being replaced.
+
+NSSM events then showed the service being started automatically again.
+In this validation run, the observed stop/restart window was approximately
+80 seconds.
+
+Final state:
+
+```text
+WAPTService:
+Running / Automatic
+```
+
+The upgraded host subsequently reconnected to the WAPT console and the
+`0790007d-waptupgrade 1.8.3.7444-1` package was reported as successfully
+installed.
+
+No manual client-side `wapt-get upgrade` operation was used.
+
+Result:
+
+```text
+historical client 1.8.2.7393 -> 1.8.3.7444: PASS
+console-driven deployment:                       PASS
+automatic WAPTService recovery:                  PASS
+post-upgrade console reconnection:               PASS
+```
+
+#### Historical package-signing certificate continuity — PASS
+
+The historical client contained:
+
+```text
+C:\Program Files (x86)\wapt\ssl\0790007d-20181217-150755.crt
+```
+
+On the historical-client migration test, the certificate was already present
+before the `waptupgrade` installation.
+
+Its SHA256 is:
+
+```text
+D77E7E2157C1B595322342F01AB6A0B09CEF6A002E0638BB5ED8C1BC1011574A
+```
+
+The SHA256 of `WAPT/certificate.crt` embedded in the newly generated
+`0790007d-waptupgrade` is identical.
+
+This proves continuity between the historical client trust certificate and
+the certificate embedded in the newly generated 1.8.3 upgrade package.
+
+A separate clean-machine installation was then performed using the newly
+generated `waptagent.exe`.
+
+The downloaded agent hash was first verified:
+
+```text
+SHA256:
+D37C03763A5D95A2EB3B8357CBD621564DE7305034674E9F1691E6311618D1DF
+```
+
+After installation on the clean machine, the agent automatically created:
+
+```text
+C:\Program Files (x86)\wapt\ssl\0790007d-20181217-150755.crt
+```
+
+Observed timestamps:
+
+```text
+CreationTime:  2026-09-24 14:58:40
+LastWriteTime: 2026-09-24 14:35:00
+Size:          1285 bytes
+```
+
+The freshly installed certificate SHA256 was again:
+
+```text
+D77E7E2157C1B595322342F01AB6A0B09CEF6A002E0638BB5ED8C1BC1011574A
+```
+
+Therefore the newly generated 1.8.3.7444 agent provisions the historical
+`0790007d` trust certificate automatically on a clean Windows installation.
+
+Final result:
+
+```text
+historical certificate continuity:       PASS
+historical-client trust preservation:    PASS
+clean-install certificate provisioning:  PASS
+generated waptupgrade trust continuity:  PASS
+```
+
+The complete validated chain is now:
+
+```text
+consolidated Debian 10 WAPT 1.8.3 server
+        |
+        +-- validated 7444 setup/deploy publication
+        |
+        +-- WAPT console 1.8.3.7444
+        |
+        +-- historical package-signing identity 0790007d
+        |
+        +-- generated waptagent.exe 1.8.3.7444
+        |
+        +-- generated 0790007d-waptupgrade 1.8.3.7444-1
+        |
+        +-- clean Windows installation + historical certificate provisioning
+        |
+        +-- authentic 1.8.2.7393 client
+                |
+                +-- console-driven upgrade
+                +-- WAPTService automatic restart
+                +-- 1.8.3.7444 final state
+                +-- successful console reconnection
+```
+
+The consolidated Windows installation and historical-client upgrade path are
+therefore validated end-to-end.
+
+### 47.6 — Autonomous distribution cleanup — consolidated validation (2026-09-25)
+
+Status: PASS — source cleanup committed, autonomous Windows rebuild validated, and focused Windows runtime validation completed.
+
+The source review for implicit dependencies on obsolete/upstream WAPT / Tranquil infrastructure has been completed for the main runtime and installer paths.
+
+Validated cleanup commits:
+- `2ee19e47e` — Remove implicit upstream templates repository.
+- `a5e88dfde` — Remove upstream repository defaults from installers.
+- `1a3d18afa` — Remove implicit upstream service dependencies.
+
+The consolidated cleanup includes:
+
+- `waptconsole/uvisrepositories.lfm`
+  - neutralized external repository UI hints;
+  - removed stale design-time `C:\tranquilit\` path.
+
+- `wapt-get.ini.tmpl`
+  - removed/neutralized Tranquil/store repository examples and defaults;
+  - retained administrator-configurable external repository capability.
+
+- `waptconsole/uvisimportpackage.pas`
+  - removed dead commented fallback to `https://store.wapt.fr/wapt`.
+
+- `waptserver/server.py`
+  - removed external fallback downloads for `waptsetup.exe` and `waptdeploy.exe`;
+  - missing local artifacts now produce an empty URL instead of contacting upstream infrastructure.
+
+- `waptserver/templates/base.html`
+  - WAPTDeploy link is displayed only when a local artifact URL exists;
+  - removed the `TIS repository` link from the Repository menu;
+  - local `/store` repository remains available.
+
+- `waptserver/templates/index.html`
+  - WAPTDeploy download sections are displayed only when a local artifact URL exists.
+
+- Usage telemetry cleanup:
+  - `waptconsole/uwaptconsole.pas`
+    - `send_usage_report` default changed from `True` to `False`;
+    - reporting additionally requires an explicitly configured `usage_report_url`;
+    - no default telemetry destination remains.
+  - `waptconsole/uviswaptconfig.pas`
+    - UI/config default for `send_usage_report` changed from `True` to `False`.
+  - `waptconsole/uwaptconsoleres.pas`
+    - removed obsolete `rsDefaultUsageStatsURL = 'http://wapt.tranquil.it/usage_stats'`.
+  - `waptconsole/uviswaptconfig.lfm`
+    - caption changed from `Send anonymous usage statistics to Tranquil IT`
+      to `Send anonymous usage statistics`.
+
+- `waptsetup/wapt.iss`
+  - removed `AppUpdatesURL=https://wapt.tranquil.it/wapt/releases/latest`;
+  - publisher/support/contact metadata intentionally retained for now and deferred to future identity/branding work.
+
+Source review conclusions remain:
+- Historical copyright, attribution, doctest/example and documentation references to Tranquil/WAPT are not being globally removed.
+- Explicit historical attribution to WAPT/Tranquil may remain.
+- Functional routing toward current/upstream repositories or services must not be implicit.
+- External repositories remain supported when explicitly configured by the administrator.
+- Current TIS/WAPT repositories must not be presented as package sources for this fork because compatibility must not be assumed, notably with the transitional Python 2 package/runtime model.
+- Remaining historical/example references are not considered automatic runtime dependencies.
+
+EOL precautions remain mandatory for future source changes:
+- do not normalize the repository;
+- do not use `git add .`;
+- preserve each file's existing EOL representation;
+- `waptconsole/uwaptconsole.pas` is historically `i/mixed w/mixed`;
+- preserve intentionally restored canonical LF files where applicable.
+
+The autonomous-distribution source cleanup is now considered closed unless a new runtime contradiction appears.
+
+
+### 47.7 — Automated Windows Authenticode signing and build hardening (2026-09-25)
+
+Status: PASS for the technical signing workflow. The current self-signed certificate remains a validation/internal certificate and is not yet the preferred final distribution identity.
+
+Following the autonomous-distribution cleanup, the Windows build workflow was extended to make Authenticode signing reproducible and part of the controlled build process.
+
+Relevant commits:
+
+- `23c995105` — Integrate controlled Authenticode signing into Windows build.
+- `892481166` — Fix Lazarus DLL signing and fail on signing errors.
+- `128d55f8a` — Retry transient Lazarus access violations.
+- `474d66114` — Sign final Windows setup during product build.
+- `604c5b889` — Include controlled SignTool for dynamic agent signing.
+- `9f3737b47` — Install SignTool for dynamic agent signing.
+- `a38b4fe4e` — Restrict SignTool installation to WAPTSetup.
+
+Automatic build branches created during this sequence include:
+
+- `build/windows-1.8.3-7451-auto`
+- `build/windows-1.8.3-7452-auto`
+- `build/windows-1.8.3-7454-auto`
+- `build/windows-1.8.3-7455-auto`
+- `build/windows-1.8.3-7456-auto`
+- `build/windows-1.8.3-7457-auto`
+
+Current source HEAD:
+
+- branch: `release/1.8.3`
+- commit: `a38b4fe4e`
+- matching validated automatic build branch: `build/windows-1.8.3-7457-auto`
+
+The automated build now:
+- signs the intended Lazarus-produced Windows binaries;
+- treats signing failures as build failures;
+- signs the final WAPTSetup artifact;
+- validates the resulting signatures;
+- uses controlled SignTool material from the build kit;
+- tolerates the observed transient Lazarus access-violation failure through controlled retry logic.
+
+The controlled SignTool copied into the assembled product tree is:
+
+- path: `C:\wapt-product-1.8.3\utils\signtool.exe`
+- size: `543160` bytes
+- SHA256: `92A5751C292C7D3C41619CA0F0A28D1121CF55EF55D75DCCE394BF01F0194193`
+
+Its hash is explicitly checked by `tools/03-build-windows-product.ps1`.
+
+
+### 47.8 — WAPTSetup / WAPTAgent SignTool separation
+
+Historical `CreateWaptSetup()` logic expects SignTool at:
+
+`<wapt_base_dir>\utils\signtool.exe`
+
+and derives the PKCS#12 signing-key path from the selected personal certificate using:
+
+`ChangeFileExt(WaptPersonalCertificatePath,'.p12')`
+
+The controlled SignTool therefore has to be available on a workstation used to generate a customized agent from the console.
+
+However, SignTool itself is not required on ordinary WAPT clients.
+
+The retained installer rule is therefore:
+
+    #if edition == "waptsetup"
+    Source: "{#wapt_base_dir}utils\signtool.exe"; DestDir: "{app}\utils"; Flags: ignoreversion;
+    #endif
+
+Validated behavior:
+
+WAPTSetup:
+- installs the management console;
+- installs the Inno Setup material required for dynamic agent generation;
+- installs controlled `utils\signtool.exe`.
+
+WAPTAgent:
+- retains the historically bundled console and client components;
+- does not install `utils\signtool.exe`.
+
+Clean WAPTAgent-only installation test:
+
+    Test-Path 'C:\Program Files (x86)\wapt\utils\signtool.exe'
+
+Result:
+
+    False
+
+The private Authenticode build certificate/PFX and its password are never included in WAPTSetup or WAPTAgent.
+
+The console's historical dynamic-agent signing mechanism is separate: it looks for a `.p12` associated with the administrator-selected WAPT personal certificate. In the current operational model, those personal certificate/key pairs may reside on the team's `Z:` storage.
+
+
+### 47.9 — Windows 1.8.3.7457 authoritative build proof
+
+Status: PASS.
+
+The complete Windows autonomous build succeeded from the controlled workflow.
+
+Build environment:
+
+- source: `C:\git\waptdev`
+- build kit: `C:\wapt-build-kit`
+- runtime: `C:\wapt-runtime-1.8.3`
+- output: `C:\wapt-product-1.8.3`
+- isolated worktree: `C:\wapt-build-worktree-auto`
+- Lazarus: `C:\lazarus`
+- isolated Lazarus PCP: `C:\wapt-build-lazarus-pcp-auto`
+
+Final WAPTSetup:
+
+- FileVersion: `1.8.3.7457`
+- ProductVersion: `1.8.3.7457`
+- ProductName: `WAPTSetup`
+- size: `26908904` bytes
+- SHA256: `89257ED1541FDE4F840F64FAE8B014CCA1976402DED33577734774210937AA61`
+
+The build explicitly reported:
+
+- unsigned WAPT Community setup successfully built;
+- final setup successfully Authenticode-signed;
+- final signature successfully validated;
+- final Community setup successfully validated;
+- base Windows product tree successfully assembled.
+
+Installed console validation:
+
+- FileVersion: `1.8.3.7457`
+- ProductVersion: `1.8.3`
+- signer: `CN=WAPT Community Thouet Code Signing`
+- RFC3161 timestamp signer: `CN=Sectigo Public Time Stamping Signer R37`
+
+The Windows `1.8.3.7457` build supersedes `1.8.3.7444` as the authoritative current Windows binary proof.
+
+
+### 47.10 — Console-driven waptagent.exe 1.8.3.7457 generation
+
+Status: PASS.
+
+A new agent was generated from the installed WAPT Community 1.8.3.7457 console and published to the Debian 10 server.
+
+Published server artifact:
+
+- path: `/var/www/wapt/waptagent.exe`
+- SHA256: `ED0D099A9FF0D921AAFA11C5FAD720653825C378B76E95AF9DAFA0120C5E562C`
+
+The published file was downloaded again on Windows.
+
+Windows validation:
+
+- FileVersion: `1.8.3.7457`
+- ProductVersion: `1.8.3.7457`
+- ProductName: `WAPTAgent`
+- SHA256: `ED0D099A9FF0D921AAFA11C5FAD720653825C378B76E95AF9DAFA0120C5E562C`
+
+The Debian and Windows SHA256 values are identical.
+
+Validated chain:
+
+    WAPTSetup 1.8.3.7457
+      -> installed console 1.8.3.7457
+      -> console-driven agent generation
+      -> upload to Debian 10
+      -> /var/www/wapt/waptagent.exe
+      -> Windows download
+      -> identical SHA256
+
+The generated outer `waptagent.exe` installer itself reports `NotSigned`.
+
+A historical `waptagent.exe` 1.8.2.7393 comparison also reports `NotSigned`.
+
+The unsigned outer generated agent installer is therefore not considered a newly introduced 1.8.3 regression.
+
+
+### 47.11 — Historical 7393 vs 7457 Authenticode trust validation
+
+The installed executable set was compared directly between historical WAPT 1.8.2.7393 and current WAPT 1.8.3.7457.
+
+Historical 1.8.2.7393 principal WAPT executables report `Valid` Authenticode signatures, including:
+
+- `wapt-get.exe`
+- `waptconsole.exe`
+- `waptdeploy.exe`
+- `waptexit.exe`
+- `waptmessage.exe`
+- `waptself.exe`
+- `wapttray.exe`
+
+Historical signer:
+
+- Subject: `CN=TRANQUIL I.T. SYSTEMS`
+- Issuer: `CN=Sectigo RSA Code Signing CA`
+- thumbprint: `601F66DF07CA2546D596AC53720C1050E5E8D1FC`
+- certificate validity: 2020-02-13 to 2023-02-13
+
+Observed historical trust chain:
+
+    TRANQUIL I.T. SYSTEMS
+      -> Sectigo RSA Code Signing CA
+      -> USERTrust RSA Certification Authority
+
+Historical timestamp signer:
+
+- `CN=Sectigo RSA Time Stamping Signer #2`
+
+The expired historical end-entity certificate still validates through Authenticode because the executable was timestamped while the signing certificate was valid.
+
+The historical Tranquil signer certificate was not found directly in either:
+
+- `Cert:\LocalMachine\Root`
+- `Cert:\LocalMachine\TrustedPublisher`
+
+The 7393 trust model therefore relied on the public CA chain rather than on deployment of a private WAPT trust root.
+
+
+### 47.12 — Current internal Authenticode certificate trust behavior
+
+Current validation signer:
+
+- Subject: `CN=WAPT Community Thouet Code Signing`
+- Issuer: `CN=WAPT Community Thouet Code Signing`
+- thumbprint: `015133A6B6119ACB3C9F24400C348077D19B954B`
+- validity: 2026-09-25 to 2027-09-25
+- self-signed.
+
+Current timestamping is performed through the public Sectigo RFC3161 service.
+
+Without trusting the self-signed certificate, the signed 1.8.3.7457 WAPT executables report `UnknownError`.
+
+Observed Windows trust error:
+
+    A certificate chain processed, but terminated in a root certificate
+    which is not trusted by the trust provider.
+
+This can also prevent execution of the console under the applicable Windows security policy.
+
+A controlled test imported only the public certificate:
+
+- `WAPT-Community-Thouet-Code-Signing.cer`
+- size: `1070` bytes
+
+into:
+
+- `Cert:\LocalMachine\Root`
+
+After import, all tested WAPT executables signed by the current certificate changed from `UnknownError` to `Valid`:
+
+- `wapt-get.exe`
+- `waptconsole.exe`
+- `waptdeploy.exe`
+- `waptexit.exe`
+- `waptmessage.exe`
+- `waptself.exe`
+- `wapttray.exe`
+
+Unrelated/unsigned binaries remained `NotSigned`, including:
+
+- `dmidecode.exe`
+- `unins000.exe`
+- `waptpython.exe`
+- `waptpythonw.exe`
+- current `openssl.exe`
+
+Conclusion:
+
+The 1.8.3.7457 Authenticode signing implementation is technically correct. The observed `UnknownError` is caused by lack of trust in the self-signed validation certificate, not by an invalid binary signature.
+
+
+### 47.13 — Private Windows signing PKI — definitive validation (2026-09-25)
+
+Status: PASS — definitive private signing PKI created and functionally validated.
+
+The previous `WAPT Community Thouet Code Signing` self-signed certificate remains
+the signing identity used for the authoritative 1.8.3.7457 build described in
+§47.12. It proved the complete automated Authenticode workflow, but required
+trusting the signing certificate itself as a Root CA.
+
+The signing architecture has now been improved by separating the long-lived
+trust anchor from the routine Code Signing identity.
+
+Current strategy for the modernization/testing phase:
+
+- use a private long-lived Root CA;
+- use a separate short-lived Code Signing certificate issued by that Root;
+- deploy only the public Root CA to managed Windows clients;
+- keep the Root private key offline after validation/archival;
+- use only the Code Signing private key for normal Windows builds;
+- reconsider a publicly trusted external signing identity later, particularly
+  during the expected future rebranding/final-distribution work.
+
+This approach was selected because:
+- the project is still in an active modernization/testing phase;
+- many Windows artifacts will be rebuilt and signed during development;
+- paying for an external code-signing identity is currently excluded;
+- some managed clients are outside Active Directory, so the trust bootstrap
+  must not depend exclusively on GPO;
+- a similar private-CA trust model was observed and validated locally with the
+  FOG Project client.
+
+#### PKI generator
+
+New script:
+
+`tools/create-windows-signing-pki.ps1`
+
+Committed as:
+
+`d4279c96a` — `Add private Windows code signing PKI generator`
+
+The generator was validated with disposable PKIs before creating the definitive
+identity.
+
+Validated generator behavior:
+
+- Root CA and Code Signing certificate are separate;
+- Root key: RSA 4096 / SHA-256;
+- Root validity: 10 years by default;
+- Root Basic Constraints: `CA=True`, path length `0`;
+- Root Key Usage: Certificate Signing + CRL Signing;
+- Code Signing key: RSA 3072 / SHA-256;
+- Code Signing validity: 1 year by default;
+- Code Signing Key Usage: Digital Signature;
+- Code Signing EKU: Code Signing (`1.3.6.1.5.5.7.3.3`);
+- Code Signing certificate is issued by the private Root CA;
+- public `.cer` and private `.pfx` files are exported separately;
+- Root and Code Signing passwords are requested interactively;
+- passwords are not written to disk by the generator;
+- existing PKI files are not silently overwritten;
+- temporary certificates/private keys created in `Cert:\CurrentUser\My` are
+  removed after successful export.
+
+Disposable validation proved:
+
+- correct Root certificate extensions;
+- correct Code Signing certificate extensions;
+- correct Root -> Code Signing relationship;
+- successful Authenticode signing of a test executable;
+- Windows Authenticode status `Valid`;
+- successful Sectigo RFC3161 timestamping;
+- correct two-level certificate chain;
+- successful automatic cleanup from `CurrentUser\My`.
+
+#### Definitive Root CA
+
+Subject:
+
+`CN=Thouet Software Signing Root CA`
+
+Issuer:
+
+`CN=Thouet Software Signing Root CA`
+
+Thumbprint:
+
+`DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
+
+Validity:
+
+- NotBefore: `2026-09-25 16:11:50`
+- NotAfter: `2036-09-25 16:21:49`
+
+Public certificate:
+
+`C:\wapt-build-kit\signing\public\Thouet-Software-Signing-Root-CA.cer`
+
+SHA256:
+
+`5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A`
+
+Private Root PFX:
+
+`C:\private-wapt-signing\root\Thouet-Software-Signing-Root-CA.pfx`
+
+SHA256:
+
+`6697614972822ECEC0EFF31C2EAD33C465A9336F4916E10A3C4C59D049A51D49`
+
+The Root private key is not required for normal builds.
+
+The Root PFX has been copied to secure storage. Its password is stored outside
+Git in the organization's KeePass. The Root password must never be recorded in
+the repository, checkpoint, build kit or build scripts.
+
+The Root PFX is intended to become offline-only. Local removal from VM106 may
+be performed after archival verification; this cleanup is not required for the
+next build-integration work.
+
+#### Definitive Code Signing certificate
+
+Subject:
+
+`CN=Thouet Software Code Signing`
+
+Issuer:
+
+`CN=Thouet Software Signing Root CA`
+
+Thumbprint:
+
+`20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
+
+Validity:
+
+- NotBefore: `2026-09-25 16:11:51`
+- NotAfter: `2027-09-25 16:21:51`
+
+Public certificate:
+
+`C:\wapt-build-kit\signing\public\Thouet-Software-Code-Signing.cer`
+
+SHA256:
+
+`6AC1CC6A5A51BF2778089FF29D5DF35786192C87E9DC610FF196C1FDC54647A8`
+
+Private Code Signing PFX:
+
+`C:\private-wapt-signing\codesigning\Thouet-Software-Code-Signing.pfx`
+
+SHA256:
+
+`0AA1763A4CA33BF77BD2EED5D2569C36A2EACDB367DBA8A4D6636E4ED6AA247E`
+
+The Code Signing PFX has a password distinct from the Root PFX password.
+
+Its password is stored outside Git in the organization's KeePass and must never
+be embedded in the repository, build kit, checkpoint or generated products.
+
+Unlike the Root private key, the Code Signing private key is the routine
+signing identity required by the Windows build workflow.
+
+#### Definitive functional signing proof
+
+The definitive public Root certificate was temporarily trusted and the
+definitive Code Signing PFX was imported into `Cert:\CurrentUser\My`.
+
+Validated imported Code Signing identity:
+
+- Subject: `CN=Thouet Software Code Signing`
+- Issuer: `CN=Thouet Software Signing Root CA`
+- Thumbprint: `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
+- `HasPrivateKey=True`
+
+A copy of `waptconsole.exe` was signed using the controlled Windows SDK
+SignTool already present in the WAPT build kit.
+
+Result:
+
+- Authenticode status: `Valid`
+- StatusMessage: `Signature vérifiée.`
+- signer: `CN=Thouet Software Code Signing`
+- issuer: `CN=Thouet Software Signing Root CA`
+- RFC3161 timestamp: PASS
+- timestamp signer: `Sectigo Public Time Stamping Signer R37`
+
+Validated chain:
+
+`CN=Thouet Software Code Signing`
+-> `CN=Thouet Software Signing Root CA`
+
+Code Signing thumbprint:
+
+`20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`
+
+Root thumbprint:
+
+`DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
+
+Result:
+
+The definitive private signing PKI is functionally validated end-to-end.
+
+A manual `X509Chain.Build()` may report `RevocationStatusUnknown` because this
+private PKI currently publishes no CRL/OCSP service. This does not contradict
+the validated Windows Authenticode result (`Valid`). A private revocation
+infrastructure is not part of the current transitional implementation.
+
+#### Trust/distribution model
+
+Managed clients ultimately need only the public Root certificate:
+
+`Thouet-Software-Signing-Root-CA.cer`
+
+Clients must never receive:
+
+- `Thouet-Software-Signing-Root-CA.pfx`;
+- `Thouet-Software-Code-Signing.pfx`;
+- either private key;
+- either PFX password.
+
+Installing the public Root into the appropriate Windows Trusted Root store will
+allow Windows to validate executables signed by the current Code Signing
+certificate and future Code Signing certificates issued by the same Root.
+
+This is an improvement over directly trusting the previous self-signed
+`WAPT Community Thouet Code Signing` certificate because routine Code Signing
+certificates can be renewed without changing the long-lived client trust
+anchor.
+
+The exact automatic Root CA provisioning mechanism is still pending.
+
+It must support:
+- domain-joined machines;
+- non-domain machines;
+- clean WAPT installation;
+- upgrade of existing WAPT installations.
+
+GPO may remain useful for domain clients but cannot be the only provisioning
+mechanism.
+
+
+### 47.14 — Current 1.8.3 consolidation status and exact next action
+
+Current authoritative Windows binary proof is now:
+
+- WAPT Community `1.8.3.7468`;
+- development branch: `release/1.8.3`;
+- dynamic agent timestamp commit:
+  `4cae11289` — `Timestamp generated agent Authenticode signature`;
+- dynamic agent signing failure hardening commit:
+  `5d15c4d60` — `Fail generated agent build on signing error`.
+
+The previous 7465 proof remains valid historical evidence but is superseded by
+the complete 7468 validation described below.
+
+#### Definitive Windows signing PKI
+
+The definitive private Windows signing architecture remains:
+
+`Thouet Software Signing Root CA`
+-> `Thouet Software Code Signing`
+-> Windows executable
+
+Root CA:
+- subject: `CN=Thouet Software Signing Root CA`;
+- issuer: `CN=Thouet Software Signing Root CA`;
+- thumbprint:
+  `DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`;
+- valid until 2036-09-25.
+
+Code Signing:
+- subject: `CN=Thouet Software Code Signing`;
+- issuer: `CN=Thouet Software Signing Root CA`;
+- thumbprint:
+  `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`;
+- valid until 2027-09-25.
+
+Validated properties:
+- Root -> Code Signing chain: PASS;
+- controlled SignTool signing: PASS;
+- Authenticode: `Valid`;
+- Sectigo RFC3161 timestamp for product-build signing: PASS;
+- Sectigo RFC3161 timestamp for dynamically generated WAPTAgent: PASS.
+
+PKI generator:
+- `tools/create-windows-signing-pki.ps1`;
+- original generator commit: `d4279c96a`.
+
+Private Root and Code Signing PFX passwords are stored outside Git in the
+organization's KeePass and must never be written into source, checkpoint or
+build artifacts.
+
+The Root PFX is intended to remain offline-only.
+
+The normal Windows product build uses only the Code Signing private identity
+and securely supplied password.
+
+#### Definitive Code Signing build integration
+
+The definitive Code Signing PFX is integrated into the validated Windows build
+workflow.
+
+Private Code Signing PFX location:
+
+`C:\private-wapt-signing\codesigning\Thouet-Software-Code-Signing.pfx`
+
+A clean/exported Code Signing PFX is used without including the Root private
+key.
+
+Relevant integration and hardening commits include:
+
+- `e00472bd2` — `Export code signing PFX without Root private key`;
+- `93bed1a9f` — `Fix Windows Root CA bootstrap and Community publisher`;
+- `2b897fe6d` — `Keep public signing Root CA for agent generation`;
+- `de9f00288` — `Use SHA256 for generated agent Authenticode signature`;
+- `4cae11289` — `Timestamp generated agent Authenticode signature`;
+- `5d15c4d60` — `Fail generated agent build on signing error`.
+
+The private Root key is not required for normal product builds.
+
+#### Public Root CA bootstrap
+
+The public client trust anchor is:
+
+`Thouet-Software-Signing-Root-CA.cer`
+
+The public Root certificate is embedded in the Inno Setup payload.
+
+`waptsetup/wapt.iss` provides two uses of the public certificate:
+
+1. `Flags: dontcopy`
+   - allows early extraction into the Inno Setup temporary directory;
+   - the certificate is installed into `LocalMachine\Root` before installed
+     WAPT executables need to be trusted.
+
+2. normal installation copy
+   - destination:
+     `{app}\signing\public`;
+   - preserves the public certificate for later dynamic
+     `waptagent.exe` generation.
+
+Only the public certificate is deployed.
+
+The Root private key is never included in:
+- source control;
+- build kit;
+- WAPTSetup;
+- WAPTAgent;
+- server publication;
+- client installation.
+
+Community installer publisher metadata is:
+
+`Thouet Software`
+
+in:
+- `waptsetup/waptsetup.iss`;
+- `waptsetup/waptagent.iss`.
+
+The Root bootstrap has been validated with both:
+- normal WAPTSetup installation;
+- dynamically generated WAPTAgent installation.
+
+#### WAPT Community 1.8.3.7468 product proof
+
+Final WAPTSetup:
+
+- FileVersion: `1.8.3.7468`;
+- ProductVersion: `1.8.3.7468`;
+- ProductName: `WAPTSetup`;
+- size: `26907832` bytes;
+- SHA256:
+  `4E3B2A944167FE51FBAA1C96942108F2F6E0AF25F33EC70DE552A11546393128`.
+
+Build result:
+- unsigned Community setup build: PASS;
+- final setup signing: PASS;
+- final setup validation: PASS;
+- signer uses the definitive Thouet Software Code Signing identity.
+
+The 7468 build contains both dynamic-agent hardening changes described below.
+
+#### Dynamic WAPTAgent SHA256 and RFC3161 signing
+
+Historical `CreateWaptSetup()` logic in:
+
+`wapt-get/waptcommonwin.inc`
+
+expects:
+- `utils\signtool.exe`;
+- the personal certificate selected by the WAPT console;
+- a `.p12` with the same basename as the selected `.crt`;
+- the console private-key password.
+
+The controlled modern SignTool first required the historical command to be
+updated from:
+
+`signtool sign /f ...`
+
+to:
+
+`signtool sign /fd SHA256 /f ...`
+
+This was implemented by:
+
+`de9f00288` — `Use SHA256 for generated agent Authenticode signature`
+
+The generated-agent signing path was subsequently hardened to add an RFC3161
+timestamp:
+
+`signtool sign /fd SHA256 /tr "http://timestamp.sectigo.com/rfc3161" /td SHA256 /f ...`
+
+Commit:
+
+`4cae11289` — `Timestamp generated agent Authenticode signature`
+
+A 7468 dynamic-agent test using the temporary self-signed test identity:
+
+`CN=Tempo, C=FR`
+
+produced a server-side WAPTAgent SHA256:
+
+`53149A92D0FC28A5A34ADC6AE15CC6CDFE3D8A0AA970F5D9D8C543BB573553FF`
+
+An independently downloaded Windows copy produced the identical SHA256.
+
+Authenticode inspection showed:
+- signer: `CN=Tempo, C=FR`;
+- signer thumbprint:
+  `E86F98EB7C919C6BCEE91ABA9D227052A90486F0`;
+- RFC3161 timestamp: present;
+- timestamp signer:
+  `CN=Sectigo Public Time Stamping Signer R37`;
+- Windows status: `UnknownError`.
+
+`UnknownError` was expected because `Tempo` is self-signed and is not trusted
+by Windows.
+
+This test independently proved that RFC3161 timestamping is now operational in
+the dynamic WAPTAgent generation path.
+
+#### Dynamic WAPTAgent signing failure hardening
+
+Historical dynamic-agent signing behavior caught exceptions from the SignTool
+execution and only logged:
+
+`Unable to sign waptagent:...`
+
+This allowed an attempted signing operation to fail without necessarily
+propagating the failure to the caller.
+
+The Windows dynamic-agent signing path was changed so that when SignTool is
+actually invoked and raises an exception, the exception is logged and then
+re-raised.
+
+Commit:
+
+`5d15c4d60` — `Fail generated agent build on signing error`
+
+The resulting behavior is intentionally limited in scope:
+
+- if the historical signing prerequisites are absent, the existing unsigned
+  generation path is not globally prohibited by this change;
+- if SignTool and the required signing material are present and signing is
+  attempted, an exception during that signing operation is no longer silently
+  swallowed.
+
+The normal 7468 signing path has been validated successfully.
+
+No artificial SignTool/network failure was introduced solely to exercise the
+new exception propagation path.
+
+#### Definitive dynamic-agent signing identity
+
+The 7468 validation also replaced the temporary `Tempo` identity for the final
+dynamic-agent proof with the definitive Thouet Software Code Signing identity.
+
+The historical WAPT console and dynamic-agent path require several
+representations of the same Code Signing identity.
+
+Validated working files:
+
+`Thouet-Software-Code-Signing.crt`
+
+- public Code Signing certificate;
+- selected as the WAPT console personal certificate.
+
+`Thouet-Software-Code-Signing.pem`
+
+- encrypted private key corresponding to the `.crt`;
+- used by the historical WAPT console private-key handling;
+- the console successfully validates the associated key and requests its
+  password.
+
+`Thouet-Software-Code-Signing.p12`
+
+- PKCS#12 representation containing the Code Signing private identity;
+- same basename as the selected `.crt`;
+- automatically located by `CreateWaptSetup()` through the historical
+  `ChangeFileExt(...,'.p12')` convention;
+- used by SignTool for dynamic WAPTAgent Authenticode signing.
+
+The existing definitive:
+
+`Thouet-Software-Code-Signing.pfx`
+
+is also PKCS#12 and was used as the source for the required historical
+representations.
+
+The public `.crt` was successfully extracted from the definitive PFX and
+independently verified:
+
+- subject: `CN=Thouet Software Code Signing`;
+- issuer: `CN=Thouet Software Signing Root CA`;
+- SHA1 thumbprint:
+  `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`.
+
+The `.p12` used for the historical WAPT dynamic-agent path is a byte-identical
+copy of the clean Code Signing `.pfx`.
+
+The Root private key is not required for this process.
+
+#### 7468 definitive dynamically generated WAPTAgent proof
+
+Using WAPT Console 1.8.3.7468 and the definitive Thouet Software Code Signing
+identity, dynamic WAPTAgent generation successfully:
+
+1. validated and unlocked the Code Signing private key through the console;
+2. built the agent;
+3. found the matching `.p12`;
+4. invoked the controlled SignTool with SHA256;
+5. obtained a Sectigo RFC3161 timestamp;
+6. signed the generated executable automatically;
+7. calculated the final agent hash;
+8. uploaded the resulting agent to the Debian 10 WAPT server.
+
+Published `/var/www/wapt/waptagent.exe` SHA256:
+
+`6D5B8CBB6C2D1B06FFFDF39ABA02A924194E4DDC3E96CE4A65971D6D0D37EB8F`
+
+An independently downloaded Windows copy produced the identical SHA256.
+
+Authenticode inspection of that exact downloaded file showed:
+
+- status: `Valid`;
+- status message: `Signature vérifiée.`;
+- signer:
+  `CN=Thouet Software Code Signing`;
+- issuer:
+  `CN=Thouet Software Signing Root CA`;
+- signer thumbprint:
+  `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`;
+- RFC3161 timestamp signer:
+  `CN=Sectigo Public Time Stamping Signer R37`;
+- timestamp issuer:
+  `CN=Sectigo Public Time Stamping CA R41`;
+- timestamp thumbprint:
+  `E97818A928DA150A9FE1BF9CCC7AABB9A00EEEAC`.
+
+Result:
+
+**The dynamically generated 7468 WAPTAgent is signed with the definitive
+Thouet Software Code Signing identity, chains successfully to the deployed
+Thouet Software Signing Root CA, reports Authenticode `Valid`, and contains a
+Sectigo RFC3161 timestamp.**
+
+#### 7468 WAPTAgent installation and communication proof
+
+The definitive dynamically generated 7468 WAPTAgent was launched on the
+Windows validation client.
+
+Microsoft Defender SmartScreen still displayed the normal "application not
+recognized" warning.
+
+The warning explicitly identified:
+
+`Éditeur : Thouet Software Code Signing`
+
+The same SmartScreen mechanism had previously been observed with the
+historical 1.8.2.7393 agent in equivalent conditions.
+
+Therefore:
+- the private Thouet Authenticode chain is correctly recognized as the
+  executable publisher;
+- the local Windows Authenticode validation is `Valid`;
+- the private PKI does not by itself establish public SmartScreen reputation;
+- the SmartScreen warning is not considered a new 1.8.3.7468 regression.
+
+After allowing execution:
+- WAPTAgent installation completed successfully;
+- the client registered/reappeared in the WAPT console;
+- the client was reachable from the console;
+- normal client/server communication was confirmed.
+
+Result:
+
+**WAPT Community 1.8.3.7468 definitive dynamic-agent generation, SHA256
+Authenticode signing, RFC3161 timestamping, publication, download identity,
+installation and client/server communication are validated end-to-end.**
+
+#### Trust-model distinction
+
+Windows product Authenticode and WAPT package signing must remain conceptually
+separate.
+
+Windows product Authenticode:
+
+`Thouet Software Signing Root CA`
+-> `Thouet Software Code Signing`
+-> WAPT Windows product executable
+
+This chain is now validated for both:
+- normal Windows product-build artifacts;
+- dynamically generated WAPTAgent.
+
+WAPT package signing is a separate WAPT trust mechanism.
+
+The historical WAPT package-signing certificate must not automatically become
+the definitive Windows Authenticode identity, and the new Thouet Windows Code
+Signing certificate must not automatically be treated as the replacement
+package-signing identity without a separately designed migration.
+
+#### Future SCRAB/package-signing certificate migration
+
+When SCRAB is permanently replaced, explicitly design and validate the
+transition from the historical package-signing trust to a new controlled
+signing identity.
+
+Existing packages already signed with the historical certificate must be
+included in that migration strategy.
+
+The transition must preserve compatibility with existing clients and existing
+signed packages.
+
+A possible future architecture remains:
+- private Root CA kept offline;
+- WAPT package-signing certificates issued by a controlled private PKI rather
+  than being independent self-signed certificates;
+- each console receives only its own signing certificate/private key;
+- clients temporarily trust both historical and new package-signing
+  identities during migration;
+- historical trust is retired only after the package/client transition has
+  been proven.
+
+Do not perform this migration as part of the already validated Windows
+Authenticode work.
+
+It belongs to the definitive SCRAB replacement phase.
+
+#### PKI documentation and open-source distribution requirements
+
+The 7468 validation exposed historical certificate-format requirements that
+must be documented before the consolidated `1.8.3.xxxx` release is frozen.
+
+Two documentation levels are required.
+
+1. Internal Thouet operational documentation
+
+Document:
+- Root CA creation and secure offline handling;
+- Code Signing certificate creation/issuance;
+- Code Signing renewal;
+- secure password storage;
+- clean Code Signing PFX export without Root private-key leakage;
+- generation/extraction of the `.crt`;
+- generation/extraction of the encrypted `.pem` private key;
+- creation/use of the `.p12` expected by historical dynamic-agent generation;
+- relationship between `.pfx` and `.p12`;
+- which component consumes `.crt`, `.pem`, `.p12` and `.pfx`;
+- deployment of the public Root certificate;
+- certificate verification commands;
+- recovery/renewal procedure.
+
+2. Generic open-source documentation
+
+The public GitHub distribution must not require or expose Thouet private
+material.
+
+Document the supported trust models so another organization can:
+- use its own existing PKI and Code Signing certificate;
+- use a publicly trusted Code Signing identity where appropriate;
+- or create its own private Root CA and Code Signing certificate for an
+  autonomous/private deployment.
+
+For a user without an existing PKI, provide or document tooling capable of
+creating the required signing hierarchy and the certificate/key
+representations expected by WAPT.
+
+The existing:
+
+`tools/create-windows-signing-pki.ps1`
+
+is the starting point for this workflow.
+
+Review it before release to determine whether:
+- organization-specific defaults need to become configurable;
+- additional helper functionality is needed to produce the historical
+  `.crt` + encrypted `.pem` + `.p12` set automatically;
+- validation commands should be automated;
+- private/public output separation needs further hardening.
+
+The public workflow must never publish or commit private Root or Code Signing
+keys.
+
+This documentation/tooling work is a required consolidation item before the
+final autonomous `1.8.3.xxxx` freeze.
+
+#### Already validated and not to reopen without contradiction
+
+- Debian 10 DR tooling;
+- historical database migration;
+- 1.8.2.7393 -> 1.8.3 client migration proof;
+- autonomous Windows build environment;
+- controlled build-kit inputs;
+- isolated Lazarus build;
+- transient Lazarus failure retry;
+- VC90 CRT manifest investigation;
+- definitive private Windows signing PKI;
+- Code Signing PFX integration without Root private-key leakage;
+- automated Authenticode signing workflow;
+- Sectigo RFC3161 timestamping for normal product-build signing;
+- final WAPTSetup signing;
+- public Root CA bootstrap;
+- WAPTSetup-only controlled SignTool deployment;
+- console-driven WAPTAgent generation;
+- SHA256 dynamic-agent signing;
+- RFC3161 dynamic-agent timestamping;
+- dynamic signing exception propagation hardening;
+- definitive Thouet Code Signing identity for dynamic WAPTAgent;
+- dynamic WAPTAgent Authenticode `Valid`;
+- Debian agent publication;
+- server/download SHA256 identity proof;
+- WAPTAgent installation;
+- Root bootstrap from dynamically generated WAPTAgent;
+- installed WAPT executable Authenticode validation;
+- WAPTService startup;
+- client visibility/reachability from the console;
+- no SignTool requirement/leakage into the installed WAPTAgent client;
+- autonomous-distribution source audit;
+- SmartScreen behavior comparison with historical 7393.
+
+#### Still pending before consolidated 1.8.3.xxxx freeze
+
+1. Produce the PKI documentation and supporting tooling described above:
+   - internal Thouet operational procedure;
+   - generic open-source PKI/signing procedure;
+   - automated `.crt` / `.pem` / `.p12` preparation where useful.
+
+2. Complete remaining release documentation/naming cleanup, including the
+   neutral runtime path:
+
+   `C:\wapt-runtime-1.8.3`
+
+3. Review remaining organization-specific assumptions/defaults that should not
+   leak into the generic public GitHub distribution.
+
+4. Perform any remaining focused Windows release-candidate regression tests.
+
+5. Record final versions, hashes and Git lineage.
+
+6. Update/rebuild Debian packaging only where required by committed
+   server/product changes and perform focused artifact/homepage regression
+   validation.
+
+7. Update this checkpoint and freeze/tag the consolidated autonomous release
+   as `1.8.3.xxxx`.
+
+8. Only after `1.8.3.xxxx` is frozen, begin Debian 11 modernization.
+
+The historical package-signing certificate transition remains intentionally
+deferred to the definitive SCRAB replacement work and must not be confused
+with the validated Windows Authenticode PKI.
+
+#### Superseded exact next action
+
+The previous 7468 exact-next-action checkpoint has now been completed and
+superseded by the 7478 validation below.
+
+The 7468 proof remains valid historical evidence and must not be reopened
+without contradictory evidence.
+
+
+### 47.15 — WAPT Community 1.8.3.7478 explicit Root trust and final Windows proof
+
+The Windows signing/bootstrap work was extended after the complete 7468 proof
+to make the private Authenticode Root trust model explicit to administrators
+while preserving the already validated autonomous/off-domain installation
+behavior.
+
+Current development branch:
+
+`release/1.8.3`
+
+Current validated source HEAD:
+
+`dcc35657` — `Align server signing guidance with setup trust bootstrap`
+
+Current Git revision count:
+
+`7478`
+
+#### Public Root CA publication and server integration
+
+The public Authenticode Root certificate:
+
+`Thouet-Software-Signing-Root-CA.cer`
+
+is now treated as a public distribution artifact.
+
+Relevant commits:
+
+- `f01d3aa1e` — `Package public signing Root CA with Windows setup`;
+- `178683115` — `Expose public signing Root CA metadata`;
+- `fe42ac48b` — `Present public signing Root CA on server homepage`;
+- `ff5d62d80` — `Guide setup download through publisher trust`.
+
+`waptsetup/deb/createdeb.py` now includes the public Root CA in the Windows
+setup package publication set.
+
+`waptserver/server.py` exposes the Root CA when present in the WAPT publication
+directory and calculates its SHA256.
+
+The WAPT server homepage exposes:
+- the public Root CA download;
+- its SHA256;
+- an explanation of the WAPT publisher trust relationship.
+
+This allows manual inspection or deployment of the public certificate where
+required.
+
+No private signing key is published by this mechanism.
+
+#### Explicit Root trust decision
+
+An intermediate change removed the automatic Root bootstrap:
+
+`dea2e150d` — `Require explicit trust of publisher Root CA`
+
+That change was intentionally reverted after reviewing the operational
+requirements:
+
+`85f04ba9e` — `Revert "Require explicit trust of publisher Root CA"`
+
+Reason:
+
+WAPT must remain autonomously deployable to both domain-joined and off-domain
+machines. Requiring an administrator to pre-deploy the Root through GPO or
+another external mechanism would break that requirement and would regress the
+previously validated installation workflow.
+
+The retained design therefore remains:
+
+1. the public Root CA is embedded in WAPTSetup;
+2. WAPTSetup can bootstrap the Root into the Windows Local Machine trust store;
+3. the Root private key is never distributed;
+4. installed WAPT executables can then validate against the private
+   Authenticode hierarchy;
+5. the public Root certificate remains available in the installed product tree
+   for later dynamic WAPTAgent generation.
+
+The bootstrap was then improved so that an interactive administrator is
+explicitly informed before the Root is trusted.
+
+Commit:
+
+`b2560fd20` — `Confirm publisher Root CA trust during interactive setup`
+
+During an interactive WAPTSetup installation, immediately before modifying the
+Local Machine Root store, WAPTSetup displays a confirmation explaining that:
+
+- WAPT executables are digitally signed by Thouet Software;
+- the `Thouet Software Signing Root CA` will be added to
+  `Local Machine\Trusted Root Certification Authorities`;
+- the administrator should continue only if Thouet Software is trusted as the
+  publisher of the distribution.
+
+Selecting `No` aborts installation.
+
+Selecting `Yes` installs the Root and continues installation.
+
+Silent and very-silent installations retain the non-interactive bootstrap
+behavior so that automated/off-domain deployment remains possible.
+
+The resulting trust model is therefore deliberate:
+
+**interactive installation -> explicit administrator consent -> Root bootstrap**
+
+and:
+
+**silent managed installation -> administrator/deployment-system policy ->
+Root bootstrap**
+
+The mechanism is not dependent on Active Directory or GPO.
+
+#### Server homepage guidance alignment
+
+The server homepage wording was subsequently aligned with the final bootstrap
+behavior.
+
+Commit:
+
+`dcc35657` — `Align server signing guidance with setup trust bootstrap`
+
+The homepage now explains that WAPTSetup itself asks for confirmation before
+adding the Thouet Software Signing Root CA to the Local Machine Trusted Root
+Certification Authorities store.
+
+The downloadable `.cer` remains available for:
+- inspection;
+- fingerprint verification;
+- manual deployment;
+- deployment through an organization's own management mechanism.
+
+Pre-installation of the Root from the homepage is not required for the normal
+interactive WAPTSetup path.
+
+#### Product-tree Root CA handling clarification
+
+The controlled Windows product assembly continues to copy:
+
+`Thouet-Software-Signing-Root-CA.cer`
+
+to:
+
+`signing\public`
+
+in the product tree.
+
+The corresponding comments were clarified by:
+
+`927bcac39` — `Clarify public signing Root CA handling`
+
+The product-tree copy is public signing material. Merely copying it into the
+product tree does not itself establish Windows trust.
+
+Trust is established by the WAPTSetup bootstrap mechanism described above.
+
+Validated public Root certificate SHA256:
+
+`5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A`
+
+Root identity:
+
+`CN=Thouet Software Signing Root CA`
+
+Root thumbprint:
+
+`DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`
+
+#### WAPT Community 1.8.3.7478 product proof
+
+A clean controlled Windows product build was performed from the 7478 source
+state.
+
+Final WAPTSetup:
+
+- FileVersion: `1.8.3.7478`;
+- ProductVersion: `1.8.3.7478`;
+- ProductName: `WAPTSetup`;
+- size: `26908768` bytes;
+- SHA256:
+  `956773B68918E48B48C5C2176F37DA1AD9C80E8224C8CDE666353E78BB5B9C7F`.
+
+Build result:
+
+- unsigned Community setup build: PASS;
+- final Authenticode signing: PASS;
+- final setup validation: PASS;
+- controlled public Root CA included in product tree: PASS.
+
+#### Interactive Root bootstrap validation
+
+The existing Thouet Software Signing Root CA was first removed from the
+Windows validation VM Local Machine Root store.
+
+The absence of the Root was verified before installation.
+
+WAPTSetup 1.8.3.7478 was then launched interactively.
+
+Test 1 — administrator refuses Root trust:
+
+- Root confirmation dialog displayed: PASS;
+- `No` selected;
+- installation aborted: PASS;
+- setup window closed: PASS.
+
+Test 2 — administrator accepts Root trust:
+
+- WAPTSetup relaunched;
+- Root confirmation dialog displayed: PASS;
+- `Yes` selected;
+- installation continued normally: PASS;
+- Root installed into `Cert:\LocalMachine\Root`: PASS.
+
+Installed Root:
+
+- subject:
+  `CN=Thouet Software Signing Root CA`;
+- issuer:
+  `CN=Thouet Software Signing Root CA`;
+- thumbprint:
+  `DE744EACCC9F4E7D96611608BEEE52033B8FDD2A`;
+- valid from: `2026-09-25 16:11:50`;
+- valid until: `2036-09-25 16:21:49`.
+
+This proves that explicit administrator consent was added without breaking the
+previously validated Root bootstrap mechanism.
+
+#### WAPT Console post-bootstrap proof
+
+After the accepted 7478 installation, the installed WAPT Console launched
+normally.
+
+Result:
+
+- WAPT Console startup: PASS;
+- no Windows `"Une référence a été renvoyée par le serveur"` launch failure;
+- server connection/configuration UI accessible: PASS;
+- dynamic WAPTAgent creation workflow accessible: PASS.
+
+This confirms the purpose of the Authenticode Root bootstrap: executables signed
+through the private Thouet Software signing hierarchy are trusted by Windows
+before the installed console is used.
+
+The WAPT HTTPS server-certificate verification setting visible in the agent
+creation dialog is a separate trust mechanism and must not be confused with
+Windows Authenticode trust.
+
+#### Definitive 7478 dynamically generated WAPTAgent proof
+
+Using the installed WAPT Console after the successful 7478 Root bootstrap, a
+new WAPTAgent was generated and published to the Debian 10 WAPT server.
+
+Published server file:
+
+`/var/www/wapt/waptagent.exe`
+
+Server-side SHA256:
+
+`99B6E48284A72862846EF27B49CA72711D70BE7271C9964200D075CCA69D3CB8`
+
+An independently downloaded Windows copy:
+
+`C:\Temp\waptagent.exe`
+
+produced the identical SHA256:
+
+`99B6E48284A72862846EF27B49CA72711D70BE7271C9964200D075CCA69D3CB8`
+
+Server/download artifact identity: PASS.
+
+Authenticode inspection of that exact downloaded agent showed:
+
+- status: `Valid`;
+- status message: `Signature vérifiée.`;
+- signer:
+  `CN=Thouet Software Code Signing`;
+- issuer:
+  `CN=Thouet Software Signing Root CA`;
+- signer serial:
+  `3AC70F090F263FAD47BC45A857188D56`;
+- signer thumbprint:
+  `20B9EFB1891AFD28DD7695F0E6F3C1F3A8C020E5`;
+- signer validity:
+  `2026-09-25 16:11:51` to `2027-09-25 16:21:51`;
+- RFC3161 timestamp signer:
+  `CN=Sectigo Public Time Stamping Signer R37`;
+- timestamp issuer:
+  `CN=Sectigo Public Time Stamping CA R41`;
+- timestamp thumbprint:
+  `E97818A928DA150A9FE1BF9CCC7AABB9A00EEEAC`.
+
+Result:
+
+**The dynamically generated 7478 WAPTAgent published by the server is
+byte-identical to the independently downloaded validation copy, is signed by
+the definitive Thouet Software Code Signing identity, chains to the installed
+Thouet Software Signing Root CA, reports Authenticode `Valid`, and carries the
+expected Sectigo RFC3161 timestamp.**
+
+#### 7478 Windows release-candidate conclusion
+
+The 7478 validation demonstrates the complete intended Windows trust path:
+
+`WAPTSetup 1.8.3.7478`
+-> signed by `Thouet Software Code Signing`
+-> interactive administrator explicitly accepts private Root trust
+-> `Thouet Software Signing Root CA` installed in `LocalMachine\Root`
+-> installed WAPT Console launches successfully
+-> console dynamically generates WAPTAgent
+-> generated agent is Authenticode-signed automatically
+-> generated agent receives Sectigo RFC3161 timestamp
+-> agent is published to Debian server
+-> server/download SHA256 identity is confirmed
+-> downloaded agent reports Authenticode `Valid`.
+
+The Windows Authenticode/bootstrap mechanism is therefore considered validated
+at the 7478 milestone.
+
+Do not reopen this mechanism without contradictory evidence.
+
+The 7468 validation remains historical evidence for the underlying signing,
+timestamping, installation and client/server mechanisms. The 7478 validation
+supersedes it as the current Windows release-candidate proof for Root bootstrap
+behavior.
+
+#### Still pending before consolidated 1.8.3.xxxx freeze
+
+The Windows 7478 signing/bootstrap path itself does not require another redesign.
+
+Remaining consolidation work includes:
+
+1. update/rebuild the Debian `tis-waptsetup` packaging from the committed
+   7478-era source changes;
+
+2. confirm that the server publication contains:
+   - current `waptsetup-tis.exe`;
+   - current `waptdeploy.exe` where applicable;
+   - `Thouet-Software-Signing-Root-CA.cer`;
+
+3. validate the deployed server homepage:
+   - WAPTSetup download;
+   - public Root CA download;
+   - displayed Root SHA256;
+   - wording describing the interactive trust bootstrap;
+
+4. perform focused server/package regression validation after deployment;
+
+5. complete the PKI documentation/tooling consolidation already identified in
+   §47.14;
+
+6. complete remaining release documentation and organization-specific naming
+   cleanup;
+
+7. record final versions, hashes and Git lineage;
+
+8. update this checkpoint and freeze/tag the consolidated autonomous release as
+   `1.8.3.xxxx`;
+
+9. only after `1.8.3.xxxx` is frozen, begin Debian 11 modernization.
+
+The historical WAPT package-signing certificate migration remains deferred to
+the definitive SCRAB replacement phase.
+
+#### Exact next action
+
+Do not rebuild the Windows product again.
+
+First commit this checkpoint update so the complete 7478 proof and explicit
+Root-trust design are preserved.
+
+Then move to the Debian 10 server/package side.
+
+Rebuild the Windows `tis-waptsetup` Debian package from the current committed
+source and deploy it through the existing validated Debian 10 packaging
+workflow.
+
+Verify specifically that the resulting server publication exposes:
+
+- the current signed WAPTSetup;
+- `Thouet-Software-Signing-Root-CA.cer`;
+- the correct Root SHA256 metadata;
+- the updated homepage guidance.
+
+Perform only focused regression validation of those server-side changes.
+
+Do not reopen the validated Windows 7478 Authenticode, Root bootstrap or
+dynamic-agent mechanisms unless contradictory evidence appears.
+
+
+### 47.16 Debian 10 consolidation, DR and homepage validation (7480-7487)
+
+The post-7478 Debian 10 consolidation work is now validated.
+
+Git lineage:
+
+- `7479` - `a8aef553f` - `Document validated Windows 1.8.3.7478 trust bootstrap`;
+- `7480` - `297a72424` - `Preserve signing Root CA during WAPT DR restore`;
+- `7481` - `d80d1c122` - `Refresh WAPT server homepage and French translations`;
+- `7482` - `05c60ccc5` - `Fix homepage language switch and deployment guidance`;
+- `7483` - `3440d485a` - `Fix homepage language persistence and attribution`;
+- `7484` - `0e30c59e5` - `Fix homepage language redirect`;
+- `7485` - `a4b869ad0` - `Preserve HTTPS on homepage language switch`;
+- `7486` - `666af59e0` - `Keep language redirect relative under HTTPS`;
+- `7487` - `26405ec63` - `Document signing Root CA preservation in WAPT DR`.
+
+Debian 10 packaging/server validation:
+
+- the 1.8.3.7480 Debian server/setup packaging path was rebuilt and validated;
+- the current signed Windows setup/deployment artifacts and public
+  `Thouet-Software-Signing-Root-CA.cer` are integrated into the server
+  publication path;
+- the public signing Root CA metadata and SHA256 publication path were
+  validated;
+- the Windows executables remain at the validated 1.8.3.7478 milestone;
+  server-only changes do not require another Windows product rebuild.
+
+DR consolidation:
+
+- Restore V1.0.2 preserves the target `waptsetup-tis.exe`, `waptdeploy.exe`
+  and `Thouet-Software-Signing-Root-CA.cer` during historical repository
+  restoration;
+- their target SHA256 values are checked before and after repository restore;
+- commit `297a72424` contains the DR implementation;
+- `WAPT_DR_DEBIAN10.md` was aligned with this behavior by commit `26405ec63`;
+- the DR Root-preservation code and documentation are considered closed unless
+  contradictory evidence appears.
+
+Homepage consolidation:
+
+- the refreshed English/French homepage and deployment guidance were developed
+  through commits 7481-7486;
+- the historical Flask 1.1.1 / Werkzeug 0.16.0 stack autocorrected relative
+  redirect locations into absolute HTTP locations;
+- the final 7486 implementation disables location-header autocorrection for
+  the language redirect and preserves a relative `/` Location;
+- live HTTP validation confirmed `Location: /` and a session cookie with
+  `Path=/`;
+- final browser validation confirmed FR/EN switching while remaining on HTTPS,
+  return to the root URL, correct translated content, and working WAPTSetup and
+  WAPTDeploy downloads.
+
+The homepage is therefore frozen at the 7486 server milestone and must not be
+reopened without contradictory evidence.
+
+Current source HEAD after the DR documentation update is `26405ec63`, Git
+revision count `7487`.
+
+The remaining work is release consolidation/documentation. Do not begin Debian
+11 modernization until the consolidated `1.8.3.xxxx` baseline has been frozen.
+
+### 47.17 PKI renewal tooling and operational documentation (7488-7490)
+
+The final Windows Authenticode PKI consolidation work is complete.
+
+Git lineage:
+
+- `7488` - `5a85b1abb` - `Document consolidated WAPT 1.8.3 validation state`;
+- `7489` - `159d23196` - `Add Code Signing certificate renewal`;
+- `7490` - `e73071abb` - `Document Windows signing PKI operations`.
+
+PKI renewal tooling:
+
+- `tools/create-windows-signing-pki.ps1` now supports explicit
+  `Create` and `RenewCodeSigning` actions;
+- `Create` retains the original new-PKI behavior;
+- `RenewCodeSigning` keeps the existing long-lived Root CA and issues a new
+  annual RSA 3072 / SHA-256 Code Signing certificate;
+- the Root CA PFX is imported temporarily into `CurrentUser\My` without making
+  its private key exportable;
+- the imported Root identity is checked against the controlled public Root CA
+  certificate before renewal;
+- the current Code Signing certificate issuer is checked against the Root
+  subject;
+- new certificate material is staged before promotion;
+- the previous Code Signing generation is retained as N-1 using
+  `archive\previous.cer` and `archive\previous.pfx`;
+- retention is deliberately limited to current N plus previous N-1;
+- temporary certificates and `.new` files are removed after the operation.
+
+The renewal workflow was validated using a disposable PKI, including multiple
+successive renewals. The tests confirmed Root CA continuity, N/N-1 rotation and
+successful renewal while the temporarily imported Root private key was
+non-exportable.
+
+No production Root CA renewal was performed during these tests.
+
+Operational PKI documentation is now provided by:
+
+`WAPT_WINDOWS_SIGNING_PKI.md`
+
+It documents:
+
+- the current Thouet Software Authenticode hierarchy;
+- strict separation between Authenticode, WAPT package signing and HTTPS;
+- initial PKI creation;
+- normal Windows build signing;
+- annual Code Signing renewal;
+- N/N-1 retention;
+- Root CA offline handling;
+- secure transfer to another authorized build workstation;
+- public Root CA bootstrap and distribution;
+- DR considerations;
+- validation and security rules;
+- future generic/BYO-PKI considerations.
+
+The Root CA private PFX remains offline-only and is never part of Git, the
+normal build kit, WAPT distribution artifacts or the WAPT server DR backup.
+
+Current source HEAD after PKI documentation is `e73071abb`, Git revision count
+`7490`.
+
+The PKI tooling and operational documentation are now considered complete for
+the consolidated 1.8.3.xxxx baseline unless contradictory evidence appears.
+
+The next phase is final release consolidation and freeze/tag. Do not begin
+Debian 11 modernization before that baseline is frozen.
+
+### 47.18 Historical resume state at revision 7492 (superseded)
+
+The following resume text is preserved as historical evidence. Its HEAD,
+artifact versions and next-action instructions are superseded by sections
+47.19 and 48 below; they are not the current execution plan.
+
+Gipity, resume the WAPT project from the attached checkpoint.
+Treat `WAPT_CHECKPOINT.md` as the authoritative technical state.
+Do not repeat already validated investigations unless a contradiction appears.
+
+Current development branch:
+
+`release/1.8.3`
+
+Current source HEAD:
+
+`534cc2129` - `Add GitPython to controlled Python 2 build runtimes`
+
+Git revision count:
+
+`7492`
+
+The authoritative Windows executable milestone remains:
+
+`WAPT Community 1.8.3.7478`
+
+Do not rebuild the Windows product merely because later server/documentation
+commits increased the Git revision count.
+
+Windows 7478 Authenticode, interactive Root bootstrap, console launch, dynamic
+WAPTAgent signing, RFC3161 timestamping and server/download identity are
+validated and frozen unless contradictory evidence appears.
+
+The definitive Windows Authenticode hierarchy remains:
+
+    Thouet Software Signing Root CA
+    -> Thouet Software Code Signing
+    -> WAPT Windows executable
+
+This trust mechanism remains separate from WAPT package signing and HTTPS
+server-certificate verification.
+
+Debian 10 consolidation is validated through the 7480 packaging/server work.
+The current Windows setup/deployment artifacts and public signing Root CA are
+integrated into the server publication path.
+
+DR Root CA preservation is implemented by `297a72424`. Restore V1.0.2
+preserves the target setup, deploy executable and public Authenticode Root CA
+during historical repository restoration and verifies their SHA256 values.
+The corresponding DR documentation is updated by `26405ec63`.
+
+The refreshed bilingual server homepage is validated and frozen at commit
+`666af59e0`, revision count `7486`. Final browser validation confirmed HTTPS
+FR/EN switching, return to `/`, correct translated content, and working
+WAPTSetup/WAPTDeploy downloads.
+
+Do not reopen the homepage, Windows 7478 signing/bootstrap path or DR Root
+preservation work without contradictory evidence.
+
+The historical WAPT package-signing certificate migration remains deferred to
+the definitive SCRAB replacement phase.
+
+Windows Authenticode PKI renewal tooling is implemented and validated by
+`159d23196`, revision count `7489`.
+
+Operational PKI procedures are documented in `WAPT_WINDOWS_SIGNING_PKI.md` by
+`e73071abb`, revision count `7490`.
+
+The PKI renewal tooling and documentation are frozen unless contradictory
+evidence appears.
+
+The remaining Debian package build-time dependency on the Wapster system
+Python 2.7.16 has been removed before the consolidated release freeze.
+
+Commit `534cc2129`, revision count `7492`, adds the pinned GitPython dependency
+chain required by the Debian package builders to both controlled Python 2.7.18
+runtime builders:
+
+    GitPython==2.1.15
+    gitdb2==2.0.6
+    smmap2==3.0.1
+    smmap==3.0.5
+
+These versions match the previously validated Debian 12 controlled runtime.
+No change was made to `createdeb.py` or `requirements-server.txt`; GitPython
+remains a build-time dependency rather than a WAPT server runtime dependency.
+
+On Debian 10 Wapster, both package builders were then successfully executed
+with `build/python2-runtime-server-buster/bin/python`, confirmed as Python
+2.7.18 with GitPython 2.1.15.
+
+Validated packages:
+
+    tis-waptsetup-windows-1.8.3.7492-534cc212.deb
+    tis-waptserver-1.8.3.7492-534cc212-debian-10-amd64.deb
+
+Package metadata confirms that neither package depends on the Debian system
+Python package. The server package dependencies remain nginx, dialog,
+cabextract, PostgreSQL, postgresql-contrib and sudo.
+
+The Wapster system Python 2.7.16 is therefore no longer required by the
+validated Debian package build path.
+
+Immediate next work:
+
+- record any final release metadata still required;
+- review the consolidated 1.8.3.xxxx baseline;
+- freeze and tag the consolidated 1.8.3.xxxx release;
+- only after that freeze, begin the next modernization phase.
+
+Do not begin Debian 11 modernization before the consolidated 1.8.3.xxxx
+baseline is frozen.
+
+Keep answers concise and proceed one validated step at a time.
+
+### 47.19 Frozen baseline and paired Buster migration validation (7493-7494)
+
+Validated on 2026-09-29 (manual procedure) and 2026-09-30 (migration script).
+
+#### Source lineage and artifact provenance
+
+- Historical frozen baseline: tag v1.8.3.7493, commit
+  98e16ad6000bd025a1f40a5c45b8ff60186240ee,
+  "Document autonomous Debian package build", revision count 7493.
+- Paired migration implementation: commit
+  85a5bee5550f5ab4763ee3e7c0dbcc128b08ca81,
+  "Prepare Buster migration for paired 1.8.3 packages", revision count 7494.
+- The migration script takes a separate release.manifest and validates both
+  tis-waptserver and tis-waptsetup. Historical 7398-specific script logic was
+  removed; its earlier validation remains historical documentation.
+- Debian 10 retains the tis- package names.
+- This documentation/promotion change sets SCRIPT_VERSION to 1.1. The actual
+  migration was tested with 1.1-rc1; the only shell-script change for promotion
+  is the version declaration. The backup format remains version 1.
+- Documentation and script-promotion commits do not rebuild or relabel the
+  validated 7494 binaries. Their source provenance remains commit 85a5bee5.
+- The historical v1.8.3.7493 tag remains unchanged. The public release is
+  pending; no new release tag or GitHub publication is recorded here.
+
+#### Rebuilt Windows product and Debian packages
+
+VM106 rebuilt the signed Windows product from source revision 7494 using the
+controlled C:\wapt-runtime-1.8.3 runtime and isolated build worktree.
+The output directory was C:\wapt-product-1.8.3-7494.
+WAPTSetup and WAPTDeploy signatures were Valid on the signing workstation,
+with signer CN=Thouet Software Code Signing.
+
+Wapster built both Debian packages with the controlled Python 2.7.18 runtime
+build/python2-runtime-server-buster/bin/python. The Windows payload hashes
+matched after transfer and after extraction from the setup Debian package.
+The server package does not contain /opt/wapt/conf/waptserver.ini.
+
+Validated artifacts and SHA256 values:
+
+- tis-waptserver-1.8.3.7494-85a5bee5-debian-10-amd64.deb
+  c2222beeabef1b0858a38f3f600e9ff815be3a0200cc128d5356300279908c47
+- tis-waptsetup-windows-1.8.3.7494-85a5bee5.deb
+  0c059501866d30fb61e71f76dfe7c436db16796321d1c7b8cd018456371b2785
+- waptsetup-tis.exe (Windows build output: waptsetup\waptsetup.exe)
+  2a68c508854dc156e0e6b816f8aad3fc05471289bdd6b23d7ba5e2ac59a2ccde
+- waptdeploy.exe
+  adb887faedb94135ee8b832aabdf8ac4b5bce0345a60e0067df3314dd60b1c0a
+- Thouet-Software-Signing-Root-CA.cer
+  5bb7881d601856f1ee55c7a7b88e988751751779dee1ab08d21dd319b1690e7a
+
+The external release.manifest records target build 7494, both package versions,
+architectures and SHA256 values, plus the three published Windows/Root hashes.
+The server package version is 1.8.3.7494-85a5bee5-debian-10-amd64 (amd64).
+The setup package version is 1.8.3.7494 (all).
+
+#### Authentic historical source and isolated test network
+
+The test target is scrab-clone, an isolated clone of the historical SCRAB
+server; after rollback its guest hostname is scrab. This is not the production
+server. It runs Debian 10.13 with:
+
+- tis-waptserver 1.8.2.7393-75a5de09-debian-10-amd64;
+- tis-waptsetup 1.8.2.7393;
+- WAPT database on PostgreSQL 9.6/main, port 5432;
+- separate PostgreSQL 11/main cluster on port 5433;
+- initial database marker "1.8.2.1";
+- historical WAPT package prefix 0790007d.
+
+scrab-clone uses 10.99.99.2/24 on vmbr999 without a default route.
+VM108 uses 10.99.99.3 on the same isolated network. Its hosts file maps
+scrab.genevoix-signoret-vinci.fr.lan to 10.99.99.2.
+The clone TLS certificate CN is scrab.genevoix-signoret-vinci.fr.lan.
+
+Initial /opt/wapt/conf/waptserver.ini SHA256:
+9d8091aa2927176517fe7b8ce4f916fa034fc10bc8108556eb13188b4d745acd
+
+The six baseline counts were unchanged immediately after each migration:
+
+    hostgroups=3623
+    hostpackagesstatus=25099
+    hosts=675
+    hostsoftwares=105247
+    packages=1056
+    waptusers=1
+
+The historical repository contained 847 files, approximately 13.25 GB.
+The full DR backup passed, including repository copy and SHA256 validation:
+
+    /var/www/wapt-backups/wapt-dr-scrab-20260916-100106.tar
+    SHA256 99540a3dd201ba63ef43a537c78b69cae4e4ddb2d53da10a926f7387be1daad7
+
+Its September 16 filename reflects the stale guest clock restored from the
+snapshot; it was created during the September 29 validation session.
+The RTC was checked and the guest clock corrected using
+hwclock --hctosys --utc --noadjfile. Snapshot selection and clock correction
+were repeated before the September 30 script test.
+
+#### Scenario 1: manual paired package upgrade - PASS
+
+The APT simulation planned only the two WAPT package upgrades, with no package
+removal or new dependency installation. A pre-upgrade snapshot was taken.
+Both local Debian packages were installed together with dpkg -i; exit code 0.
+
+Post-upgrade checks confirmed:
+
+- both target packages installed and configured;
+- waptserver.ini SHA256 unchanged;
+- PostgreSQL, nginx, waptserver and wapttasks active;
+- database marker migrated to "1.8.3.0" and all six counts unchanged;
+- all three published Windows/Root hashes matched the release manifest;
+- HTTPS localhost returned HTTP 200;
+- no waptserver/wapttasks error entries in the inspected journal window;
+- restarting waptserver/wapttasks preserved active state and schema marker.
+
+postconf.sh was not run for this existing configured server. The package's
+generic postconfiguration message is not evidence that this validated upgrade
+requires reconfiguration.
+
+#### VM108 console, agent generation and waptupgrade - PASS
+
+The published WAPTSetup download hash matched the built artifact.
+Before the internal Root CA was imported, Windows reported an untrusted
+certificate chain while identifying CN=Thouet Software Code Signing.
+After verifying the public Root file SHA256 and importing it into
+LocalMachine\Root, the downloaded setup signature became Valid.
+The installer's separate Root-consent dialog still appeared as designed.
+
+WAPTSetup was installed over VM108's existing client, with static URLs for the
+isolated clone. Installed waptconsole.exe and wapt-get.exe both report
+1.8.3.7494; WAPTService is Running. The global configuration uses:
+
+    repo_url=https://scrab.genevoix-signoret-vinci.fr.lan/wapt
+    wapt_server=https://scrab.genevoix-signoret-vinci.fr.lan/
+
+The separate wapt-templates section still uses https://store.wapt.fr/wapt;
+it is not the global private repository URL.
+
+Max transferred the current historical WAPT package-signing certificate/key
+to VM108 and configured prefix 0790007d. No new package-signing identity was
+created. This identity is separate from the Thouet Authenticode PKI.
+
+The 7494 console built and published waptagent.exe 1.8.3.7494 on the clone.
+The homepage then displayed agent/setup/deploy 1.8.3.7494 and DB OK (1.8.3.0),
+and its WAPTDeploy command updated the agent hash and --minversion to 7494.
+
+0790007d-waptupgrade 1.8.3.7494-17 was assigned to VM108 and installation was
+forced through WAPT. The console closed during installation. On September 30,
+wapt-get list confirmed the upgrade package OK (installed September 29 18:52)
+and host package 720D8BC9-F6D1-42C7-B881-6B2A815B75EB version 1 OK (18:53).
+Both local executable versions remained 1.8.3.7494.
+
+Limit: WAPTSetup had already put VM108's executables in 7494 before this
+waptupgrade execution. This validates generated-package installation, not a
+fresh 7393-to-7494 binary transition specifically through waptupgrade.
+Earlier authentic historical-client migration proofs remain authoritative.
+
+Subsequent September 30 inspection captured the regenerated agent:
+1.8.3.7494, 26,804,106 bytes, SHA256
+50d4bb766e4b2c1932762a23332efc0adba972b515b6fedca60f52e15971bd3b.
+Get-AuthenticodeSignature reported NotSigned with the historical WAPT signing
+identity. Max explicitly accepted this as documented site-admin behavior,
+not a release blocker or a signing regression. Each administrator generates
+and publishes their own agent; a historical CRT/PEM pair alone does not
+provide the Authenticode signing material required by the legacy build path.
+An unsigned executable and a signed executable with an untrusted chain are
+different states. Do not reopen the frozen 7478 signing proofs.
+HTTPS server-certificate verification was unchecked on the test console.
+This remains a separate site-configuration consideration, not a claimed PASS
+or an additional prerequisite for the validated server migration release.
+
+#### Scenario 2: scripted paired package migration - PASS
+
+On September 30, scrab-clone was restored to the correct pre-manual-upgrade
+snapshot with both source packages in 7393 and release files present.
+VM108 was retained in 7494 and its WAPTService stopped during the server test.
+
+The commit-7494 migration script, version 1.1-rc1, passed bash -n and:
+
+    precheck
+    check-package release.manifest server.deb setup.deb
+    backup release.manifest
+
+Database/configuration backup passed, including pg_restore listing, archive
+validation and checksums. This migration backup does not copy the repository
+and does not replace the full DR backup:
+
+    /var/www/wapt-backups/migration-7393-7494-20260930-090920
+
+A further snapshot was taken before the upgrade.
+The upgrade command finished with POST-UPGRADE RESULT: PASS and
+UPGRADE RESULT: PASS (7393 -> 7494).
+The checks confirmed both installed package versions, public Root/setup/deploy
+hashes, configuration preservation, active services, schema migration
+"1.8.2.1" -> "1.8.3.0", and all six unchanged baseline counts.
+
+After restarting WAPTService on VM108, the console accessed the historical
+inventory and VM108 was reachable, last seen September 30 09:19.
+The two packages installed on VM108 the previous evening appeared again with
+their original install dates. VM108 retained its local installed-package state
+and reported it back to the rolled-back/migrated server; this does not restore
+lost server repository artifacts or server-side package assignments.
+
+The migration is validated for this authentic Debian 10/7393 source and the
+paired 7494 artifacts. Neither Debian 11 nor other source versions are claimed
+validated by this test. Both manual and scripted server upgrade scenarios PASS.
+
+### 47.20 Debian 10 pilot release publication — September 30, 2026
+
+The paired 7494 pilot release was published by Max on GitHub:
+
+https://github.com/maxcarpone/WAPT/releases/tag/v1.8.3.7494
+
+Annotated tag v1.8.3.7494 points to the binary source commit
+85a5bee5550f5ab4763ee3e7c0dbcc128b08ca81. Tag creation and push were confirmed
+by terminal output. The historical v1.8.3.7493 tag remains unchanged.
+The publication followed the pre-release/draft workflow for colleague testing.
+Max confirmed uploads and supplied the published release URL. The assistant's
+web reader returned DisabledError; independent inspection of the published
+assets and download checksum verification have NOT yet been completed.
+
+Post-build Git lineage:
+
+- e2b65b26c2af18f71bb4ebf1f8af2fa52058f608: promote migration 1.1 and record tests;
+- a54e8ac31981b3c9071a3e26505e997a0bb27afb: English pilot guide and generic DR procedures;
+- a6a9da7362cd85000c58a52e48d190546a4ceabb: finalize the pilot guide for the published tag.
+
+The last confirmed source HEAD before this checkpoint update is a6a9da73,
+branch release/1.8.3, pushed to origin. VM106 was synchronized through
+ a54e8ac3; it still needs the later documentation/checkpoint commits.
+No binary rebuild is required for these documentation commits.
+The tag's autogenerated source archives reflect 85a5bee5, while attached
+migration 1.1 and documentation include later changes. The guide explicitly
+instructs users to use the attached release files for its upgrade procedures.
+
+Release staging directory on the Debian build host:
+
+    /git/wapt-release-7494
+
+Nine payload files plus SHA256SUMS:
+
+- tis-waptserver-1.8.3.7494-85a5bee5-debian-10-amd64.deb;
+- tis-waptsetup-windows-1.8.3.7494-85a5bee5.deb;
+- waptserver-migrate-buster.sh (1.1);
+- release.manifest;
+- waptserver-backup.sh (1.0);
+- waptserver-restore.sh (1.0.2);
+- WAPT_DR_DEBIAN10.md;
+- Thouet-Software-Signing-Root-CA.cer;
+- WAPT_BUSTER_RELEASE.md.
+
+All nine staged files passed sha256sum -c SHA256SUMS after final guide changes.
+This proves the staging set, not the integrity of subsequent GitHub downloads.
+No site-specific agent, private key, password or DR archive belongs in assets.
+
+Public docs use English, generic host roles and sudo for administrative
+commands. DR archive storage remains under /var/www/wapt-backups, with actual
+filesystem/mount and free-space checks. The clone has a separate 59 GB
+/var/www filesystem; placing full DR archives under /var/tmp on its 11 GB root
+filesystem would be inappropriate. No backup script default was changed.
+
+Last Debian build-host status: tracked tree clean before this checkpoint edit;
+untracked SHA256SUMS and the three known setup build outputs. Do not add these
+incidentally to the checkpoint commit. A later tag cleanup may be considered
+after an inventory; no tag deletion was authorized or performed.
+
+### 47.21 Post-publication verification — September 30, 2026
+
+The published GitHub pre-release v1.8.3.7494 was independently verified after
+publication.
+
+All ten published release assets were downloaded from GitHub into the separate
+directory /tmp/wapt-github-7494. The downloaded set contained the nine payload
+files documented in section 47.20 plus SHA256SUMS.
+
+Running:
+
+    sha256sum -c SHA256SUMS
+
+against the downloaded files completed successfully for all nine payload files.
+This closes the verification gap recorded in section 47.20: integrity has now
+been confirmed on the actual files downloaded from the published GitHub
+release, not only on the pre-publication staging directory.
+
+VM106 was also synchronized after publication. Its release/1.8.3 working tree
+was clean at a54e8ac31 before synchronization. A git pull --ff-only completed
+as a clean fast-forward from a54e8ac31 to 1211f3204, synchronizing
+WAPT_BUSTER_RELEASE.md and WAPT_CHECKPOINT.md without merge or conflict.
+
+Post-publication verification status:
+
+- GitHub release asset download: PASS;
+- downloaded asset count: 10 (nine payload files plus SHA256SUMS);
+- downloaded SHA256 verification: PASS;
+- VM106 branch: release/1.8.3;
+- VM106 synchronization to 1211f3204: PASS;
+- merge/conflict during synchronization: none.
+
+The Debian 10 / Buster 7494 pilot publication and post-publication integrity
+verification are therefore complete. Colleague pilot feedback remains the next
+operational Buster activity. Debian 11 modernization remains a separate future
+project phase.
+
+### 47.22 PADIT public identity and Windows branding consolidation - October 2, 2026
+
+The public project identity has now moved from WAPT to PADIT.
+
+Public product name:
+
+    PADIT - Pack And Deploy
+
+GitHub repository:
+
+    https://github.com/maxcarpone/PADIT
+
+The repository was renamed from maxcarpone/WAPT to maxcarpone/PADIT.
+The default branch is now release/1.8.3.
+
+The retained public branches are intentionally limited to:
+
+    branch-1.8.2
+    release/1.8.3
+
+Historical validated tags were reviewed and retained because they represent
+meaningful reconstruction, migration, DR and release milestones. They were not
+deleted merely for repository cleanup.
+
+Public project documentation was aligned with the new identity:
+
+- 93fe7fc0c72062c6e53962055c4b07795fc4ad9c
+  Update README for PADIT project identity
+
+- e49878a3f281b1da048fac0a39147b7e65e021ba
+  Update license preamble for PADIT identity
+
+README.md now presents PADIT as a community-maintained deployment and lifecycle
+management solution derived from WAPT Community 1.8.2. COPYING retains the GPL
+license and historical Tranquil IT attribution while identifying PADIT as the
+current project.
+
+The Windows PADIT visual-branding work was completed and validated before the
+security/runtime work described below.
+
+Authoritative visually validated Windows branding milestone:
+
+    PADIT 1.8.3.7517
+
+Final setup proof for that branding milestone:
+
+    FileVersion:     1.8.3.7517
+    ProductVersion:  1.8.3.7517
+    ProductName:     PADITSetup
+    Size:            27268168 bytes
+    SHA256:          BABEAF5BD7CE994A8FB572F7260A906B5217DDC5E456F71526957CCBBD251787
+
+Visual validation covered:
+
+- PADIT Setup;
+- PADIT Console and About;
+- PADIT Tray;
+- PADIT Self Service;
+- waptexit shutdown/restart UI;
+- Windows executable metadata;
+- Authenticode setup signing;
+- normal functional behavior.
+
+That visual branding milestone is frozen. Do not reopen it without a concrete
+regression or contradictory evidence.
+
+Historical and compatibility-sensitive technical identifiers remain WAPT where
+required, including executable names, service names, configuration paths,
+protocol/API names and other identifiers whose renaming could break
+compatibility. Visible product branding may use PADIT independently from those
+technical identifiers.
+
+
+### 47.23 Windows build/runtime separation and GitPython remediation - October 2, 2026
+
+The Windows build architecture was changed so that build-time Python
+dependencies are no longer forced into the distributed PADIT runtime.
+
+Commit:
+
+    6040550e1119d364480a506041af2b4aee938cbc
+    Separate Windows build Python from product runtime
+
+tools/01-prepare-windows-build-environment.ps1 now creates and validates a
+dedicated controlled Python 2 build environment:
+
+    C:\wapt-build-python2
+
+Its controlled GitPython dependency chain is:
+
+    GitPython 2.1.15
+    gitdb2    2.0.6
+    smmap2    3.0.1
+    smmap     3.0.5
+
+The dedicated build interpreter is:
+
+    C:\wapt-build-python2\Scripts\python.exe
+
+tools/03-build-windows-product.ps1 now uses this dedicated build Python for:
+
+- lazbuild.py;
+- create_version_full.py.
+
+It no longer uses the distributed product runtime as the Python interpreter for
+those build operations.
+
+A complete signed Windows build validated this separation before runtime
+cleanup.
+
+The distributed Windows runtime was then rebuilt after removing the GitPython
+dependency chain.
+
+Commit:
+
+    1f98af81e70b7b4800cf2f2acdb7dbb48cd4ef18
+    Remove GitPython from distributed Windows runtime
+
+Removed from requirements-agent.txt:
+
+    gitpython==2.1.14
+    gitdb==0.6.4
+    gitdb2==2.0.6
+
+Removed from the explicit Windows runtime package list:
+
+    smmap==3.0.5
+    smmap2==3.0.1
+
+The rebuilt C:\wapt-runtime-1.8.3 runtime was inspected directly.
+
+No matching GitPython/gitdb/smmap package directory remained under:
+
+    C:\wapt-runtime-1.8.3\Lib\site-packages
+
+pkg_resources validation reported all five distributions absent:
+
+    GitPython False
+    gitdb     False
+    gitdb2    False
+    smmap     False
+    smmap2    False
+
+A complete PADIT Windows product build was then performed using the cleaned
+runtime and the separate controlled build Python.
+
+Authoritative security-integration build proof:
+
+    PADIT Setup 1.8.3.7520
+
+Final setup:
+
+    FileVersion:     1.8.3.7520
+    ProductVersion:  1.8.3.7520
+    ProductName:     PADITSetup
+    Size:            27130176 bytes
+    SHA256:          07FE9F6DC30BA552F62B6DFD18BED9A7806A023AFE7ABE138743405E3D38A46E
+
+Results:
+
+- autonomous Windows runtime rebuild: PASS;
+- GitPython absent from distributed runtime: PASS;
+- dedicated build Python: PASS;
+- Lazarus build using dedicated build Python: PASS;
+- create_version_full.py using dedicated build Python: PASS;
+- unsigned setup build: PASS;
+- Authenticode signing: PASS;
+- final setup validation: PASS;
+- base Windows product tree assembly: PASS.
+
+The human-readable output of the controlled Windows build scripts was then
+aligned with the PADIT identity.
+
+Commit:
+
+    42a01ed73fa7e701ab0a27974c2d508ed5de5a28
+    Update Windows build messages for PADIT branding
+
+Technical WAPT compatibility identifiers were deliberately left unchanged.
+
+Important security limitation:
+
+GitPython 2.1.15 is not considered a patched version for all modern GitPython
+security advisories. It is retained only inside the isolated legacy Python 2
+build environment because the current build scripts still depend on it.
+
+The security improvement validated here is therefore:
+
+    GitPython removed from the distributed PADIT Windows runtime
+
+not:
+
+    GitPython 2.1.15 is fully vulnerability-free
+
+The remaining build-time GitPython dependency is technical debt to remove when
+the legacy Python 2 build tooling is modernized.
+
+
+### 47.24 GitHub security baseline and deferred server remediation strategy - October 2, 2026
+
+GitHub security facilities were enabled/reviewed for the public PADIT
+repository.
+
+Enabled facilities include:
+
+- Dependency graph;
+- Dependabot alerts;
+- Private vulnerability reporting;
+- Secret Protection.
+
+Dependabot security updates, automated version updates and CodeQL were not
+enabled as part of this bounded security pass.
+
+Secret scanning initially reported one historical private-key alert for:
+
+    lib/site-packages/M2Crypto/PEM/rsa8192.pem
+
+Git history showed that this file came from the historical M2Crypto test
+material and had already been deleted from the current tree. No current tracked
+rsa8192.pem remained and no operational PADIT reference to that test key was
+found.
+
+The alert was therefore classified as historical test credential material, not
+as a current PADIT operational secret.
+
+Dependabot initially reported 169 alerts, including three Critical GitPython
+alerts.
+
+After the Windows GitPython/runtime cleanup was committed and pushed, GitHub
+automatically moved 34 Dependabot alerts to Closed/Fixed, including all three
+Critical alerts.
+
+Example:
+
+    GitPython vulnerable to Remote Code Execution due to improper user input
+    validation #21
+
+GitHub automatically marked that alert Fixed because GitPython was removed from
+requirements-agent.txt.
+
+GitHub does not provide a useful annotation field on these automatically fixed
+alerts after closure, so the remediation rationale is recorded here instead.
+
+The correct interpretation is:
+
+- GitPython is no longer shipped in the distributed PADIT Windows runtime;
+- the associated manifest-based Windows alerts automatically closed;
+- GitPython 2.1.15 remains only in the isolated build environment;
+- that remaining build-time dependency is still legacy technical debt and must
+  not be described as fully patched.
+
+The remaining Dependabot alert set contains substantial overlap between the
+historical agent and server dependency manifests. The two requirements sets
+share many of the same legacy Python packages, so one vulnerable package may
+appear more than once even though the exposure and remediation context differ.
+
+Do not assume an exact duplication percentage without performing an explicit
+manifest-to-alert comparison.
+
+Server-side security remediation policy:
+
+1. Keep the remaining server-related alerts visible as the security inventory.
+
+2. Do not manually dismiss them merely because an operating-system migration is
+   planned.
+
+3. Do not spend the main modernization effort patching the old Debian 10 /
+   Python 2 server dependency set package-by-package before the next server
+   baseline is validated.
+
+4. Begin the server modernization with Debian 11.
+
+5. Continue to Debian 12 and establish a reproducible, functional server
+   baseline there.
+
+6. Once the Debian 12 baseline is validated, inventory the dependencies that
+   are actually installed, imported and distributed by that modernized server.
+
+7. Reconcile that real dependency inventory against the remaining Dependabot
+   alerts and the historical security register.
+
+8. Remediate the vulnerabilities that remain applicable on the modernized
+   baseline and document each closure with technical evidence.
+
+Debian 13 may be evaluated as a later modernization target, but it is not a
+prerequisite for performing the security-remediation pass on a validated
+Debian 12 baseline.
+
+This avoids two opposite errors:
+
+- spending large effort securing dependencies that disappear naturally during
+  the server modernization;
+- incorrectly declaring vulnerabilities fixed merely because a newer operating
+  system has been introduced.
+
+Each future server vulnerability must therefore be closed from evidence of the
+actual modernized runtime, not from assumption.
+
+
+### 47.25 Debian 11 / Bullseye controlled Python 2 runtime - October 2, 2026
+
+The Debian 11 modernization phase was started on the dedicated WaptBull VM.
+
+Validated host baseline:
+
+    Host:       WaptBull
+    Debian:     11.11 Bullseye
+    Kernel:     5.10.0-30-amd64
+    OpenSSL:    1.1.1w
+    Git:        2.30.2
+    PostgreSQL: 13
+    nginx:      1.18.0
+
+The repository is cloned as:
+
+    /git/paditdev
+
+Branch:
+
+    release/1.8.3
+
+A dedicated Bullseye Python 2 compatibility runtime builder was added:
+
+    tools/build-python2-runtime-bullseye.sh
+
+Unlike the historical Buster builder, Bullseye does not require the Buster
+multiarch setup.py workaround.
+
+The runtime output was made repository-relative:
+
+    /git/paditdev/build/python2-runtime-server-bullseye
+
+Relevant commits:
+
+    39c5e06c  Add Debian 11 Python 2 runtime builder
+    1d761fb9  Make Debian 11 runtime builder repository-relative
+
+The controlled runtime successfully builds CPython 2.7.18 on Bullseye and all
+existing WAPT server runtime tests pass, including:
+
+- WAPT server module import;
+- component imports;
+- Socket.IO compatibility;
+- cryptographic certificate/signature validation.
+
+The runtime remains explicitly transitional:
+
+    This is a transitional Python 2 compatibility runtime.
+    Do NOT expose it as the final security architecture.
+
+During the first Debian package build, inspection showed that GitPython and its
+dependency chain were still being copied into the distributed server runtime:
+
+    GitPython 2.1.15
+    gitdb2 2.0.6
+    smmap2 3.0.1
+    smmap 3.0.5
+
+A source audit confirmed that GitPython is not imported by the server runtime
+business code. Its uses were limited to build/package tooling such as:
+
+    waptserver/deb/createdeb.py
+    waptserver/rpm/createrpm.py
+    build_exe.py
+    create_version_full.py
+    lazbuild.py
+
+The Bullseye runtime builder was therefore changed so that GitPython, gitdb and
+smmap are no longer installed into the distributed server runtime.
+
+The Debian package builder was also changed to use the native git executable
+for:
+
+    git rev-parse --short=8 HEAD
+    git rev-list --count HEAD
+
+instead of importing GitPython.
+
+Commit:
+
+    503d2cf3  Separate Debian build dependencies from server runtime
+
+A clean runtime rebuild after this change passed all WAPT runtime tests.
+
+Direct inspection confirmed that the distributed Bullseye runtime contains no:
+
+    GitPython
+    gitdb
+    gitdb2
+    smmap
+    smmap2
+
+
+### 47.26 PADIT Server Debian 11 package and first clean installation - October 2, 2026
+
+The Debian server package builder now selects the controlled Python 2 runtime
+according to the Debian major version:
+
+    Debian 10 -> python2-runtime-server-buster
+    Debian 11 -> python2-runtime-server-bullseye
+    Debian 12 -> python2-runtime-server
+
+The package identity was also updated from the historical TIS public identity
+to PADIT while retaining compatibility-sensitive package names.
+
+Current package metadata:
+
+    Package:     tis-waptserver
+    Maintainer:  PADIT Community <182104444+maxcarpone@users.noreply.github.com>
+    Description: PADIT Server for Windows application deployment and management.
+
+The historical package name `tis-waptserver` is intentionally retained for
+compatibility.
+
+Relevant source commit:
+
+    3d63a2b0  Update Debian package identity for PADIT
+
+Validated Bullseye server package:
+
+    tis-waptserver-1.8.3.7527-3d63a2b0-debian-11-amd64.deb
+
+SHA256:
+
+    48105791c048f6a592bbc39c449f97538b74a3e8afb835aab3b9dab8081eeb85
+
+The package was installed on a clean/snapshotted Debian 11 WaptBull VM.
+
+Installed system components include:
+
+    PostgreSQL 13
+    nginx 1.18.0
+    tis-waptserver 1.8.3.7527-3d63a2b0-debian-11-amd64
+
+The normal postconfiguration was run using:
+
+    /opt/wapt/waptserver/scripts/postconf.sh
+
+Validated runtime state:
+
+- PostgreSQL cluster 13/main online;
+- PostgreSQL listening on localhost port 5432;
+- waptserver active and listening on localhost port 8080;
+- wapttasks active;
+- nginx active and listening on ports 80 and 443;
+- backend HTTP request to port 8080 returns HTTP 200;
+- nginx HTTPS request returns HTTP 200;
+- /api/v3/hosts returns HTTP 401 without credentials;
+- /api/v3/packages returns HTTP 401 without credentials.
+
+The HTTP 401 responses are expected and confirm that the API routes are active
+and protected by authentication.
+
+Fresh database initialization created the `wapt` PostgreSQL database with 18
+tables, including:
+
+    hosts
+    hostgroups
+    hostpackagesstatus
+    hostsoftwares
+    packages
+    serverattribs
+    waptusers
+    waptuseracls
+
+The `hosts` table was explicitly verified.
+
+At the first startup of a fresh database, waptserver logged:
+
+    Unable to upgrade DB structure, init instead
+
+and a Python 2 UnicodeDecodeError while logging the localized PostgreSQL error:
+
+    relation « hosts » n'existe pas
+
+This did not prevent initialization. The database was subsequently created
+correctly, the services remained active and the HTTP/API validation passed.
+
+Treat this as a Python 2/localized-error logging defect to investigate later,
+not as a failed Bullseye server initialization.
+
+nginx also reports the non-blocking warning:
+
+    ssl_stapling ignored, issuer certificate not found
+
+for the locally generated server certificate.
+
+
+### 47.27 PADIT Windows 7527 rebuild for Bullseye publication - October 2, 2026
+
+Before building the Debian `tis-waptsetup` package, the Windows product was
+rebuilt cleanly on VM106 from the current release/1.8.3 source available at that
+time.
+
+VM106 was synchronized from:
+
+    c36b69171
+
+to:
+
+    3d63a2b01
+
+The controlled Windows product build completed successfully despite several
+non-fatal Lazarus/FPC AccessViolation / EPrivilege messages printed during the
+build.
+
+Final build result:
+
+    [PASS] Unsigned PADIT Community setup built.
+    [PASS] Final PADIT Community setup signed and validated.
+    [PASS] Final PADIT Community setup validated.
+    [PASS] Base Windows product tree assembled.
+
+Validated PADIT Setup:
+
+    FileVersion:    1.8.3.7527
+    ProductVersion: 1.8.3.7527
+    ProductName:    PADITSetup
+    Size:           27130776 bytes
+    SHA256:         CBE113F87B3E82EE9BF175A14895C464D111B69B5CD309E2185B0C8B9130E88C
+
+Validated PADIT Deploy:
+
+    Size:           505296 bytes
+    SHA256:         699E97BFD4646B5662132E68C67A6F4BB3272C1A1119CEDD52822E95C716CB9D
+
+Published signing Root CA:
+
+    Thouet-Software-Signing-Root-CA.cer
+    Size:           1319 bytes
+    SHA256:         5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A
+
+These exact three artifacts were transferred to WaptBull and their SHA256
+values were revalidated before Debian packaging.
+
+
+### 47.28 PADIT Setup Debian package and Bullseye publication - October 2, 2026
+
+The historical `waptsetup/deb/createdeb.py` still depended on GitPython only to
+read the Git hash and revision count.
+
+It was changed to use native git commands instead, matching the server package
+builder cleanup.
+
+Public package identity was also updated:
+
+    Maintainer: PADIT Community <182104444+maxcarpone@users.noreply.github.com>
+
+and the package description now uses PADIT terminology.
+
+The compatibility-sensitive Debian package name remains:
+
+    tis-waptsetup
+
+The historical published executable filename also remains intentionally:
+
+    /var/www/wapt/waptsetup-tis.exe
+
+This filename is retained for compatibility even though the visible product
+identity is PADIT.
+
+Relevant commit:
+
+    c9355052  Update Debian setup packaging for PADIT
+
+Final package built from that commit:
+
+    tis-waptsetup-windows-1.8.3.7528-c9355052.deb
+
+Package metadata:
+
+    Package:      tis-waptsetup
+    Version:      1.8.3.7528
+    Architecture: all
+    Maintainer:   PADIT Community <182104444+maxcarpone@users.noreply.github.com>
+    Description:  PADIT setup executable for Windows
+
+Package SHA256:
+
+    c3c53a40196a89fd6a64e0f3b0d849f1521c74b7508b376193cfec257836fcee
+
+The package contains and publishes:
+
+    /var/www/wapt/waptsetup-tis.exe
+    /var/www/wapt/waptdeploy.exe
+    /var/www/wapt/Thouet-Software-Signing-Root-CA.cer
+
+Post-install publication hashes were verified and exactly match the VM106
+source artifacts:
+
+    waptsetup-tis.exe
+    cbe113f87b3e82ee9bf175a14895c464d111b69b5cd309e2185b0c8b9130e88c
+
+    waptdeploy.exe
+    699e97bfd4646b5662132e68c67a6f4bb3272c1a1119cedd52822e95c716cb9d
+
+    Thouet-Software-Signing-Root-CA.cer
+    5bb7881d601856f1ee55c7a7b88e988751751779dee1ab08d21dd319b1690e7a
+
+The PADIT Server web page now reports:
+
+    PADIT Server: 1.8.3
+    PADIT Agent:  N/A
+    PADIT Setup:  1.8.3.7527
+    PADIT Deploy: 1.8.3.7527
+    Database:      OK (1.8.3.0)
+
+The page also exposes the PADIT publisher certificate information and the
+expected Root CA SHA256.
+
+This validates the Bullseye chain up to:
+
+    server
+        -> database
+        -> nginx/API
+        -> setup publication
+        -> deploy publication
+
+The PADIT Agent remains intentionally N/A because a server-specific
+`waptagent.exe` has not yet been generated and published.
+
+
+## 48. Bullseye validation closure - October 5, 2026
+
+The Debian 11 / Bullseye modernization baseline is now validated.
+
+Current development branch:
+
+    release/1.8.3
+
+Current confirmed source HEAD:
+
+    33123c07
+    Update PADIT GitHub links
+
+Current Git revision count:
+
+    7532
+
+Public repository:
+
+    https://github.com/maxcarpone/PADIT
+
+
+### 48.1 Final validated Bullseye Debian packages
+
+Final PADIT Setup publication package:
+
+    tis-waptsetup-windows-1.8.3.7532-33123c07.deb
+
+Package metadata:
+
+    Package:      tis-waptsetup
+    Version:      1.8.3.7532
+    Architecture: all
+
+SHA256:
+
+    f3cfa003b55446650ce88290c57e46e36e64c5fdacedc4dad250e817394b6573
+
+
+Final PADIT Server package:
+
+    tis-waptserver-1.8.3.7532-33123c07-debian-11-amd64.deb
+
+Package metadata:
+
+    Package:      tis-waptserver
+    Version:      1.8.3.7532-33123c07-debian-11-amd64
+    Architecture: amd64
+
+SHA256:
+
+    61e03c878bb0edd88598a1c36e9e970425255827fc1c1a37bb40c8714a937c5c
+
+
+Both packages were installed successfully on WaptBull.
+
+Validated installed package state:
+
+    tis-waptserver  1.8.3.7532-33123c07-debian-11-amd64
+    tis-waptsetup   1.8.3.7532
+
+
+### 48.2 Bullseye runtime validation
+
+Validated Bullseye runtime state remains:
+
+    PostgreSQL 13          PASS
+    database schema        PASS
+    waptserver             PASS
+    wapttasks              PASS
+    nginx                  PASS
+    backend HTTP 8080      PASS
+    HTTPS 443              PASS
+    /api/v3/hosts routing  PASS
+    /api/v3/packages       PASS
+
+The controlled Debian 11 Python 2 runtime remains:
+
+    /git/paditdev/build/python2-runtime-server-bullseye
+
+It provides Python 2.7.18 and remains the runtime used to build the Bullseye
+server and setup Debian packages.
+
+GitPython, gitdb and smmap are not shipped in the distributed Bullseye server
+runtime.
+
+
+### 48.3 PADIT Server web branding validation
+
+The PADIT Server home page is served successfully over HTTPS.
+
+Validated visible branding includes:
+
+    PADIT - Pack And Deploy
+    PADIT Server
+    PADIT Setup
+    PADIT Deploy
+    PADIT Agent
+
+The server favicon was replaced by the PADIT favicon.
+
+The exact SHA256 was verified at all three levels:
+
+    source:
+    /git/paditdev/arts/padit.ico
+
+    packaged source:
+    /git/paditdev/waptserver/static/img/favicon.ico
+
+    file actually served by nginx:
+    https://localhost/static/img/favicon.ico
+
+SHA256 for all three:
+
+    290b0d0878f3a400e19935c48ff431475972e0b32016611cd46932bc9a2f5403
+
+This validates the favicon from source through package installation to the
+actual HTTP response.
+
+
+### 48.4 GitHub link rebranding
+
+All application-facing links which still referenced:
+
+    https://github.com/maxcarpone/WAPT
+
+were updated to:
+
+    https://github.com/maxcarpone/PADIT
+
+or:
+
+    https://github.com/maxcarpone/PADIT/issues
+
+Affected areas include:
+
+    PADIT Console
+    PADIT Self Service
+    PADIT Server web interface
+    Windows installer metadata
+    Windows installer documentation links
+
+The only remaining occurrences of maxcarpone/WAPT are intentional historical
+references in WAPT_CHECKPOINT.md.
+
+The installed Bullseye server was validated after the update and serves:
+
+    https://github.com/maxcarpone/PADIT
+    https://github.com/maxcarpone/PADIT/issues
+
+
+### 48.5 Windows build state after Bullseye validation
+
+The latest Windows binaries actually rebuilt and cryptographically validated
+are version 1.8.3.7531.
+
+PADIT Setup:
+
+    FileVersion:    1.8.3.7531
+    ProductVersion: 1.8.3.7531
+    ProductName:    PADITSetup
+    Size:           27158712 bytes
+    SHA256:         CC0EE96A94C46D63424764ACDA885F57FE412A9F1D06AEC9FC2B5CF4276A8DCC
+    Authenticode:   Valid
+    Signer:         CN=Thouet Software Code Signing
+
+PADIT Deploy:
+
+    FileVersion:    1.8.3.7531
+    ProductVersion: 1.8.3
+    ProductName:    PADIT Community Edition
+    Size:           505296 bytes
+    SHA256:         40BCA638D10457789D990F4CAE2ADEF200E0F01049DE113F67716A0F27D80B07
+    Authenticode:   Valid
+    Signer:         CN=Thouet Software Code Signing
+
+Revision 7532 contains only the GitHub link updates described above.
+
+Those Windows-side link changes were validated by source inspection and were
+not considered sufficient reason to perform another complete Windows rebuild.
+
+A later Windows build will naturally incorporate them.
+
+
+### 48.6 Windows visible branding validation
+
+The recent PADIT cosmetic fixes were validated on Windows.
+
+Validated tray branding includes:
+
+    Run PADIT Console
+    PADIT service running
+    Update PADIT software on this host
+
+The session package configuration dialog now uses:
+
+    PADIT Updates Manager
+
+The local service mini-site opened by:
+
+    "Afficher les tâches en cours"
+
+was also validated.
+
+Visible PADIT branding includes:
+
+    PADIT Service status
+    PADIT
+    PADIT Status
+    Main PADIT Repository
+    PADIT Server
+
+The local service web logo and favicon are PADIT-branded.
+
+The technical compatibility identifiers intentionally remain unchanged where
+required, including examples such as:
+
+    wapt-get.exe
+    wapt-get.py
+    wapt-get.ini
+    /wapt
+    /wapt-host
+
+Historical Tranquil IT attribution is retained where appropriate.
+
+
+### 48.7 Bullseye milestone status
+
+The Debian 11 / Bullseye modernization phase is considered validated and
+closed as a technical baseline.
+
+Validated chain:
+
+    reproducible Python 2 runtime
+        -> Bullseye server package build
+        -> Bullseye setup package build
+        -> package installation / upgrade
+        -> PostgreSQL
+        -> waptserver
+        -> nginx / HTTPS
+        -> API routing
+        -> Windows artifact publication
+        -> PADIT web branding
+        -> PADIT favicon
+        -> PADIT GitHub links
+
+Do not repeat the closed Bullseye validation unless a concrete regression or
+contradictory result appears.
+
+
+## 49. Debian 12 / Bookworm validation - October 5, 2026
+
+The Debian 12 / Bookworm modernization baseline has now been established and
+validated on the dedicated Waptworm VM.
+
+Development work was performed on:
+
+    debian12-dev
+
+The Bookworm work is based directly on the validated Bullseye baseline.
+
+Current confirmed source HEAD before this checkpoint update:
+
+    50800ba5
+    Reuse PADIT agent status style on download link
+
+Current Git revision count before this checkpoint update:
+
+    7535
+
+
+### 49.1 Bookworm controlled Python 2 runtime
+
+The historical Debian 12 runtime builder was renamed for consistency with the
+Buster and Bullseye naming convention:
+
+    tools/build-python2-runtime-debian12.sh
+
+became:
+
+    tools/build-python2-runtime-bookworm.sh
+
+The controlled runtime output is now:
+
+    /git/paditdev/build/python2-runtime-server-bookworm
+
+The Debian package runtime selection is:
+
+    Debian 10 Buster
+        -> python2-runtime-server-buster
+        -> build-python2-runtime-buster.sh
+
+    Debian 11 Bullseye
+        -> python2-runtime-server-bullseye
+        -> build-python2-runtime-bullseye.sh
+
+    Debian 12 Bookworm
+        -> python2-runtime-server-bookworm
+        -> build-python2-runtime-bookworm.sh
+
+The Bookworm runtime was rebuilt successfully.
+
+Validated runtime:
+
+    Python:   2.7.18
+    OpenSSL:  3.0.22 25 Aug 2026
+    Size:     222M
+
+Python binary SHA256:
+
+    790df7d9cac5f535be278c86da8b7e1eb3607322c1688cf9a842b38e8ed90876
+
+The runtime builder completed with:
+
+    BUILD SUCCESS
+    All WAPT runtime tests passed.
+
+Validated runtime tests include:
+
+    WAPT server import             PASS
+    WAPT server components         PASS
+    Socket.IO compatibility        PASS
+    cryptographic functional test  PASS
+
+GitPython and its dependency chain are no longer installed into the
+distributed Bookworm runtime.
+
+Direct inspection confirmed the absence of:
+
+    GitPython
+    gitdb
+    gitdb2
+    smmap
+    smmap2
+
+This matches the separation already validated on Bullseye.
+
+The Python 2 runtime remains explicitly transitional and must not be treated as
+the final PADIT security architecture.
+
+
+### 49.2 Bookworm PostgreSQL baseline
+
+Waptworm uses:
+
+    PostgreSQL 15.19
+    Debian package: 15.19-0+deb12u1
+    Cluster:        15/main
+    Port:           5432
+    Status:         online
+    Architecture:   amd64
+
+The PostgreSQL server version was confirmed directly using SQL.
+
+This replaces the PostgreSQL 13 baseline used on Bullseye.
+
+
+### 49.3 Bookworm server package build
+
+The first validated Bookworm server package was:
+
+    tis-waptserver-1.8.3.7534-19787fcd-debian-12-amd64.deb
+
+SHA256:
+
+    09474997b477b6c39e4420671a67a688c34b0f0e4e9f5570cd09b6b20357a356
+
+Package metadata:
+
+    Package:      tis-waptserver
+    Version:      1.8.3.7534-19787fcd-debian-12-amd64
+    Architecture: amd64
+
+The packaged Python runtime was extracted and independently checked.
+
+Validated packaged runtime:
+
+    Python 2.7.18
+    OpenSSL 3.0.22
+
+No GitPython, gitdb or smmap package was present in the distributed runtime.
+
+
+### 49.4 Bookworm runtime installation validation
+
+The Bookworm server package was installed successfully on Waptworm.
+
+Validated service state:
+
+    PostgreSQL             PASS
+    waptserver             PASS
+    wapttasks              PASS
+    nginx                  PASS
+    backend HTTP 8080      PASS
+    HTTPS 443              PASS
+    /api/v3/hosts          PASS (401 unauthenticated)
+    /api/v3/packages       PASS (401 unauthenticated)
+
+Validated listening endpoints:
+
+    PostgreSQL     127.0.0.1:5432
+    waptserver     127.0.0.1:8080
+    nginx          0.0.0.0:443
+
+Validated HTTP responses:
+
+    HTTPS home page        200
+    backend HTTP 8080      200
+    /api/v3/hosts          401
+    /api/v3/packages       401
+
+The HTTP 401 responses are expected and confirm that the API routes are active
+and protected by authentication.
+
+Passlib emits non-blocking digest-name warnings with the Bookworm/OpenSSL 3
+runtime.
+
+nginx also emits the known non-blocking ssl_stapling warning for the locally
+generated server certificate.
+
+
+### 49.5 Bookworm setup publication package
+
+The validated Windows artifacts from the signed Windows 7531 build were
+transferred to Waptworm.
+
+PADIT Setup:
+
+    Size:   27158712 bytes
+    SHA256: cc0ee96a94c46d63424764acda885f57fe412a9f1d06aec9fc2b5cf4276a8dcc
+
+PADIT Deploy:
+
+    Size:   505296 bytes
+    SHA256: 40bca638d10457789d990f4cae2adef200e0f01049de113f67716a0f27d80b07
+
+Signing Root CA:
+
+    Thouet-Software-Signing-Root-CA.cer
+    SHA256: 5bb7881d601856f1ee55c7a7b88e988751751779dee1ab08d21dd319b1690e7a
+
+The Bookworm setup publication package was built as:
+
+    tis-waptsetup-windows-1.8.3.7534-19787fcd.deb
+
+SHA256:
+
+    009782b934dbcd805654e196138c4ab188d7b290255b1159aba3c2f493109022
+
+Package metadata:
+
+    Package:      tis-waptsetup
+    Version:      1.8.3.7534
+    Architecture: all
+
+The package was installed successfully.
+
+Published files were independently hashed after installation and exactly match
+the source artifacts transferred from VM106.
+
+
+### 49.6 Bookworm console and agent validation
+
+A Windows validation workstation was configured against:
+
+    https://waptworm.genevoix-signoret-vinci.fr.lan
+
+DNS, TCP port 443 and HTTPS connectivity were validated.
+
+The PADIT Console successfully connects to Waptworm.
+
+The WAPTService/PADIT agent service is operational and connects to Waptworm.
+
+A temporary apparent "unreachable" state in the console was not a server or
+network defect: the console login dialog was still targeting another server.
+Selecting Waptworm resolved the issue immediately.
+
+This confirms the Bookworm server -> console communication path.
+
+
+### 49.7 PADIT agent publication
+
+A server-specific PADIT agent was generated and published on Waptworm.
+
+Published file:
+
+    /var/www/wapt/waptagent.exe
+
+Size:
+
+    26928488 bytes
+
+SHA256:
+
+    7274e1e7d9aa66d9f19419b55029aa46f35d7fc12660197cbc9bc367ae1db460
+
+Published agent version:
+
+    1.8.3.7531
+
+The server reports:
+
+    PADIT Agent: 1.8.3.7531
+
+The agent download URL returns:
+
+    HTTP 200 OK
+
+This validates the Bookworm publication chain through the generated Windows
+agent.
+
+
+### 49.8 PADIT agent download status styling
+
+The main PADIT Server page previously displayed the primary:
+
+    Download the PADIT agent
+
+link with the normal link style even when no agent had yet been generated.
+
+The link now reuses the existing agent status style:
+
+    data.wapt.agent.style
+
+This keeps it consistent with the PADIT Agent status widget.
+
+Validated behavior:
+
+    agent absent
+        -> PADIT Agent reports N/A
+        -> primary agent download link is red
+
+    agent published
+        -> PADIT Agent reports its real version
+        -> primary agent download link returns to normal styling
+
+Relevant commit:
+
+    50800ba5
+    Reuse PADIT agent status style on download link
+
+The behavior was validated visually in the browser before and after agent
+publication.
+
+
+### 49.9 Current Bookworm milestone status
+
+The following Bookworm chain is now validated:
+
+    controlled Python 2.7.18 runtime
+        -> OpenSSL 3.0.22
+        -> no distributed GitPython/gitdb/smmap
+        -> PostgreSQL 15
+        -> Bookworm server package build
+        -> Bookworm server installation
+        -> waptserver / wapttasks
+        -> nginx / HTTPS
+        -> API routing
+        -> setup publication package
+        -> Windows Setup / Deploy publication
+        -> PADIT Console connection
+        -> server-specific PADIT Agent generation
+        -> agent publication and HTTP download
+        -> dynamic PADIT Agent status rendering
+
+Do not repeat these closed Bookworm baseline validations unless a concrete
+regression or contradictory result appears.
+
+
+## 50. Resume protocol for the next ChatGPT thread
+
+Gipity, resume the PADIT/WAPT modernization project from this checkpoint.
+
+Treat WAPT_CHECKPOINT.md as the authoritative technical state.
+
+Speak French, call the user Max, remain warm and concise, and proceed one
+validated step at a time.
+
+Do not reopen closed investigations unless concrete contradictory evidence
+appears.
+
+
+Current development branch after integration:
+
+    release/1.8.3
+
+Current confirmed source HEAD before this checkpoint update:
+
+    50800ba5
+    Reuse PADIT agent status style on download link
+
+Current Git revision count before this checkpoint update:
+
+    7535
+
+Public repository:
+
+    https://github.com/maxcarpone/PADIT
+
+
+The Debian 10 / Buster pilot remains frozen and validated:
+
+    v1.8.3.7494
+
+The Debian 11 / Bullseye modernization baseline is validated and closed.
+
+The Debian 12 / Bookworm runtime, server, setup publication, console connection
+and agent publication baseline is now validated.
+
+
+Current controlled Bookworm runtime:
+
+    /git/paditdev/build/python2-runtime-server-bookworm
+
+Runtime baseline:
+
+    Python 2.7.18
+    OpenSSL 3.0.22
+    no GitPython
+    no gitdb
+    no smmap
+
+Bookworm database baseline:
+
+    PostgreSQL 15.19
+
+Latest validated Bookworm server package:
+
+    tis-waptserver-1.8.3.7535-50800ba5-debian-12-amd64.deb
+
+SHA256:
+
+    e07b276811ee2e7ebb2c69a8a2dab70a840817a5d1db5f05ad393371945ee233
+
+Validated Bookworm setup publication package:
+
+    tis-waptsetup-windows-1.8.3.7534-19787fcd.deb
+
+SHA256:
+
+    009782b934dbcd805654e196138c4ab188d7b290255b1159aba3c2f493109022
+
+Published PADIT Agent:
+
+    Version: 1.8.3.7531
+    Size:    26928488 bytes
+
+SHA256:
+
+    7274e1e7d9aa66d9f19419b55029aa46f35d7fc12660197cbc9bc367ae1db460
+
+
+Compatibility-sensitive historical identifiers remain intentionally unchanged
+where required, including:
+
+    waptsetup-tis.exe
+    waptagent.exe
+    waptdeploy.exe
+    tis-waptserver
+    tis-waptsetup
+    WAPTService
+    wapt-get.ini
+    /wapt
+    /wapt-host
+
+Do not rename them without a dedicated compatibility audit.
+
+
+The latest Windows product build actually produced and cryptographically
+validated remains:
+
+    1.8.3.7531
+
+Later source revisions do not require a Windows rebuild merely because the Git
+revision count advanced.
+
+
+Exact next action:
+
+    Continue the Bookworm modernization from the validated runtime and
+    end-to-end baseline by auditing the actual distributed/imported server
+    dependencies and reconciling the remaining security alerts.
+
+The next phase is evidence-based security remediation:
+
+    1. inventory the Python packages actually distributed in the Bookworm
+       runtime;
+    2. inventory the modules actually imported by the running PADIT server;
+    3. compare that evidence against the remaining Dependabot alerts;
+    4. identify alerts already made irrelevant by removed dependencies or the
+       Bookworm/OpenSSL 3 baseline;
+    5. identify dependencies which are still genuinely exposed;
+    6. remediate applicable vulnerabilities one dependency at a time;
+    7. rebuild and regression-test after meaningful runtime changes.
+
+Do not claim a CVE is fixed solely because Bookworm uses a newer OpenSSL.
+Close or classify security findings only when the actual affected dependency,
+version and execution/distribution path have been established.
+
+Backup/restore and migration compatibility on Bookworm remain a later
+validation unit and must not be forgotten.
+
+Debian 13 remains an optional later target.
+
+Keep answers concise and proceed one validated step at a time.
+
+## 51. Bookworm server security remediation — October 6, 2026
+
+This section supersedes the resume state in section 50 for current development
+work.
+
+The Debian 12 / Bookworm installation, publication, console and agent baseline
+documented in section 49 remains valid and must not be repeated unless a
+concrete regression appears.
+
+The work performed after revision 7535 is a source/runtime security remediation
+phase.
+
+It does NOT yet constitute a newly built and installation-validated Bookworm
+tis-waptserver Debian package.
+
+
+### 51.1 Current authoritative Git state
+
+Development branch:
+
+    release/1.8.3
+
+Current confirmed source HEAD before this checkpoint update:
+
+    09a675749055deb26b2fad0182f775c8b76ec1e8
+    Backport eventlet CVE-2025-58068
+
+Current Git revision count before this checkpoint update:
+
+    7559
+
+Public repository:
+
+    https://github.com/maxcarpone/PADIT
+
+The latest validated Bookworm server Debian package remains the historical
+Bookworm baseline:
+
+    tis-waptserver-1.8.3.7535-50800ba5-debian-12-amd64.deb
+
+SHA256:
+
+    e07b276811ee2e7ebb2c69a8a2dab70a840817a5d1db5f05ad393371945ee233
+
+Do not confuse the current source/runtime security baseline at revision 7559
+with a newly package-validated Bookworm release.
+
+A new Debian package has not yet been built and validated from revision 7559.
+
+
+### 51.2 Current controlled Bookworm server runtime
+
+Build host:
+
+    waptworm
+
+Repository:
+
+    /git/paditdev
+
+Controlled runtime:
+
+    /git/paditdev/build/python2-runtime-server-bookworm
+
+Runtime baseline:
+
+    Python 2.7.18
+    OpenSSL 3.0.22
+
+Latest complete runtime build after the Eventlet remediation:
+
+    BUILD SUCCESS
+    All PADIT runtime tests passed.
+
+Runtime size:
+
+    223M
+
+Python binary SHA256:
+
+    4f5e7c1726230673c64339fc3133b0637338b93d94c72e72f55d7ac350bcd863
+
+Runtime inventory:
+
+    /git/paditdev/build/python2-runtime-server-bookworm/WAPT-runtime-inventory.txt
+
+This remains a transitional Python 2 compatibility runtime.
+
+Do not present Python 2 as the final security architecture.
+
+
+### 51.3 Server dependency security baseline
+
+The security work is performed against the dependencies actually distributed
+and exercised by the Bookworm server runtime.
+
+Important current versions include:
+
+    Flask             1.1.4
+    Werkzeug          1.0.1
+    eventlet          0.33.3
+    python-socketio   4.4.0
+    Flask-SocketIO    4.2.1
+    requests          2.27.1
+    urllib3           1.26.20
+    ujson             2.0.3
+    lxml              4.9.4
+    future            0.18.3
+    psutil            6.1.1
+    cryptography      2.5
+    pyOpenSSL         19.0.0
+    Jinja2            2.10.1
+    psycopg2          2.8.6
+    setproctitle      1.1.10
+
+Important Python 2 dependency-audit rule:
+
+    pip list --outdated is not authoritative for Python 2 ceilings.
+
+It may omit releases such as:
+
+    psycopg2 2.8.6
+    setproctitle 1.1.10
+
+because later releases dropped Python 2.
+
+After the CVE remediation pass, perform a separate package-by-package
+modernization review using:
+
+    current version
+    latest Python-2-compatible version
+    latest global version
+    recommended action
+
+Do not perform a blind global dependency upgrade.
+
+
+### 51.4 Security changes integrated into the Bookworm runtime
+
+The following security and dependency work has been integrated after the
+original Bookworm 7535 baseline.
+
+
+#### urllib3
+
+Current version:
+
+    urllib3 1.26.20
+
+Integrated security backports include:
+
+    CVE-2026-97689
+    CVE-2025-66418
+    CVE-2025-66471
+
+Relevant commits include:
+
+    0b013a14a  Backport urllib3 CVE-2026-97689 on Bookworm runtime
+    c801fa450  Backport urllib3 CVE-2025-66418 on Bookworm runtime
+    1b0173b2f  Backport urllib3 CVE-2025-66471 on Bookworm runtime
+
+The corresponding targeted runtime regression tests pass.
+
+
+#### python-socketio / Socket.IO stack
+
+The Python-2-compatible Socket.IO stack was updated and controlled.
+
+Relevant commits:
+
+    bdfbfb20c  Update Socket.IO stack to final Python 2 releases
+    38e4ffc8f  Backport python-socketio CVE-2026-48804 on Bookworm runtime
+
+Current python-socketio version:
+
+    4.4.0
+
+CVE-2026-48804 has a dedicated runtime regression test and passes.
+
+
+#### Eventlet dependency update
+
+Eventlet was moved to its final Python-2-compatible release:
+
+    eventlet 0.33.3
+
+Commit:
+
+    0db0e4e9d  Update Eventlet to final Python 2 release
+
+
+#### ujson
+
+Current version:
+
+    ujson 2.0.3
+
+Backports:
+
+    CVE-2022-31116
+    upstream issue #334 / CVE-2021-45958 buffer overflow
+
+Commits:
+
+    a6560468f  Backport ujson CVE-2022-31116 on Bookworm runtime
+    96b8b8e4a  Backport ujson issue 334 buffer overflow fix
+
+Server-side Dependabot findings corresponding to these fixes were dismissed
+after validation.
+
+The equivalent Windows and Unix agent findings must remain treated separately.
+Do not claim an agent vulnerability is fixed merely because the server runtime
+was fixed.
+
+
+#### psutil
+
+Updated to:
+
+    psutil 6.1.1
+
+Commit:
+
+    f55da2d18  Update server psutil to 6.1.1
+
+The server CVE-2019-18874 finding was dismissed after the update.
+
+
+#### future
+
+Updated to:
+
+    future 0.18.3
+
+Commit:
+
+    01df5a8f2  Update server future to 0.18.3
+
+The server CVE-2022-40899 finding was dismissed after validation.
+
+
+#### lxml
+
+Updated from the historical version to:
+
+    lxml 4.9.4
+
+Commit:
+
+    2e04ac61d  Update server lxml to 4.9.4
+
+The following older server findings were made obsolete by this update and
+dismissed:
+
+    CVE-2022-2309
+    CVE-2018-19787
+    CVE-2021-43818
+    CVE-2021-28957
+    CVE-2020-27783
+
+A newer lxml security finding still exists and must be handled separately:
+
+    Dependabot #160
+    CVE-2026-41066
+
+
+#### requests
+
+Server requirements were moved from requests 2.26.0 to:
+
+    requests 2.27.1
+
+Commit:
+
+    5a86410a0  Update server requests to 2.27.1
+
+Security backports integrated on top of requests 2.27.1:
+
+    CVE-2024-35195
+    CVE-2024-47081
+    CVE-2026-25645
+    CVE-2023-32681
+
+Commits:
+
+    75fe5fb03  Backport requests CVE-2024-35195
+    3ba709361  Backport requests CVE-2024-47081
+    8e63b72c1  Backport requests CVE-2026-25645
+    19d1e444b9a7664b84516cce22b57f5b0d2e6645
+                 Backport requests CVE-2023-32681
+
+Dedicated regression tests exist for:
+
+    TLS pool isolation
+    netrc hostname handling
+    secure temporary-file uniqueness
+    Proxy-Authorization handling through HTTPS proxies
+
+All passed in the controlled Bookworm runtime.
+
+
+#### Flask and Werkzeug baseline
+
+Server versions were moved to:
+
+    Flask    1.1.4
+    Werkzeug 1.0.1
+
+Commit:
+
+    18bb12370  Update server Flask and Werkzeug
+
+
+#### Werkzeug security backports
+
+Backports integrated on Werkzeug 1.0.1:
+
+    CVE-2023-23934
+    CVE-2023-25577
+    CVE-2024-34069
+
+Commits:
+
+    6594d01b6  Backport Werkzeug CVE-2023-23934
+    d685542d1  Backport Werkzeug CVE-2023-25577
+    6c9ecf63a  Backport Werkzeug CVE-2024-34069
+
+A consolidated safe_join backport also covers:
+
+    CVE-2024-49766
+    CVE-2025-66221
+    CVE-2026-21860
+    CVE-2026-27199
+    CVE-2026-102598
+
+Commit:
+
+    2c8a42b7ea51fab87fde2af052f6956545906676
+    Backport Werkzeug safe_join security fixes
+
+The consolidated safe_join regression suite covers, among other cases:
+
+    absolute-path rejection
+    traversal
+    alternate separators
+    Windows special device names
+    CON / CON.txt / compound extensions
+    CONIN$ / CONOUT$
+    COM1 / LPT9
+    Unicode superscript device aliases
+    nested path segments
+    ADS markers
+
+The full Bookworm runtime build passes with these backports.
+
+
+#### Eventlet CVE-2025-58068
+
+Dependabot server alert:
+
+    #147
+    CVE-2025-58068
+    HTTP request smuggling in unparsed HTTP trailers
+
+The finding is relevant to the PADIT server.
+
+Evidence:
+
+    waptserver/server.py imports and monkey-patches eventlet
+    Flask-SocketIO selects async_mode = eventlet
+    python-socketio also reports async_mode = eventlet
+
+The upstream fix was backported onto eventlet 0.33.3.
+
+Patch:
+
+    utils/patch-eventlet-0.33.3/CVE-2025-58068.patch
+
+Patch SHA256:
+
+    897e91e4e5c77fe8205408e4daca9c9fc12da7540f34f2c19f92875343ea151d
+
+The fix replaces the single-line trailer discard after the zero-length chunk
+with complete trailer consumption.
+
+Dedicated regression test verifies that:
+
+    multiple trailers are consumed
+    the next HTTP request line remains untouched
+
+Result:
+
+    CVE-2025-58068 TRAILER DISCARD TEST: PASS
+
+Full runtime rebuild result:
+
+    BUILD SUCCESS
+    All PADIT runtime tests passed.
+
+Commit:
+
+    09a675749055deb26b2fad0182f775c8b76ec1e8
+    Backport eventlet CVE-2025-58068
+
+Dependabot server alert #147 was dismissed with:
+
+    dismissed_reason = fix_started
+
+and references the exact commit above.
+
+
+### 51.5 Dependabot findings classified as not applicable to the PADIT server
+
+Do not dismiss findings as not applicable without demonstrating the actual
+runtime or execution path.
+
+
+#### python-socketio CVE-2025-61765
+
+Dependabot server alert:
+
+    #148
+    CVE-2025-61765
+
+The vulnerability concerns unsafe pickle deserialization in python-socketio
+multi-server queue managers.
+
+PADIT evidence established:
+
+    no RedisManager use
+    no KombuManager use
+    no KafkaManager use
+    no ZmqManager use
+    no message_queue configuration
+    no client_manager configuration
+
+Runtime Flask-SocketIO manager:
+
+    socketio.base_manager.BaseManager
+
+The Windows agent uses socketIO_client rather than the affected
+python-socketio server queue-manager path.
+
+Alert #148 was therefore dismissed as:
+
+    not_used
+
+
+#### requests CVE-2022-31117
+
+Server alert #119 was classified and dismissed as:
+
+    not_used
+
+Keep this classification separate from actual source backports.
+
+
+
+### 51.6 Server security remediation status — 2026-10-08
+
+The Bookworm SERVER Dependabot remediation pass is complete for the
+requirements-server.txt alerts known and verified on 2026-10-08.
+
+The final server alert verification returned no OPEN alerts for that manifest.
+
+This supersedes the historical remaining-alert list previously recorded in
+section 51.6. Do not use that historical list as the current work queue.
+
+Important qualifications:
+
+    An empty Dependabot alert list does not prove that the software has
+    no vulnerabilities.
+
+    Server, Windows-agent and Unix-agent findings remain separate.
+
+    Several Python-2-compatible upstream packages still require security
+    backports because modern upstream releases no longer support Python 2.7.
+
+    All backported fixes must remain covered by the controlled build and
+    regression tests.
+
+The final server pyOpenSSL finding was:
+
+    Dependabot #157
+    CVE-2026-27448
+    pyOpenSSL 19.0.0 SNI callback handling
+
+Validated backport:
+
+    Commit: bc03a837
+    Patch:  utils/patch-pyopenssl-19.0.0/CVE-2026-27448.patch
+    Test:   utils/patch-pyopenssl-19.0.0/test-CVE-2026-27448.py
+
+The patch and its regression test were integrated into the Bookworm
+runtime builder. The complete rebuild passed, and alert #157 was
+subsequently dismissed.
+
+The source of truth for current alerts remains the live GitHub
+Dependabot API, not the historical checkpoint.
+
+
+### 51.7 Security scope separation
+
+The server remediation work does not automatically remediate
+Windows-agent or Unix-agent vulnerabilities.
+
+Keep the separate investigation paths:
+
+    SERVER:
+        Bookworm runtime; current server alert pass completed.
+
+    WINDOWS AGENT:
+        Separate Windows build chain and security findings.
+        Not covered by server-side backports alone.
+
+    UNIX AGENT:
+        Separate runtime/build investigation, deferred until the
+        Unix-agent implementation is brought back under validation.
+
+In particular, do not infer that a server-side ujson fix also fixes
+a Windows-agent or Unix-agent manifest.
+
+The active work order is now:
+
+    1. consolidate and validate non-CVE SERVER dependency modernization;
+    2. investigate remaining server compatibility issues;
+    3. handle Windows-agent security findings independently;
+    4. investigate Unix-agent findings when its build is resumed.
+
+Do not mix server and agent dependency/security conclusions.
+
+
+### 51.8 Git history / root-author decision
+
+The historical Git author/committer audit is closed.
+
+Do NOT rewrite historical authorship.
+
+Doing so would change descendant commit hashes and affect previously
+validated tags, release milestones and documentation references.
+
+Continue to use the configured maxcarpone Git identity for new work.
+
+Do not reopen this topic without a new concrete requirement.
+
+
+### 51.9 Bookworm runtime build and security architecture
+
+Authoritative builder:
+
+    tools/build-python2-runtime-bookworm.sh
+
+Runtime:
+
+    build/python2-runtime-server-bookworm
+
+Python:
+
+    2.7.18
+
+OpenSSL:
+
+    System OpenSSL 3.0.22
+
+This is a transitional compatibility runtime, not the final
+long-term security architecture.
+
+The builder contains 40 numbered stages and additional dependency
+modernization regression checks before the final inventory.
+
+It handles multiple security-sensitive dependencies using pinned
+versions, validated backports and dedicated regression tests,
+including relevant fixes for:
+
+    ujson
+    urllib3
+    requests
+    Werkzeug
+    eventlet
+    python-socketio
+    Jinja2
+    Flask
+    lxml
+    cryptography / OpenSSL integration
+    pyOpenSSL
+
+Preserve the existing security fixes, patch checksums and tests when
+modernizing dependencies.
+
+The controlled runtime must be rebuilt and its complete test suite
+executed before a consolidated modernization batch is accepted.
+
+
+### 51.10 Non-CVE server dependency modernization matrix
+
+After completing the server CVE pass, the project inventoried the
+40 direct dependencies declared in requirements-server.txt and
+the principal transitive dependencies installed in the Bookworm
+Python 2.7 runtime.
+
+The modernization matrix records:
+
+    current pinned version
+    highest identified Python-2.7-compatible version
+    latest upstream version
+    recommended action
+    compatibility confidence / risks
+
+Maintain separate categories:
+
+    at the Python 2.7 compatibility ceiling
+    upgradable while retaining Python 2.7
+    candidates requiring special functional testing
+    historical requirements potentially removable
+
+argparse and wsgiref are already provided by the Python 2.7
+standard library. Their removal from server requirements is a
+separate prospective change, not yet performed.
+
+The certifi / CA trust-store review is also separate.
+
+Do not globally replace certifi without checking both HTTPS
+verification and PADIT certificate/CRL validation paths.
+
+
+### 51.11 Server modernization M01 — validated
+
+Commit:
+
+    14da06e8
+    Modernize three Python 2 server dependencies (M01)
+
+Changes:
+
+    six        1.11.0 -> 1.17.0
+    pyparsing  2.2.0  -> 2.4.7
+    iniparse   0.4    -> 0.5
+
+Permanent test:
+
+    utils/test-server-dependencies-m01.py
+
+The three packages passed isolated Python 2.7 tests and
+server dependency integration checks.
+
+The first M01 rebuild reached the final test but stopped because
+the test did not include the repository root in PYTHONPATH,
+preventing the import of waptutils.
+
+The invocation was corrected to use PYTHONPATH="${REPO_ROOT}".
+
+M01 subsequently passed in the existing rebuilt runtime.
+The missing inventory was recovered and documented.
+
+The initial incomplete-build qualification was finally lifted by
+the successful full M01-M03 consolidated rebuild on 2026-10-08.
+
+
+### 51.12 Server modernization M02 — validated
+
+Commit:
+
+    de33ed9f
+    Prepare Python 2 server dependency upgrades M02-M03 (prevalidated)
+
+Changes:
+
+    passlib       1.7.1  -> 1.7.4
+    netifaces     0.10.6 -> 0.11.0
+    Flask-Login   0.4.1  -> 0.5.0
+
+Permanent test:
+
+    utils/test-server-dependencies-m02.py
+
+Validated:
+
+    passlib password hashing and verification
+    native netifaces import and interface enumeration
+    Flask-Login login/logout lifecycle
+    principal PADIT server module imports
+
+A non-blocking PasslibRuntimeWarning was observed for the
+SHA256 digest name under the transitional Python 2 runtime.
+
+M02 passed isolated functional testing, combined M01-M03
+prevalidation and the complete consolidated Bookworm rebuild.
+
+
+### 51.13 Server modernization M03 — validated
+
+Same commit:
+
+    de33ed9f
+
+Changes:
+
+    pytz       2017.2 -> 2026.5
+    future     0.18.3 -> 1.0.0
+    wakeonlan  0.2.2  -> 1.1.6
+
+Permanent test:
+
+    utils/test-server-dependencies-m03.py
+
+Validated:
+
+    pytz Europe/Paris winter and summer UTC offsets
+    future Python 2 compatibility API
+    Wake-on-LAN magic packet construction
+    Wake-on-LAN simulated UDP destinations and ports
+
+The wakeonlan upstream API changed.
+
+Old server API:
+
+    import wakeonlan.wol
+    wakeonlan.wol.send_magic_packet(...)
+
+New server API:
+
+    from wakeonlan import send_magic_packet
+    send_magic_packet(...)
+
+The import and both calls in waptserver/server.py were updated.
+
+The old wakeonlan 0.2.2 implementation produced a 126-byte
+packet for the tested MAC address: the standard first 102
+bytes followed by four additional MAC repetitions.
+
+The new wakeonlan 1.1.6 implementation produces the standard
+102-byte magic packet.
+
+The first 102 bytes matched exactly in the comparison test.
+
+The new implementation was tested with mocked sockets:
+no real Wake-on-LAN traffic was transmitted.
+
+A real Wake-on-LAN test on a pilot workstation remains
+necessary before accepting real-world operational equivalence.
+
+The modernization scope is SERVER ONLY.
+No Windows-agent or Unix-agent changes were made.
+
+
+### 51.14 Consolidated M01-M03 Bookworm rebuild — PASS
+
+Validation date:
+
+    2026-10-08
+
+Repository:
+
+    /git/paditdev
+
+Branch:
+
+    release/1.8.3
+
+Source HEAD:
+
+    de33ed9f
+
+Build command:
+
+    bash tools/build-python2-runtime-bookworm.sh
+
+The build was launched through a detached nohup wrapper to
+survive SSH disconnections.
+
+Log:
+
+    /tmp/padit-bookworm-m01-m03-build.log
+
+Recorded exit code:
+
+    0
+
+Final builder output:
+
+    BUILD SUCCESS
+    All PADIT runtime tests passed.
+
+Permanent tests:
+
+    PADIT SERVER DEPENDENCIES M01: PASS
+    PADIT M01 dependency validation: PASS
+
+    PADIT SERVER DEPENDENCIES M02: PASS
+    PADIT M02 dependency validation: PASS
+
+    PADIT SERVER DEPENDENCIES M03: PASS
+    PADIT M03 dependency validation: PASS
+
+Final installed versions:
+
+    six==1.17.0
+    pyparsing==2.4.7
+    iniparse==0.5
+    passlib==1.7.4
+    netifaces==0.11.0
+    Flask-Login==0.5.0
+    pytz==2026.5
+    future==1.0.0
+    wakeonlan==1.1.6
+
+Runtime:
+
+    /git/paditdev/build/python2-runtime-server-bookworm
+
+Inventory:
+
+    build/python2-runtime-server-bookworm/WAPT-runtime-inventory.txt
+
+Runtime size:
+
+    222M
+
+Python binary SHA256 reported by builder:
+
+    e036f6079c12a5cfd0da7074ccf400093f162d0e9a4a6a9fc43962674973f2ee
+
+The complete integrated test suite, including the security
+regressions already present in the builder, reached its final
+successful status.
+
+This validates the reconstructed Python 2 server runtime for
+the test coverage provided. It is not yet a Bookworm Debian
+package, installation or production deployment validation.
+
+
+### 51.15 Remaining compatibility and operational work
+
+Known outstanding items:
+
+1. Flask-Babel 0.11.2:
+
+    Importing flask_babel fails with:
+
+        ImportError: cannot import name ImmutableDict
+
+    This failure was reproduced in the pre-M01 baseline and
+    remains separate from the M01-M03 modernization work.
+
+    Investigate the actual import chain and application impact
+    before selecting a compatible fix or version change.
+
+2. Wake-on-LAN:
+
+    Run a controlled real-machine WOL test on a pilot host.
+    Preserve configured UDP ports and directed broadcasts.
+
+3. certifi / CA store:
+
+    Review the old certifi trust bundle and distinguish public
+    HTTPS verification from PADIT certificate and CRL trust.
+    Do not change all trust paths without a dedicated audit.
+
+4. Remaining non-CVE server dependencies:
+
+    Continue with small, isolated modernization candidates.
+    Test in temporary directories first, then run one complete
+    rebuild per consolidated batch.
+
+5. Windows and Unix agents:
+
+    Continue their security investigations separately.
+
+6. Bookworm packaging / deployment:
+
+    Do not claim that the upgraded server runtime has already
+    passed a new Debian package install or migration test.
+
+7. Backup/restore and migration:
+
+    Retain the later Bookworm DR and compatibility validation
+    milestones.
+
+Debian 13 remains an optional later target.
+
+
+### 51.16 Working-tree cautions and synchronization
+
+Current Waptworm state after M01-M03 validation:
+
+    branch: release/1.8.3
+    HEAD:   de33ed9f
+
+M01 commit:
+
+    14da06e8
+
+M02-M03 commit:
+
+    de33ed9f
+
+The following untracked files are deliberately excluded
+from commits:
+
+    waptsetup/deb/Thouet-Software-Signing-Root-CA.cer
+    waptsetup/deb/builddir/
+    waptsetup/deb/waptsetup-tis.exe
+
+Do not remove or commit these artifacts without a specific
+separate decision.
+
+At the last recorded local check, origin/release/1.8.3 was
+still at bc03a837.
+
+Push the validated modernization commits when ready, then
+synchronize VM106 before resuming Windows-side work.
+
+The Windows product must not be rebuilt solely because
+the source revision has advanced.
+
+
+### 51.17 Exact next action
+
+First:
+
+    Record this updated checkpoint without altering the
+    previously validated historical milestones.
+
+Then:
+
+    Verify Git state and synchronize release/1.8.3 across
+    Waptworm, origin and VM106 when appropriate.
+
+Next server work:
+
+    Investigate the pre-existing Flask-Babel / ImmutableDict
+    failure separately from M01-M03.
+
+Continue the non-CVE server modernization matrix and prepare
+additional low-risk batches without repeated full builds.
+
+Before any new runtime batch, preserve a usable baseline
+and run isolated/cross-dependency tests.
+
+Use one complete Bookworm rebuild per consolidated batch,
+not one rebuild per dependency.
+
+Do not start Windows agent CVE work automatically.
+Do not claim a new Bookworm Debian-package milestone.
+
+
+## 52. Resume protocol for the next ChatGPT thread
+
+Gipity, resume the PADIT/WAPT modernization project from
+this checkpoint.
+
+Treat WAPT_CHECKPOINT.md as the authoritative technical state.
+
+Speak French, call the user Max, and work one validated step
+at a time.
+
+Active development branch:
+
+    release/1.8.3
+
+Latest validated local source HEAD:
+
+    de33ed9f
+
+Validated modernization commits:
+
+    14da06e8  M01
+    de33ed9f  M02-M03
+
+The Bookworm Python 2.7.18 server runtime was fully rebuilt
+on 2026-10-08 with exit code 0, BUILD SUCCESS and all PADIT
+runtime tests passed.
+
+The server Dependabot alert pass was previously completed:
+the final check found zero OPEN alerts for requirements-server.txt.
+Requery GitHub before making any new claim about live alert state.
+
+Current work:
+
+    Post-CVE SERVER dependency modernization and remaining
+    server compatibility verification.
+
+Immediate priorities:
+
+    1. Update/synchronize this checkpoint and Git branches.
+    2. Investigate Flask-Babel / ImmutableDict baseline failure.
+    3. Continue the next low-risk modernization batch.
+    4. Consolidate tests before the next complete rebuild.
+    5. Keep Windows/Unix agent security work separate.
+
+Do not reopen validated Buster migration / DR work,
+Bullseye baseline, historical Git authorship decisions,
+or prior Bookworm installation/publication milestones without
+concrete contradictory evidence.
+
+Keep the following open validation boundaries:
+
+    real-machine Wake-on-LAN test
+    certifi / CA trust-store audit
+    agent-specific security findings
+    upgraded Bookworm Debian packaging / deployment
+    later backup/restore and migration compatibility
+
+Avoid fragile interactive SSH command blocks.
+
+Never use set -e directly in the interactive SSH shell.
+
+For long builds, use detached execution and preserve the
+build log and exit code.
+
+Continue working in small, testable increments.
