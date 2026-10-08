@@ -2959,6 +2959,14 @@ PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
 
 echo "PADIT M03 dependency validation: PASS"
 
+echo
+echo ">>> Validating PADIT server dependencies M04"
+
+PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
+    "${REPO_ROOT}/utils/test-server-dependencies-m04.py"
+
+echo "PADIT M04 dependency validation: PASS"
+
 ###############################################################################
 # 39. Generate runtime inventory
 ###############################################################################
