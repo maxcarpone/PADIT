@@ -1,7 +1,7 @@
 # PADIT / WAPT — Active Technical Checkpoint
 
-**Updated:** 2026-10-08  
-**Status:** proposed condensed checkpoint — review before replacing the authoritative VM106 file.  
+**Updated:** 2026-10-08
+**Status:** authoritative active checkpoint.
 **Historical evidence:** preserve the existing 9,818-line checkpoint unchanged as `WAPT_HISTORY.md`; historical sections are evidence, **not current instructions**.
 
 ## 1. Mission and non-negotiable decisions
