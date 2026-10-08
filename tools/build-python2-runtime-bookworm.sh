@@ -2618,7 +2618,45 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 30. Verify critical packages
+# 30. Apply pyOpenSSL CVE-2026-27448 SNI callback backport
+###############################################################################
+
+echo
+echo ">>> Applying pyOpenSSL CVE-2026-27448 security backport..."
+
+PYOPENSSL_PATCH="${REPO_ROOT}/utils/patch-pyopenssl-19.0.0/CVE-2026-27448.patch"
+PYOPENSSL_PATCH_SHA256="30aa14431d2f886ab8a4caf421c8e4811938fd7b1c32d98ec5e9ffcccad171d0"
+PYOPENSSL_TEST="${REPO_ROOT}/utils/patch-pyopenssl-19.0.0/test-CVE-2026-27448.py"
+PYOPENSSL_SITE="${RUNTIME_ROOT}/lib/python2.7/site-packages"
+
+[ -f "${PYOPENSSL_PATCH}" ] || die "pyOpenSSL security patch missing"
+[ -f "${PYOPENSSL_TEST}" ] || die "pyOpenSSL regression test missing"
+[ -f "${PYOPENSSL_SITE}/OpenSSL/SSL.py" ] || die "pyOpenSSL SSL.py missing"
+
+ACTUAL_PYOPENSSL_SHA256="$(
+    sha256sum "${PYOPENSSL_PATCH}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_PYOPENSSL_SHA256}" = "${PYOPENSSL_PATCH_SHA256}" ] \
+    || die "Unexpected SHA256 for pyOpenSSL security patch"
+
+(
+    cd "${PYOPENSSL_SITE}"
+    patch --dry-run --fuzz=0 -p1 < "${PYOPENSSL_PATCH}" >/dev/null \
+        || die "pyOpenSSL patch dry-run failed"
+    patch --fuzz=0 -p1 < "${PYOPENSSL_PATCH}" \
+        || die "pyOpenSSL patch application failed"
+)
+
+echo ">>> pyOpenSSL security patch applied."
+
+env -u PYTHONPATH PADIT_EXPECTED_RUNTIME="${RUNTIME_ROOT}" "${PYTHON}" "${PYOPENSSL_TEST}" \
+    || die "pyOpenSSL CVE-2026-27448 regression test failed"
+
+echo ">>> pyOpenSSL CVE-2026-27448 regression verified."
+
+###############################################################################
+# 31. Verify critical packages
 ###############################################################################
 
 echo
@@ -2659,7 +2697,7 @@ if failed:
 PY
 
 ###############################################################################
-# 31. Apply PADIT cryptography compatibility patch
+# 32. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -2683,7 +2721,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 32. Apply PADIT socketIO client patch if present
+# 33. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -2713,7 +2751,7 @@ else
 fi
 
 ###############################################################################
-# 33. Basic Python runtime validation
+# 34. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -2744,7 +2782,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 34. PADIT server import validation
+# 35. PADIT server import validation
 ###############################################################################
 
 echo
@@ -2785,7 +2823,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 35. PADIT server component validation
+# 36. PADIT server component validation
 ###############################################################################
 
 echo
@@ -2803,7 +2841,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 36. Socket.IO validation
+# 37. Socket.IO validation
 ###############################################################################
 
 echo
@@ -2818,7 +2856,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 37. PADIT crypto functional test
+# 38. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -2894,7 +2932,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 38. Generate runtime inventory
+# 39. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -2951,7 +2989,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 39. Final status
+# 40. Final status
 ###############################################################################
 
 echo
