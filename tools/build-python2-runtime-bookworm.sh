@@ -229,6 +229,7 @@ CRYPTOGRAPHY_REQUIREMENT_RE='^[[:space:]]*cryptography==3\.3\.2([[:space:]]*(#.*
 CFFI_REQUIREMENT_RE='^[[:space:]]*cffi==1\.15\.1([[:space:]]*(#.*)?)?$'
 LXML_REQUIREMENT_RE='^[[:space:]]*lxml==5\.0\.2([[:space:]]*(#.*)?)?$'
 JINJA2_REQUIREMENT_RE='^[[:space:]]*Jinja2==2\.11\.3([[:space:]]*(#.*)?)?$'
+FLASK_REQUIREMENT_RE='^[[:space:]]*Flask==1\.1\.4([[:space:]]*(#.*)?)?$'
 
 UJSON_REQ_COUNT="$(
     grep -Ec "${UJSON_REQUIREMENT_RE}" \
@@ -270,7 +271,15 @@ JINJA2_REQ_COUNT="$(
 [ "${JINJA2_REQ_COUNT}" = "1" ] \
     || die "Expected exactly one Jinja2==2.11.3 requirement, found ${JINJA2_REQ_COUNT}"
 
-grep -Ev "${UJSON_REQUIREMENT_RE}|${CRYPTOGRAPHY_REQUIREMENT_RE}|${CFFI_REQUIREMENT_RE}|${LXML_REQUIREMENT_RE}|${JINJA2_REQUIREMENT_RE}" \
+FLASK_REQ_COUNT="$(
+    grep -Ec "${FLASK_REQUIREMENT_RE}" \
+        "${REPO_ROOT}/requirements-server.txt" || true
+)"
+
+[ "${FLASK_REQ_COUNT}" = "1" ] \
+    || die "Expected exactly one Flask==1.1.4 requirement, found ${FLASK_REQ_COUNT}"
+
+grep -Ev "${UJSON_REQUIREMENT_RE}|${CRYPTOGRAPHY_REQUIREMENT_RE}|${CFFI_REQUIREMENT_RE}|${LXML_REQUIREMENT_RE}|${JINJA2_REQUIREMENT_RE}|${FLASK_REQUIREMENT_RE}" \
     "${REPO_ROOT}/requirements-server.txt" \
     > "${SERVER_REQUIREMENTS}"
 
@@ -863,7 +872,198 @@ PYJINJA2
 echo ">>> Jinja2 2.11.3 patched build verified."
 
 ###############################################################################
-# 14. Build patched lxml 5.0.2 from source
+# 14. Build Flask 1.1.4 with session security backports
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Building patched Flask 1.1.4 from source"
+echo "============================================================"
+
+FLASK_VERSION="1.1.4"
+FLASK_BUILD_DIR="${BUILD_ROOT}/flask-${FLASK_VERSION}-source"
+FLASK_SDIST_SHA256="0fbeb6180d383a9186d0d6ed954e0042ad9f18e0e8de088b2b419d526927d196"
+
+FLASK_PATCH="${REPO_ROOT}/utils/patch-flask-1.1.4/CVE-2023-30861-CVE-2026-27205.patch"
+FLASK_PATCH_SHA256="4b2a84ccdc10495db631719f1b58fa16e2c4a7def27695ff39e6a0e3c1cc3312"
+
+[ -f "${FLASK_PATCH}" ] \
+    || die "Flask security patch not found: ${FLASK_PATCH}"
+
+ACTUAL_FLASK_PATCH_SHA256="$(
+    sha256sum "${FLASK_PATCH}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_FLASK_PATCH_SHA256}" = "${FLASK_PATCH_SHA256}" ] \
+    || die "Unexpected SHA256 for Flask patch: ${ACTUAL_FLASK_PATCH_SHA256}"
+
+rm -rf "${FLASK_BUILD_DIR}"
+mkdir -p "${FLASK_BUILD_DIR}"
+cd "${FLASK_BUILD_DIR}"
+
+run "${PIP}" download \
+    --no-deps \
+    --no-binary=:all: \
+    "Flask==${FLASK_VERSION}"
+
+FLASK_SDIST="Flask-${FLASK_VERSION}.tar.gz"
+
+[ -f "${FLASK_SDIST}" ] \
+    || die "Flask source archive not found: ${FLASK_SDIST}"
+
+ACTUAL_FLASK_SDIST_SHA256="$(
+    sha256sum "${FLASK_SDIST}" | awk '{print $1}'
+)"
+
+[ "${ACTUAL_FLASK_SDIST_SHA256}" = "${FLASK_SDIST_SHA256}" ] \
+    || die "Unexpected SHA256 for Flask source archive: ${ACTUAL_FLASK_SDIST_SHA256}"
+
+tar -xf "${FLASK_SDIST}"
+
+FLASK_SRC_DIR="${FLASK_BUILD_DIR}/Flask-${FLASK_VERSION}"
+
+[ -d "${FLASK_SRC_DIR}" ] \
+    || die "Flask source directory not found: ${FLASK_SRC_DIR}"
+
+(
+    cd "${FLASK_SRC_DIR}"
+    patch --dry-run -p1 < "${FLASK_PATCH}" >/dev/null
+    patch -p1 < "${FLASK_PATCH}"
+)
+
+echo ">>> Flask CVE-2023-30861/CVE-2026-27205 backport applied."
+
+FLASK_WHEELHOUSE="${FLASK_BUILD_DIR}/wheelhouse"
+mkdir -p "${FLASK_WHEELHOUSE}"
+
+run "${PIP}" wheel \
+    --no-deps \
+    --no-cache-dir \
+    --wheel-dir "${FLASK_WHEELHOUSE}" \
+    "${FLASK_SRC_DIR}"
+
+run "${PIP}" install \
+    --force-reinstall \
+    --no-index \
+    --no-deps \
+    --find-links "${FLASK_WHEELHOUSE}" \
+    "Flask==${FLASK_VERSION}"
+
+"${PYTHON}" - <<'PYFLASK'
+import flask
+
+from flask import Flask
+from flask import session
+from flask.globals import _request_ctx_stack
+from flask.sessions import SecureCookieSession
+
+expected = "1.1.4"
+
+if flask.__version__ != expected:
+    raise SystemExit(
+        "Unexpected Flask version: %s (expected %s)"
+        % (flask.__version__, expected)
+    )
+
+# CVE-2023-30861:
+# A permanent session refreshed without explicit access must still emit
+# Vary: Cookie when Flask rewrites the cookie.
+app = Flask(__name__)
+app.secret_key = "padit-regression-test"
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True
+
+test_session = SecureCookieSession(
+    {"_permanent": True, "user": "alice"}
+)
+test_session.modified = False
+test_session.accessed = False
+
+response = app.response_class()
+app.session_interface.save_session(app, test_session, response)
+
+if not response.headers.get("Set-Cookie"):
+    raise AssertionError(
+        "Permanent session refresh did not emit Set-Cookie"
+    )
+
+if "Cookie" not in response.vary:
+    raise AssertionError(
+        "Vary: Cookie missing when session cookie was refreshed"
+    )
+
+# Deleting a modified empty session cookie must also vary on Cookie.
+empty_session = SecureCookieSession()
+empty_session.modified = True
+empty_session.accessed = False
+
+delete_response = app.response_class()
+app.session_interface.save_session(
+    app, empty_session, delete_response
+)
+
+if "Cookie" not in delete_response.vary:
+    raise AssertionError(
+        "Vary: Cookie missing when session cookie was deleted"
+    )
+
+# CVE-2026-27205:
+# Resolving flask.session must mark the session accessed regardless
+# of the particular mapping operation subsequently performed.
+with app.test_request_context("/"):
+    ctx = _request_ctx_stack.top
+
+    ctx._session["user"] = "alice"
+    ctx._session.modified = False
+    ctx._session.accessed = False
+
+    if ("user" in session) is not True:
+        raise AssertionError("session containment lookup failed")
+
+    if not ctx._session.accessed:
+        raise AssertionError(
+            "session containment lookup did not mark session accessed"
+        )
+
+    ctx._session.accessed = False
+
+    if len(session) != 1:
+        raise AssertionError(
+            "Unexpected session length: %r" % len(session)
+        )
+
+    if not ctx._session.accessed:
+        raise AssertionError(
+            "session len lookup did not mark session accessed"
+        )
+
+# Internal request processing itself must not spuriously mark an unused
+# session as accessed.
+app2 = Flask("padit-no-session-access")
+app2.secret_key = "padit-regression-test"
+
+@app2.route("/")
+def no_session_access():
+    return "ok"
+
+client = app2.test_client()
+response = client.get("/")
+
+if "Cookie" in response.vary:
+    raise AssertionError(
+        "Unused session was spuriously marked as accessed"
+    )
+
+print(">>> Flask version verified: %s" % flask.__version__)
+print("CVE-2023-30861 REGRESSION TEST: PASS")
+print("CVE-2026-27205 IN-OPERATOR TEST: PASS")
+print("CVE-2026-27205 LEN TEST: PASS")
+print("FLASK UNUSED SESSION COMPATIBILITY TEST: PASS")
+PYFLASK
+
+echo ">>> Flask 1.1.4 patched build verified."
+
+###############################################################################
+# 15. Build patched lxml 5.0.2 from source
 ###############################################################################
 
 echo
@@ -1042,7 +1242,7 @@ PYLXML
 echo ">>> lxml 5.0.2 patched build verified."
 
 ###############################################################################
-# 15. Apply urllib3 CVE-2026-97689 compatibility backport
+# 16. Apply urllib3 CVE-2026-97689 compatibility backport
 ###############################################################################
 
 echo
@@ -1097,7 +1297,7 @@ grep -q 'Response chunk trailer line exceeded maximum allowed length' \
 echo ">>> urllib3 CVE-2026-97689 backport verified."
 
 ###############################################################################
-# 16. Apply urllib3 CVE-2025-66418 decompression-chain backport
+# 17. Apply urllib3 CVE-2025-66418 decompression-chain backport
 ###############################################################################
 
 echo
@@ -1134,7 +1334,7 @@ grep -q 'Too many content encodings in the chain' \
 echo ">>> urllib3 CVE-2025-66418 backport verified."
 
 ###############################################################################
-# 17. Apply urllib3 CVE-2025-66471 streaming decompression backport
+# 18. Apply urllib3 CVE-2025-66471 streaming decompression backport
 ###############################################################################
 
 echo
@@ -1194,7 +1394,7 @@ REQUESTS_VERSION="$("${PYTHON}" -c 'import requests; print(requests.__version__)
 echo ">>> requests version verified: ${REQUESTS_VERSION}"
 
 ###############################################################################
-# 18. Apply requests CVE-2023-32681 proxy authorization leak backport
+# 19. Apply requests CVE-2023-32681 proxy authorization leak backport
 ###############################################################################
 
 echo
@@ -1267,7 +1467,7 @@ PYTEST
 echo ">>> requests CVE-2023-32681 backport verified."
 
 ###############################################################################
-# 19. Apply requests CVE-2024-35195 TLS pool isolation backport
+# 20. Apply requests CVE-2024-35195 TLS pool isolation backport
 ###############################################################################
 
 echo
@@ -1339,7 +1539,7 @@ PYTEST
 echo ">>> requests CVE-2024-35195 backport verified."
 
 ###############################################################################
-# 20. Apply requests CVE-2024-47081 netrc hostname backport
+# 21. Apply requests CVE-2024-47081 netrc hostname backport
 ###############################################################################
 
 echo
@@ -1417,7 +1617,7 @@ PYTEST
 echo ">>> requests CVE-2024-47081 backport verified."
 
 ###############################################################################
-# 21. Apply requests CVE-2026-25645 temporary-file backport
+# 22. Apply requests CVE-2026-25645 temporary-file backport
 ###############################################################################
 
 echo
@@ -1511,7 +1711,7 @@ PYTEST
 echo ">>> requests CVE-2026-25645 backport verified."
 
 ###############################################################################
-# 22. Apply Werkzeug CVE-2023-23934 cookie parsing backport
+# 23. Apply Werkzeug CVE-2023-23934 cookie parsing backport
 ###############################################################################
 
 echo
@@ -1590,7 +1790,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-23934 backport verified."
 
 ###############################################################################
-# 23. Apply Werkzeug CVE-2023-25577 multipart part limit backport
+# 24. Apply Werkzeug CVE-2023-25577 multipart part limit backport
 ###############################################################################
 
 echo
@@ -1693,7 +1893,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2023-25577 backport verified."
 
 ###############################################################################
-# 24. Apply Werkzeug CVE-2024-34069 debugger host trust backport
+# 25. Apply Werkzeug CVE-2024-34069 debugger host trust backport
 ###############################################################################
 
 echo
@@ -1786,7 +1986,7 @@ PYTEST
 echo ">>> Werkzeug CVE-2024-34069 backport verified."
 
 ###############################################################################
-# 25. Apply consolidated Werkzeug safe_join security backports
+# 26. Apply consolidated Werkzeug safe_join security backports
 #     CVE-2024-49766, CVE-2025-66221, CVE-2026-21860,
 #     CVE-2026-27199, CVE-2026-102598
 ###############################################################################
@@ -1889,7 +2089,7 @@ PYTEST
 echo ">>> Werkzeug safe_join security backports verified."
 
 ###############################################################################
-# 26. Apply eventlet CVE-2025-58068 trailer parsing backport
+# 27. Apply eventlet CVE-2025-58068 trailer parsing backport
 ###############################################################################
 
 echo
@@ -1970,7 +2170,7 @@ PYTEST
 echo ">>> eventlet CVE-2025-58068 backport verified."
 
 ###############################################################################
-# 27. Apply Eventlet/dnspython CVE-2023-29483 TuDoor backport
+# 28. Apply Eventlet/dnspython CVE-2023-29483 TuDoor backport
 ###############################################################################
 
 echo
@@ -2324,7 +2524,7 @@ PYTEST
 echo ">>> Eventlet/dnspython CVE-2023-29483 backport verified."
 
 ###############################################################################
-# 28. Apply python-socketio CVE-2026-48804 backport
+# 29. Apply python-socketio CVE-2026-48804 backport
 ###############################################################################
 
 echo
@@ -2418,7 +2618,7 @@ PYTEST
 echo ">>> python-socketio CVE-2026-48804 backport verified."
 
 ###############################################################################
-# 29. Verify critical packages
+# 30. Verify critical packages
 ###############################################################################
 
 echo
@@ -2459,7 +2659,7 @@ if failed:
 PY
 
 ###############################################################################
-# 30. Apply PADIT cryptography compatibility patch
+# 31. Apply PADIT cryptography compatibility patch
 ###############################################################################
 
 echo
@@ -2483,7 +2683,7 @@ cp -f \
 echo ">>> PADIT cryptography patch installed."
 
 ###############################################################################
-# 31. Apply PADIT socketIO client patch if present
+# 32. Apply PADIT socketIO client patch if present
 ###############################################################################
 
 echo
@@ -2513,7 +2713,7 @@ else
 fi
 
 ###############################################################################
-# 32. Basic Python runtime validation
+# 33. Basic Python runtime validation
 ###############################################################################
 
 echo
@@ -2544,7 +2744,7 @@ echo ">>> pip:"
 "${PIP}" --version
 
 ###############################################################################
-# 33. PADIT server import validation
+# 34. PADIT server import validation
 ###############################################################################
 
 echo
@@ -2585,7 +2785,7 @@ print("PADIT SERVER MODULE OK")
 PY
 
 ###############################################################################
-# 34. PADIT server component validation
+# 35. PADIT server component validation
 ###############################################################################
 
 echo
@@ -2603,7 +2803,7 @@ print("PADIT SERVER COMPONENTS OK")
 PY
 
 ###############################################################################
-# 35. Socket.IO validation
+# 36. Socket.IO validation
 ###############################################################################
 
 echo
@@ -2618,7 +2818,7 @@ print("PADIT SOCKETIO OK")
 PY
 
 ###############################################################################
-# 36. PADIT crypto functional test
+# 37. PADIT crypto functional test
 ###############################################################################
 
 echo
@@ -2694,7 +2894,7 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# 37. Generate runtime inventory
+# 38. Generate runtime inventory
 ###############################################################################
 
 echo
@@ -2751,7 +2951,7 @@ echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
 
 ###############################################################################
-# 38. Final status
+# 39. Final status
 ###############################################################################
 
 echo
