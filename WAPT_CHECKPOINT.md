@@ -176,6 +176,29 @@
 - Initial connection refusal immediately following dpkg installation
   was a transient service startup window, not a persistent failure.
 
+### Additional application acceptance — 2026-10-09
+
+- Flask-Babel M04: French/English translations and language switching
+  confirmed working in the installed server web interface.
+- VM107 console successfully generated an agent installer using
+  PADIT server 1.8.3.7589.
+- VM104 Windows agent installed, registered and reported reachable.
+- VM104 update detection triggered successfully from the console.
+- PostgreSQL recorded both VM104 and VM107 with reachable=OK and
+  listening_protocol=websockets.
+- Socket.IO: VM107 initially presented an expired token after server
+  upgrades/restarts; its recorded SID subsequently changed and
+  connectivity recovered. No Flask-SocketIO regression demonstrated.
+- Token expiry/reconnection behavior remains a separate regression
+  scenario to validate; no authentication weakening applied.
+- Wake-on-LAN M03: real UDP emission validated from console VM107
+  through PADIT 7589 on Waptworm using tcpdump.
+- Two 102-byte packets containing VM104's MAC were observed:
+  destinations 255.255.255.255:9 and 192.168.223.255:9.
+- VM104 did not wake because it is a stopped Proxmox VM; normal
+  virtual networking does not establish physical Wake-on-LAN support.
+  Physical-machine wake-up remains untested.
+
 ### Outstanding Debian 12 acceptance
 
 - Complete authenticated console and application workflow tests.
@@ -250,7 +273,7 @@ The pinned versions remain in `requirements-server.txt`.
 |---|---|---|
 | M01 | six 1.17.0; pyparsing 2.4.7; iniparse 0.5 | Update general Python utilities without breaking Python 2.7 imports. |
 | M02 | passlib 1.7.4; netifaces 0.11.0; Flask-Login 0.5.0 | Authentication and network utility compatibility. |
-| M03 | pytz 2026.5; future 1.0.0; wakeonlan 1.1.6 | Refresh timezone/compatibility libraries; adapt WOL API to `send_magic_packet`. Actual device WOL test remains open. |
+| M03 | pytz 2026.5; future 1.0.0; wakeonlan 1.1.6 | Refresh timezone/compatibility libraries; adapt WOL API to `send_magic_packet`. Real UDP emission validated on Bookworm (2026-10-09): console VM107 -> PADIT server -> two 102-byte magic packets for VM104 (Proxmox), captured with tcpdump on port 9. Physical-device wake-up remains untested. |
 | M04 | Flask-Babel 1.0.0 | Resolve `ImmutableDict` incompatibility with Werkzeug 1.0.1; verify French translations and locale selection. |
 | M05 | click 7.1.2; WTForms 2.3.3 | Preserve Flask CLI and form validation behavior. |
 | M06 | pefile 2019.4.18 | Preserve legacy/nested `FileInfo` and optimize version extraction using fast load plus targeted PE resource parsing. |
