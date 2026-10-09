@@ -1,9 +1,9 @@
 #!/bin/bash
 set -u
 
-SCRIPT_VERSION="1.0"
+SCRIPT_VERSION="1.1"
 BACKUP_FORMAT_VERSION="1"
-EXPECTED_DEBIAN_MAJOR="10"
+SUPPORTED_DEBIAN_MAJORS="10 11 12"
 
 WAPT_CONFIG="/opt/wapt/conf/waptserver.ini"
 NGINX_CONFIG="/etc/nginx/sites-available/wapt.conf"
@@ -145,9 +145,10 @@ precheck() {
     if [ -r /etc/os-release ]; then
         . /etc/os-release
         echo "OS: ${PRETTY_NAME:-unknown}"
-        [ "${VERSION_ID:-}" = "$EXPECTED_DEBIAN_MAJOR" ] \
-            && ok "Debian ${EXPECTED_DEBIAN_MAJOR}" \
-            || block "Expected Debian ${EXPECTED_DEBIAN_MAJOR}, found ${VERSION_ID:-unknown}"
+        case " ${SUPPORTED_DEBIAN_MAJORS} " in
+            *" ${VERSION_ID:-unknown} "*) ok "Supported Debian ${VERSION_ID}" ;;
+            *) block "Unsupported Debian ${VERSION_ID:-unknown}; supported: ${SUPPORTED_DEBIAN_MAJORS}" ;;
+        esac
     else
         block "/etc/os-release unavailable"
     fi
@@ -366,7 +367,7 @@ created_utc = $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 [source]
 hostname = $(hostname)
 fqdn = $(hostname -f 2>/dev/null || hostname)
-debian_major = ${EXPECTED_DEBIAN_MAJOR}
+debian_major = ${VERSION_ID}
 waptserver_version = ${WAPT_VERSION}
 waptsetup_version = ${WAPTSETUP_VERSION}
 db_version = ${DB_VERSION}
