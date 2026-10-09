@@ -1,6 +1,6 @@
 # PADIT / WAPT — Active Technical Checkpoint
 
-**Updated:** 2026-10-08
+**Updated:** 2026-10-09
 **Status:** authoritative active checkpoint.
 **Historical evidence:** preserve the existing 9,818-line checkpoint unchanged as `WAPT_HISTORY.md`; historical sections are evidence, **not current instructions**.
 
@@ -25,97 +25,145 @@
 
 **Boundary:** the historical Bookworm package/deployment PASS does **not** mean the *new* M01–M03 runtime has passed Debian packaging, installation, or migration testing. Keep this as a separate validation milestone.
 
-## 3. Current server source and runtime — 2026-10-08
+## 3. Current server source and runtime — 2026-10-09
 
 - Host: **Waptworm**, repository `/git/paditdev`, branch `release/1.8.3`.
-- Validated source HEAD before this documentation update: **`f259d703`**.
-- Builder: `tools/build-python2-runtime-bookworm.sh`; permanent regression tests **M01–M07**.
-- Runtime: `/git/paditdev/build/python2-runtime-server-bookworm` — Python **2.7.18**, OpenSSL **3.0.22**.
-- Backups: `/git/padit-python2-runtime-pre-m01` and `build/python2-runtime-server-bookworm-pre-m04`.
-- Consolidated M07 rebuild on **2026-10-09**: **exit 0**, `BUILD SUCCESS`, `All PADIT runtime tests passed`; size **222M**.
-- Build log: `/tmp/padit-bookworm-m07-build.log`; exit code: `/tmp/padit-bookworm-m07-build.rc`.
-- Inventory: `build/python2-runtime-server-bookworm/WAPT-runtime-inventory.txt`.
-- Python binary SHA256: `66bc2873651c1bcf3496cc6e98e3ea778177410949b014cc3b3c25cb80938c18`.
-- All seven permanent modernization tests **M01–M07 PASS** in the full rebuilt runtime.
-- The runtime build PASS does **not** establish a new Debian package, installed-server or migration validation.
+- Last confirmed source HEAD: **`eca7dc02`** (M10).
+- Builder: `tools/build-python2-runtime-bookworm.sh`.
+- Runtime: `build/python2-runtime-server-bookworm`.
+- Runtime platform: Python **2.7.18**, OpenSSL **3.0.22**, Debian 12 Bookworm.
+- Consolidated M01–M07 rebuild: PASS, exit 0, 2026-10-09.
+- Consolidated M08–M10 rebuild: new versions installed and verified.
+- All ten permanent regression tests **M01–M10 PASS**.
+- `pip check`: **No broken requirements found**.
+- Final M08–M10 validation initially failed only because a manual test
+  invocation omitted the repository root from `PYTHONPATH`.
+  Retesting with `PYTHONPATH="$PWD"`: **10/10 PASS**.
+- Build log: `/tmp/padit-bookworm-m08-m10-build.log`.
+- M07 runtime backup: `build/python2-runtime-server-bookworm-pre-m08`.
+- This runtime validation does **not** establish a new Debian package,
+  installed-server validation or migration validation.
 
-### Server CVE remediation
+### Server security
 
-- The final verified GitHub Dependabot query returned **zero OPEN findings for `requirements-server.txt`** on 2026-10-08. This is **not** a guarantee of no vulnerabilities; always refresh GitHub for live status.
-- Last pyOpenSSL SNI remediation: commit `bc03a837`, CVE-2026-27448; regression test `utils/patch-pyopenssl-19.0.0/test-CVE-2026-27448.py`.
-- Retain existing targeted backports, checksum verification, and regression tests for security-sensitive packages (ujson, cryptography/OpenSSL, urllib3, requests, Werkzeug, eventlet, python-socketio, Jinja2, Flask, lxml, pyOpenSSL).
-- Do **not** close agent alerts because of server remediation.
+- Last recorded Dependabot review (2026-10-08):
+  zero OPEN findings for `requirements-server.txt`.
+- Retain all validated server CVE backports and regression tests.
+- Server, Windows agent and Unix agent are separate security scopes.
+- Never close an agent finding merely because the server was corrected.
 
-## 4. Non-CVE server dependency modernization
+## 4. Server dependency modernization — M01–M10
 
-The server dependency modernization matrix distinguishes installed versions,
-Python-2-compatible ceilings, upstream versions and recommended actions.
-
-| Lot | Dependency | Previous → validated | Git commit |
+| Lot | Dependencies | Commit | Status |
 |---|---|---|---|
-| M01 | `six`, `pyparsing`, `iniparse` | 1.11.0 → 1.17.0; 2.2.0 → 2.4.7; 0.4 → 0.5 | `14da06e8` |
-| M02 | `passlib`, `netifaces`, `Flask-Login` | 1.7.1 → 1.7.4; 0.10.6 → 0.11.0; 0.4.1 → 0.5.0 | `de33ed9f` |
-| M03 | `pytz`, `future`, `wakeonlan` | 2017.2 → 2026.5; 0.18.3 → 1.0.0; 0.2.2 → 1.1.6 | `de33ed9f` |
-| M04 | `Flask-Babel` | 0.11.2 → 1.0.0 | `adf886e6` |
-| M05 | `click`, `WTForms` | 6.7 → 7.1.2; 2.1 → 2.3.3 | `56ce18b2` |
-| M06 | `pefile` | 2016.3.28 → 2019.4.18 | `5d7708fb` |
-| M07 | `huey` | 1.10.2 → 1.10.5 | `f259d703` |
+| M01 | six, pyparsing, iniparse | `14da06e8` | PASS |
+| M02 | passlib, netifaces, Flask-Login | `de33ed9f` | PASS |
+| M03 | pytz, future, wakeonlan | `de33ed9f` | PASS |
+| M04 | Flask-Babel | `adf886e6` | PASS |
+| M05 | click, WTForms | `56ce18b2` | PASS |
+| M06 | pefile | `5d7708fb` | PASS |
+| M07 | huey | `f259d703` | PASS |
+| M08 | ldap3 2.7 -> 2.9.1 | `97016d17` | PASS |
+| M09 | MarkupSafe 1.0 -> 1.1.1 | `23ed37e5` | PASS |
+| M10 | Peewee 3.11.2 -> 3.14.10 | `eca7dc02` | PASS |
 
-**All lots M01–M07:** permanent tests
-`utils/test-server-dependencies-m01.py` through `-m07.py`;
-all seven PASS in the consolidated Bookworm runtime rebuild.
+- Permanent tests:
+  `utils/test-server-dependencies-m01.py` through
+  `utils/test-server-dependencies-m10.py`.
+- M08: LDAP DN parsing, mock bind and user/computer searches PASS.
+- M09: compiled C extension, HTML escaping and Jinja2 integration PASS.
+- M10: SQLite transactions, rollback, conflict handling, Huey SQLite
+  execution and real `waptserver.model` import PASS.
+- Real Active Directory, production PostgreSQL integration and full
+  deployed-server behavior require separate validation.
+- The general non-CVE Python 2 server dependency modernization pass
+  is complete at runtime level.
+- Preserve sensitive compatibility/CVE backports. Consider future
+  upgrades individually only where concrete benefit justifies the risk.
+- Future maintenance: consolidate M01–M10 calls into one test runner;
+  this is a separate refactoring task, not a build blocker.
 
-**M03 / Wake-on-LAN:** migrated `waptserver/server.py` to
-`wakeonlan.send_magic_packet`. Mocked UDP tests PASS; real-host
-operational validation remains pending.
+## 5. PADIT project roadmap — confirmed 2026-10-09
 
-**M04 / Flask-Babel:** fixes the pre-existing `ImmutableDict` import
-failure with Werkzeug 1.0.1. Real French translation and session-based
-locale selection PASS. Untranslated Polish server catalog removed in
-commit `c9082f81`; German catalog retained.
+### Phase 1 — Finish Debian 12 server
 
-**M06 / pefile:** `get_wapt_exe_version()` now accepts both historical
-and nested `FileInfo` structures, retaining `FileVersion` priority and
-`ProductVersion` fallback. Real `waptdeploy.exe` version extraction
-returned `1.8.3.7531` with both pefile versions. Permanent regression
-test PASS.
+- Debian 12 minimal server and autonomous packaging.
+- Backup/Restore and historical migration compatibility.
+- Server rebranding PADIT.
+- Server CVE remediation.
+- Python 2.7-compatible dependency modernization: M01–M10 validated.
+- Complete remaining Bookworm package/install/upgrade/functional tests.
+- Validate PostgreSQL 15, server services, HTTPS, console/agent access,
+  repository publication and migration on the new package/runtime.
+- Validate Backup/Restore interoperability on Bookworm.
+- Perform the real Wake-on-LAN operational pilot.
+- Review `certifi` versus WAPT-specific certificate/trust semantics.
+- Do not replay frozen Debian 10 DR or previous Debian 11/12 milestones
+  without evidence of a regression.
 
-**M07 / Huey:** upgraded 1.10.2 to 1.10.5. Legacy decorators, SQLite task execution and recovery of a task persisted by Huey 1.10.2 PASS. Huey 1.11.0 was deferred because of task identifier changes and duplicate decorator registration. No change to `waptserver/tasks.py`.
+### Phase 2 — Modernize Windows and Linux clients/agents
 
-**Caveat:** runtime rebuild validation is distinct from deployed-server
-functionality, Debian package validation and migration testing.
+- PADIT rebranding of console, installers, agent and related components.
+- Remediate Windows-agent and Unix-agent CVEs separately.
+- Upgrade compatible dependencies and preserve WAPT 1.8.2 migration.
+- Modernize build tools and reproducible compilation infrastructure.
+- Retain previously proven autonomous Windows Community build pipeline.
+- Compile the Linux agent for the first time in this project.
+- Validate binaries, services, package formats and signing/trust paths.
 
-## 5. Open items and boundaries
+### Phase 3 — Product-wide acceptance tests
 
-1. **WOL operational pilot:** exercise server-initiated wake on a controlled host; verify configured ports, broadcast reachability and real-device behavior.
-2. **`certifi`/trust-store audit:** pinned legacy bundle; distinguish `requests` HTTPS verification from PADIT certificate and CRL validation. Do not globally swap trust roots without a targeted review.
-3. **Further server modernization:** candidates in matrix; tests isolated in `/tmp`, cross-tests in combination, dedicated permanent tests, **one full rebuild per consolidated batch**. Potential cleanup `argparse`/`wsgiref` from requirements is not yet done. Future maintenance: consolidate individual M01–M07 regression calls into one test runner, as a separate refactoring task.
-4. **Agents:** Windows-agent and Unix-agent security findings require separate assessment and respective build pipelines.
-5. **New Bookworm distribution milestone:** rebuild package(s), install/upgrade, verify functional server and migration separately from runtime-only success; later Bookworm DR and backup/restore interoperability.
-6. **Signing:** keep internal Authenticode Root CA / publisher trust separate from WAPT package-signing certificates and HTTPS/client CA. Public signing (SignPath Foundation) remains a later investigation, not a validated current dependency.
-7. **Debian 13 / Python 3:** later optional/strategic work; not part of the current validated milestone.
+- Clean installation and upgrade from authentic historical deployments.
+- Server / console / Windows agent / Linux agent interoperability.
+- Package installation, upgrade, inventory and realtime communication.
+- Backup/Restore, disaster recovery and migration continuity.
+- Authenticode, WAPT package signatures, HTTPS and certificate trust.
+- Validate autonomous/offline-capable distribution paths.
 
-## 6. Working-tree safety and synchronization
+### Phase 4 — PADIT release
 
-After the successful build, the only remaining known untracked Waptworm files were:
+- Prepare and validate the consolidated autonomous PADIT release.
+- Planned milestone: **1.8.3.1**; preserve earlier historical 1.8.3
+  milestones and natural Git commit-count versioning.
+- Publish reproducible binaries/packages, checksums and documentation.
+- Do not claim a release before full validation.
+
+### Phase 5 — Python 3 feasibility study
+
+- **Only after the PADIT release.**
+- Evaluate server and agent migration separately.
+- Python 2.7 is intentionally retained for the current release.
+- Python 3 is a longer-term project, not the next operational milestone.
+
+## 6. Remaining server boundaries
+
+1. New Bookworm Debian server/setup packages and real deployed validation
+   remain separate from the successful runtime rebuild.
+2. Backup/Restore V1.0 is historically validated on Debian 10; validate
+   its behavior on the intended Bookworm target.
+3. Historical Windows build/installation evidence is preserved.
+4. Windows and Unix agent CVE work remains independent.
+5. Authenticode trust, WAPT package-signing trust and HTTPS/client CA
+   must remain explicitly separated.
+6. Internal signing is transitional; SignPath Foundation remains a
+   future public Authenticode signing option to investigate.
+7. Keep historical database identity, package-signing continuity and
+   legacy upgrade paths intact.
+
+## 7. Working-tree safety and exact next action
+
+Known untracked Waptworm artifacts to preserve:
 
     waptsetup/deb/Thouet-Software-Signing-Root-CA.cer
     waptsetup/deb/builddir/
     waptsetup/deb/waptsetup-tis.exe
 
-**Never** `git add .`; do not delete or commit these artifacts accidentally. The checkpoint is historically maintained on **VM106**; coordinate Git synchronization deliberately, and preserve the original long checkpoint as a history archive.
-
-## 7. Exact next action
-
-1. Commit this M07 checkpoint update and synchronize `release/1.8.3`
-   with GitHub and VM106 using fast-forward only.
-2. Assess remaining Python-2-compatible server dependencies selectively;
-   keep Socket.IO stack modernization as a separate, network-tested lot.
-3. Refactor M01–M07 regression execution into one test runner as a
-   separate maintainability task, without changing existing test coverage.
-4. Complete the real Wake-on-LAN pilot and the `certifi`/trust-store audit.
-5. Keep Bookworm package build, installed-server functionality, upgrade
-   and migration as separate acceptance gates. Long-term goal: Python 3.
+- Never use `git add .` or indiscriminate cleanup.
+- Do not synchronize VM106 until Windows work resumes.
+- Preserve `WAPT_HISTORY.md` unchanged as historical evidence.
+- Next: commit this checkpoint-only update.
+- Then inventory the remaining Debian 12 server acceptance gates
+  and complete them before opening the client/agent modernization phase.
 
 ## 8. Resume protocol
 
