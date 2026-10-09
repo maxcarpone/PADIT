@@ -142,7 +142,15 @@ def get_wapt_exe_version(exe):
         present = True
         pe = None
         try:
-            pe = pefile.PE(exe)
+            # Read version resources only: full parsing counts every PE byte
+            # using collections.Counter, causing multi-second delays for
+            # large Windows installers.
+            pe = pefile.PE(exe, fast_load=True)
+            pe.parse_data_directories(
+                directories=[
+                    pefile.DIRECTORY_ENTRY['IMAGE_DIRECTORY_ENTRY_RESOURCE']
+                ]
+            )
             file_info = pe.FileInfo
 
             # pefile >= 2019 may nest FileInfo structures in lists.

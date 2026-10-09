@@ -35,11 +35,25 @@ def check_version(nested, file_version, product_version, expected):
     original_pe = server_utils.pefile.PE
 
     class FakePE(object):
-        def __init__(self, filename):
+        def __init__(self, filename, fast_load=False):
+            assert fast_load is True, (
+                'PE parsing must use fast_load=True'
+            )
             self.FileInfo = make_file_info(
                 nested, file_version, product_version
             )
             self.closed = False
+            self.directories = None
+
+        def parse_data_directories(self, directories=None):
+            expected_resource = pefile.DIRECTORY_ENTRY[
+                'IMAGE_DIRECTORY_ENTRY_RESOURCE'
+            ]
+            assert directories == [expected_resource], (
+                'Only PE version resources should be parsed',
+                directories
+            )
+            self.directories = directories
 
         def close(self):
             self.closed = True
