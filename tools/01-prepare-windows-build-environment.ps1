@@ -232,6 +232,66 @@ if ($LASTEXITCODE -ne 0 -or $BuildPythonPackageState -ne '2.1.15|2.0.6|3.0.1|3.0
 
 Write-Host '[PASS] Dedicated Python 2 build environment'
 
+# ---------------------------------------------------------------------------
+# Microsoft Visual C++ Compiler for Python 2.7 (VC9 x86)
+# ---------------------------------------------------------------------------
+
+Write-Step 'Checking Microsoft VC9 compiler for Python 2.7'
+
+$VcInstaller = Join-Path $BuildKit 'windows-sdk\VCForPython27.msi'
+
+Assert-FileHash $VcInstaller `
+    '070474DB76A2E625513A5835DF4595DF9324D820F9CC97EAB2A596DCBC2F5CBF'
+
+$VcRoot = Join-Path $env:LOCALAPPDATA `
+    'Programs\Common\Microsoft\Visual C++ for Python\9.0'
+
+$VcFiles = @(
+    'vcvarsall.bat',
+    'VC\bin\cl.exe',
+    'VC\bin\link.exe',
+    'VC\bin\lib.exe'
+)
+
+$VcComplete = $true
+
+foreach ($File in $VcFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $VcRoot $File) -PathType Leaf)) {
+        $VcComplete = $false
+    }
+}
+
+if (-not $VcComplete) {
+    Write-Host 'Installing controlled Microsoft VC9 compiler...'
+
+    Invoke-CheckedProcess 'msiexec.exe' @(
+        '/i',
+        $VcInstaller,
+        '/passive',
+        '/norestart'
+    )
+}
+
+foreach ($File in $VcFiles) {
+    $Candidate = Join-Path $VcRoot $File
+
+    if (-not (Test-Path -LiteralPath $Candidate -PathType Leaf)) {
+        throw "Microsoft VC9 component missing: $Candidate"
+    }
+}
+
+$VcVars = Join-Path $VcRoot 'vcvarsall.bat'
+$VcCommand = 'call "' + $VcVars + '" x86 >nul && cl.exe 2>&1'
+
+$VcOutput = & cmd.exe /d /s /c $VcCommand 2>&1
+$VcBanner = $VcOutput -join "`n"
+
+if ($VcBanner -notmatch '32-bit C/C\+\+ Optimizing Compiler Version 15\.00\.30729\.01 for 80x86') {
+    throw "Unexpected VC9 compiler version or architecture: $VcBanner"
+}
+
+Write-Host '[PASS] Microsoft VC9 15.00.30729.01 x86'
+
 Write-Step 'Checking Lazarus 1.8.2 / FPC 3.0.4'
 
 $LazarusOk = $false
@@ -285,5 +345,5 @@ Write-Host 'virtualenv:      15.1.0'
 Write-Host "Build Python:     $BuildPythonRoot"
 Write-Host 'Lazarus:         1.8.2'
 Write-Host 'FPC:             3.0.4'
-Write-Host 'VCForPython27:   not required'
+Write-Host 'VCForPython27:   9.0 (VC9 x86, 15.00.30729.01)'
 Write-Host 'Global Inno:     not required'
