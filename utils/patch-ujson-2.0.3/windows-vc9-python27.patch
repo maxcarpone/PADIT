@@ -1,0 +1,87 @@
+diff --git a/lib/ultrajsondec.c b/lib/ultrajsondec.c
+index a8b82d4..9fbc8ff 100644
+--- a/lib/ultrajsondec.c
++++ b/lib/ultrajsondec.c
+@@ -44,7 +44,9 @@ https://opensource.apple.com/source/tcl/tcl-14/tcl/license.terms
+ #include <wchar.h>
+ #include <stdlib.h>
+ #include <errno.h>
++#ifndef _WIN32
+ #include <stdint.h>
++#endif
+ 
+ #ifndef TRUE
+ #define TRUE 1
+diff --git a/lib/ultrajsonenc.c b/lib/ultrajsonenc.c
+index 642338d..bc0b709 100644
+--- a/lib/ultrajsonenc.c
++++ b/lib/ultrajsonenc.c
+@@ -116,13 +116,14 @@ That way we won't run our head into the wall each call */
+ static void Buffer_Realloc (JSONObjectEncoder *enc, size_t cbNeeded)
+ {
+   size_t free_space = enc->end - enc->offset;
++  size_t curSize = enc->end - enc->start;
++  size_t newSize = curSize;
++  size_t offset = enc->offset - enc->start;
++
+   if (free_space >= cbNeeded)
+   {
+     return;
+   }
+-  size_t curSize = enc->end - enc->start;
+-  size_t newSize = curSize;
+-  size_t offset = enc->offset - enc->start;
+ 
+ #ifdef DEBUG
+   // In debug mode, allocate only what is requested so that any miscalculation
+@@ -280,10 +281,12 @@ static int Buffer_EscapeStringUnvalidated (JSONObjectEncoder *enc, const char *i
+ 
+ static int Buffer_EscapeStringValidated (JSOBJ obj, JSONObjectEncoder *enc, const char *io, const char *end)
+ {
++  JSUTF32 ucs;
++  char *of;
++
+   Buffer_Reserve(enc, RESERVE_STRING(end - io));
+ 
+-  JSUTF32 ucs;
+-  char *of = (char *) enc->offset;
++  of = (char *) enc->offset;
+ 
+   for (;;)
+   {
+diff --git a/python/JSONtoObj.c b/python/JSONtoObj.c
+index 0d72f68..fea8db5 100644
+--- a/python/JSONtoObj.c
++++ b/python/JSONtoObj.c
+@@ -154,7 +154,11 @@ PyObject* JSONToObj(PyObject* self, PyObject *args, PyObject *kwargs)
+   else
+   if (PyUnicode_Check(arg))
+   {
+-    sarg = PyUnicode_AsEncodedString(arg, NULL, "surrogatepass");
++#if PY_MAJOR_VERSION < 3
++    sarg = PyUnicode_AsEncodedString(arg, "utf-8", "strict");
++#else
++    sarg = PyUnicode_AsEncodedString(arg, "utf-8", "surrogatepass");
++#endif
+     if (sarg == NULL)
+     {
+       //Exception raised above us by codec according to docs
+diff --git a/tests/test_ujson.py b/tests/test_ujson.py
+index e37ad99..1594d48 100644
+--- a/tests/test_ujson.py
++++ b/tests/test_ujson.py
+@@ -344,6 +344,14 @@ def test_dump_to_file_like_object():
+     assert "[1,2,3]" == f.bytes
+ 
+ 
++def test_dump_write_failure():
++    class FailingWriter:
++        def write(self, data):
++            raise IOError("simulated write failure")
++
++    with pytest.raises(IOError, match="simulated write failure"):
++        ujson.dump([1, 2, 3], FailingWriter())
++
+ def test_dump_file_args_error():
+     with pytest.raises(TypeError):
+         ujson.dump([], "")
