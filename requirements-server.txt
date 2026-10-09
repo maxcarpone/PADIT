@@ -11,7 +11,7 @@ Flask-Login==0.5.0
 Flask-SocketIO==4.2.1
 future==1.0.0
 greenlet==0.4.15
-huey==1.10.2
+huey==1.10.5
 iniparse==0.5
 itsdangerous==1.1.0
 Jinja2==2.11.3
