@@ -1,8 +1,8 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$BuildKit = 'C:\wapt-build-kit',
+    [string]$BuildKit = 'C:\padit-build-kit',
     [string]$PythonRoot = 'C:\Python27',
-    [string]$BuildPythonRoot = 'C:\wapt-build-python2',
+    [string]$BuildPythonRoot = 'C:\padit-build-python2',
     [string]$LazarusRoot = 'C:\lazarus'
 )
 

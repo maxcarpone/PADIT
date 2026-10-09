@@ -1,13 +1,13 @@
 [CmdletBinding()]
 param(
     [string]$SourceRoot,
-    [string]$BuildKit = 'C:\wapt-build-kit',
-    [string]$Runtime = 'C:\wapt-runtime-1.8.3',
-    [string]$BuildPython = 'C:\wapt-build-python2\Scripts\python.exe',
-    [string]$Output = 'C:\wapt-product-1.8.3',
-    [string]$Worktree = 'C:\wapt-build-worktree-auto',
+    [string]$BuildKit = 'C:\padit-build-kit',
+    [string]$Runtime = 'C:\padit-runtime-1.8.3',
+    [string]$BuildPython = 'C:\padit-build-python2\Scripts\python.exe',
+    [string]$Output = 'C:\padit-product-1.8.3',
+    [string]$Worktree = 'C:\padit-build-worktree-auto',
     [string]$Lazarus = 'C:\lazarus',
-    [string]$LazarusPcp = 'C:\wapt-build-lazarus-pcp-auto',
+    [string]$LazarusPcp = 'C:\padit-build-lazarus-pcp-auto',
     [string]$SignKey,
     [string]$SignKeyPasswordFile,
     [switch]$Force

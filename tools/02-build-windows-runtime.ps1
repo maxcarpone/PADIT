@@ -15,7 +15,7 @@
 
   Baseline assumptions:
     - bootstrap CPython 2.7.18 x86 is installed temporarily
-    - C:\wapt-build-kit contains the validated controlled inputs
+    - C:\padit-build-kit contains the validated controlled inputs
     - this script is run from a WAPT 1.8.3 source tree
 
   The resulting runtime is expected to execute without C:\Python27 in sys.path.
@@ -27,13 +27,13 @@ param(
     [string]$RepoRoot = "",
 
     [Parameter()]
-    [string]$BuildKit = "C:\wapt-build-kit",
+    [string]$BuildKit = "C:\padit-build-kit",
 
     [Parameter()]
     [string]$BootstrapPython = "C:\Python27\python.exe",
 
     [Parameter()]
-    [string]$Output = "C:\wapt-runtime-1.8.3",
+    [string]$Output = "C:\padit-runtime-1.8.3",
 
     [switch]$Force
 )
@@ -92,15 +92,15 @@ function Invoke-Checked {
 # ---------------------------------------------------------------------------
 
 $BuiltWheels = Join-Path $BuildKit "python\built-wheels"
-$WaptBins    = Join-Path $BuildKit "python\wapt-binaries"
+$PaditBins   = Join-Path $BuildKit "python\padit-binaries"
 $OpenSslZip  = Join-Path $BuildKit "runtime\openssl\openssl-1.0.2u-i386-win32.zip"
 
-$Python27Dll = Join-Path $WaptBins "python27.dll"
-$PythonCom   = Join-Path $WaptBins "pywin32-228\pythoncom27.dll"
-$PythonComL  = Join-Path $WaptBins "pywin32-228\pythoncomloader27.dll"
-$PyWinTypes  = Join-Path $WaptBins "pywin32-228\pywintypes27.dll"
-$Ujson       = Join-Path $WaptBins "ujson-1.35.pyd"
-$ActiveDir   = Join-Path $WaptBins "active_directory-0.6.7.py"
+$Python27Dll = Join-Path $PaditBins "python27.dll"
+$PythonCom   = Join-Path $PaditBins "pywin32-228\pythoncom27.dll"
+$PythonComL  = Join-Path $PaditBins "pywin32-228\pythoncomloader27.dll"
+$PyWinTypes  = Join-Path $PaditBins "pywin32-228\pywintypes27.dll"
+$Ujson       = Join-Path $PaditBins "ujson-1.35.pyd"
+$ActiveDir   = Join-Path $PaditBins "active_directory-0.6.7.py"
 
 $ReqGeneric  = Join-Path $RepoRoot "requirements-agent.txt"
 $ReqWindows  = Join-Path $RepoRoot "requirements-agent-windows.txt"

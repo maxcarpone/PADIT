@@ -4,7 +4,7 @@ param(
     [string]$Action = 'Create',
 
     [string]$PrivateDir = 'C:\private-wapt-signing',
-    [string]$PublicDir  = 'C:\wapt-build-kit\signing\public',
+    [string]$PublicDir  = 'C:\padit-build-kit\signing\public',
 
     [string]$RootSubject = 'CN=Thouet Software Signing Root CA',
     [string]$CodeSubject = 'CN=Thouet Software Code Signing',
