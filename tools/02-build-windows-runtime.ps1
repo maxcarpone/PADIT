@@ -276,7 +276,7 @@ Write-Step "Embedding CPython 2.7 standard library"
 
 # Merge, do not mirror/delete: site-packages already contains the controlled
 # package layer assembled above.
-& robocopy $bootstrapLib (Join-Path $Output "Lib") /E /R:0 /W:0 | Out-Host
+& robocopy $bootstrapLib (Join-Path $Output "Lib") /E /R:0 /W:0 /XD (Join-Path $bootstrapLib "site-packages") | Out-Host
 if ($LASTEXITCODE -gt 7) { throw "robocopy Lib failed with code $LASTEXITCODE" }
 
 Write-Step "Embedding CPython 2.7 native DLL directory"
@@ -383,6 +383,10 @@ finally {
 # ---------------------------------------------------------------------------
 # Acceptance tests
 # ---------------------------------------------------------------------------
+
+Write-Step "Validating final embedded Python package manager"
+Invoke-Checked $RuntimePython @("-m", "pip", "--version")
+Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
 Write-Step "Running autonomous runtime acceptance tests"
 
