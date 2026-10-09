@@ -135,6 +135,56 @@
 - Python 2.7 is intentionally retained for the current release.
 - Python 3 is a longer-term project, not the next operational milestone.
 
+## 5A. Debian 12 installed-server validation — 2026-10-09
+
+### Packaging and upgrade
+
+- Bookworm server and Windows-setup Debian packages built from
+  `5d1a7250`, version `1.8.3.7587`.
+- In-place server upgrade to 7587 completed on Waptworm.
+- PostgreSQL 15, nginx, waptserver and wapttasks operational.
+- Six sensitive configuration, CA and TLS files preserved (SHA256).
+- DR backup tool v1.1 supports Debian 10/11/12; Bookworm backup
+  creation validated. Bookworm restore remains untested.
+
+### Homepage performance regression and correction
+
+- Symptom on server 7587: homepage `/` HTTP 200 in 13.5116 s;
+  `/lang/en`, `/login` and `/api/v1/hosts` responded in milliseconds.
+- Root cause: pefile 2019.4.18 performs a full-file byte-frequency
+  count via `collections.Counter(bytearray(self.__data__))` when
+  `fast_load=False`. Windows executables are approximately 27 MB.
+- Fix in `waptserver/utils.py`: `pefile.PE(exe, fast_load=True)`
+  followed by targeted parsing of
+  `IMAGE_DIRECTORY_ENTRY_RESOURCE`.
+- Permanent M06 regression test updated: historical and nested
+  `FileInfo`, ProductVersion fallback, fast-load requirement and
+  resource-directory-only parsing.
+- Source correction commit: `953660ab`.
+- Python 2 syntax validation and M01-M10 suite: 10/10 PASS.
+- Server package rebuilt and installed on Waptworm:
+  `tis-waptserver-1.8.3.7589-953660ab-debian-12-amd64.deb`.
+- Package SHA256:
+  `918462de71ac20b7c7896c5889bba8427be2312af3c37dde2d4a2b359e002207`.
+- Installed server homepage: HTTP 200 in 0.170041 s, approximately
+  79 times faster than 7587 (98.7% reduction).
+- `/lang/en`: HTTP 302, `/login` and `/api/v1/hosts`: HTTP 401
+  without credentials, all responding in approximately 2 ms.
+- PostgreSQL, nginx, waptserver and wapttasks active.
+- Six configuration/identity files still match original SHA256.
+- User confirmed markedly improved browser responsiveness.
+- Initial connection refusal immediately following dpkg installation
+  was a transient service startup window, not a persistent failure.
+
+### Outstanding Debian 12 acceptance
+
+- Complete authenticated console and application workflow tests.
+- Validate agent communication and investigate Socket.IO warnings,
+  including an expired-token warning.
+- Complete restore testing in an isolated Debian 12 environment.
+- Preserve separation between server validation and later Windows/
+  Linux agent modernization.
+
 ## 6. Remaining server boundaries
 
 1. New Bookworm Debian server/setup packages and real deployed validation
@@ -203,7 +253,7 @@ The pinned versions remain in `requirements-server.txt`.
 | M03 | pytz 2026.5; future 1.0.0; wakeonlan 1.1.6 | Refresh timezone/compatibility libraries; adapt WOL API to `send_magic_packet`. Actual device WOL test remains open. |
 | M04 | Flask-Babel 1.0.0 | Resolve `ImmutableDict` incompatibility with Werkzeug 1.0.1; verify French translations and locale selection. |
 | M05 | click 7.1.2; WTForms 2.3.3 | Preserve Flask CLI and form validation behavior. |
-| M06 | pefile 2019.4.18 | Adapt nested PE `FileInfo` handling and retain historical executable version extraction. |
+| M06 | pefile 2019.4.18 | Preserve legacy/nested `FileInfo` and optimize version extraction using fast load plus targeted PE resource parsing. |
 | M07 | huey 1.10.5 | Preserve legacy task names, SQLite execution and persisted tasks. Huey 1.11.0 was deferred due to task identifier/decorator changes. |
 | M08 | ldap3 2.9.1 | Preserve DN parsing, escaped characters and simulated LDAP bind/search behavior. |
 | M09 | MarkupSafe 1.1.1 | Validate compiled C extension, escaping and patched Jinja2 2.11.3 integration. |
