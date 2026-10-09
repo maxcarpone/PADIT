@@ -170,3 +170,88 @@ Known untracked Waptworm artifacts to preserve:
 Gipity: treat **this file** as the **current** PADIT project state and `WAPT_HISTORY.md` as historical evidence only. Speak French; address user as Max; keep answers concise and proceed in validated steps. Do not replay closed Buster DR, Bullseye, previous Bookworm installation or historical author-rewrite investigations without contradictory evidence. Preserve security-scope separation (server vs agents).
 
 **SSH safety:** never paste `set -e` or `exit` into an interactive Bash shell; prefer separate scripts/subshells. Python 2 snippets should declare UTF-8 (or remain ASCII). Long builds use detached execution with persistent log and exit code. Do not claim build success without an actual zero return code and terminal PASS markers.
+
+---
+
+## Appendix A — Server dependency modernization M01–M10
+
+### Purpose and execution order
+
+M01–M10 are historical modernization batches, **not ten build stages**.
+They were developed incrementally to preserve Python 2.7 compatibility,
+isolate regressions and validate changes before consolidated rebuilds.
+
+The operational sequence is:
+
+1. Build the Python 2.7 server runtime and install pinned requirements.
+2. Apply the existing security backports and run their regression tests.
+3. Run the PADIT server functional/cryptographic tests.
+4. Remove the temporary WAPT server test configuration.
+5. Execute `tools/test-server-dependencies.sh` (M01 through M10).
+6. Generate the runtime inventory and complete builder checks.
+7. Separately build Debian packages and validate the installed server.
+
+**M01–M10 are regression tests, not separate dependency installations.**
+The pinned versions remain in `requirements-server.txt`.
+
+### Modernization batches and rationale
+
+| Lot | Dependencies / selected versions | Reason and compatibility notes |
+|---|---|---|
+| M01 | six 1.17.0; pyparsing 2.4.7; iniparse 0.5 | Update general Python utilities without breaking Python 2.7 imports. |
+| M02 | passlib 1.7.4; netifaces 0.11.0; Flask-Login 0.5.0 | Authentication and network utility compatibility. |
+| M03 | pytz 2026.5; future 1.0.0; wakeonlan 1.1.6 | Refresh timezone/compatibility libraries; adapt WOL API to `send_magic_packet`. Actual device WOL test remains open. |
+| M04 | Flask-Babel 1.0.0 | Resolve `ImmutableDict` incompatibility with Werkzeug 1.0.1; verify French translations and locale selection. |
+| M05 | click 7.1.2; WTForms 2.3.3 | Preserve Flask CLI and form validation behavior. |
+| M06 | pefile 2019.4.18 | Adapt nested PE `FileInfo` handling and retain historical executable version extraction. |
+| M07 | huey 1.10.5 | Preserve legacy task names, SQLite execution and persisted tasks. Huey 1.11.0 was deferred due to task identifier/decorator changes. |
+| M08 | ldap3 2.9.1 | Preserve DN parsing, escaped characters and simulated LDAP bind/search behavior. |
+| M09 | MarkupSafe 1.1.1 | Validate compiled C extension, escaping and patched Jinja2 2.11.3 integration. |
+| M10 | Peewee 3.14.10 | Validate transactions, rollback, `ON CONFLICT IGNORE`, Huey SQLite and real PADIT model import. |
+
+### Regression-test implementation
+
+- The builder calls `tools/test-server-dependencies.sh` exactly once.
+- The runner executes `utils/test-server-dependencies-m01.py` through
+  `utils/test-server-dependencies-m10.py` in ascending order.
+- Each test runs as a separate Python 2.7 process.
+- `PYTHONPATH` includes the PADIT repository root for `waptutils`,
+  `waptcrypto` and `waptserver` imports.
+- The runner stops immediately upon the first failure.
+- An all-PASS result does not replace PostgreSQL, Active Directory,
+  network, Debian package, installation or historical migration tests.
+
+Manual execution on Waptworm:
+
+    cd /git/paditdev
+    ./tools/test-server-dependencies.sh
+
+The builder supplies its own Python runtime explicitly:
+
+    "${REPO_ROOT}/tools/test-server-dependencies.sh" "${PYTHON}"
+
+### Compatibility and security decisions
+
+- Preserve existing server CVE backports and their dedicated tests.
+- `pyOpenSSL==19.0.0` retains the CVE-2026-27448 backport.
+- `cryptography==3.3.2` retains the validated WAPT/OpenSSL compatibility.
+- `certifi==2021.10.8` is intentionally retained following the
+  trust-path audit. Requests uses its CA bundle by default; WAPT's
+  certificate and CRL verification can receive an explicit `SSLCABundle`.
+- Keep the legacy Flask/Socket.IO/Engine.IO compatibility stack until
+  separate integration testing justifies a change.
+- `itsdangerous==1.1.0` preserves `TimedJSONWebSignatureSerializer`.
+- `psycopg2==2.8.6` remains the Python-2-compatible PostgreSQL driver.
+- Do not confuse runtime modernization PASS with Debian installed-server
+  or client/agent security validation.
+
+### Validated milestone
+
+M01–M07: consolidated rebuild and permanent tests PASS.
+
+M08–M10: isolated functional tests and consolidated Bookworm runtime
+validation PASS on 2026-10-09.
+
+Full final verification: **10/10 tests PASS**, `pip check` PASS.
+
+Source milestone: `eca7dc02` (M10); roadmap checkpoint: `32b7dc2b`.

@@ -2932,88 +2932,14 @@ if [ -e "${CONF_FILE}" ]; then
 fi
 
 ###############################################################################
-# M01. Validate modernized server dependencies
+# Validate modernized PADIT server dependencies (M01-M10)
+# See WAPT_CHECKPOINT.md, Appendix A.
 ###############################################################################
 
 echo
-echo ">>> Validating PADIT server dependencies M01"
+echo ">>> Validating PADIT server dependency modernization"
 
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m01.py"
-
-echo "PADIT M01 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M02"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m02.py"
-
-echo "PADIT M02 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M03"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m03.py"
-
-echo "PADIT M03 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M04"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m04.py"
-
-echo "PADIT M04 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M05"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m05.py"
-
-echo "PADIT M05 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M06"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m06.py"
-
-echo "PADIT M06 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M07"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m07.py"
-
-echo "PADIT M07 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M08"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m08.py"
-
-echo "PADIT M08 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M09"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m09.py"
-
-echo "PADIT M09 dependency validation: PASS"
-
-echo
-echo ">>> Validating PADIT server dependencies M10"
-
-PYTHONPATH="${REPO_ROOT}" "${PYTHON}" \
-    "${REPO_ROOT}/utils/test-server-dependencies-m10.py"
-
-echo "PADIT M10 dependency validation: PASS"
+"${REPO_ROOT}/tools/test-server-dependencies.sh" "${PYTHON}"
 
 ###############################################################################
 # 39. Generate runtime inventory
