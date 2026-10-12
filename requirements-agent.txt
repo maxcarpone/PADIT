@@ -23,16 +23,16 @@ Flask-Babel==0.11.2
 Flask-Login==0.4.1
 flask-paginate==0.5.1
 Flask-SocketIO==4.2.1
-future==0.17.1
+future==1.0.0
 greenlet==0.4.15
 huey==1.10.2
-idna==2.8; python_version <= '3.4'
+idna==2.10; python_version <= '3.4'
 idna==3.2; python_version > '3.5'
 iniparse==0.4
 ipaddress==1.0.22
 isort==4.2.15
 itsdangerous==1.1.0
-Jinja2==2.10.1
+Jinja2==2.11.3
 lazy-object-proxy==1.3.1
 MarkupSafe==1.1.1
 mccabe==0.6.1
@@ -50,7 +50,7 @@ pyparsing==2.2.0
 python-engineio==3.10.0
 python-socketio==4.3.1
 pytz==2017.2
-requests==2.26.0
+requests==2.27.1
 rpyc==4.0.2
 singledispatch==3.4.0.3
 six==1.11.0
@@ -59,7 +59,7 @@ urllib3==1.26.7
 wakeonlan==0.2.2
 websocket-client==0.56.0
 waitress==1.4.3
-Werkzeug==0.16
+Werkzeug==1.0.1
 whichcraft==0.6.1
 wrapt==1.11.2 
 WTForms==2.1
