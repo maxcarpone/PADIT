@@ -384,6 +384,70 @@ Invoke-Checked $RuntimePython @(
     $UjsonWheel
 )
 
+# ---------------------------------------------------------------------------
+# urllib3 1.26.20 security backports, shared with the Bookworm runtime.
+# Apply after pip installation, before dependency and runtime smoke tests.
+# ---------------------------------------------------------------------------
+Write-Step "Applying urllib3 1.26.20 security backports"
+
+$Urllib3Dir = Join-Path $Output 'Lib\site-packages\urllib3'
+$Urllib3Response = Join-Path $Urllib3Dir 'response.py'
+$Urllib3PatchDir = Join-Path $RepoRoot 'utils\patch-urllib3-1.26.20'
+
+$Urllib3Patches = @(
+    'CVE-2026-97689.patch',
+    'CVE-2025-66418.patch',
+    'CVE-2025-66471.patch'
+)
+
+Assert-File $Urllib3Response
+
+$Urllib3Version = & $RuntimePython -c 'import urllib3; print(urllib3.__version__)'
+if ($LASTEXITCODE -ne 0 -or $Urllib3Version.Trim() -ne '1.26.20') {
+    throw "Unexpected urllib3 version: $Urllib3Version"
+}
+
+Push-Location $Urllib3Dir
+try {
+    foreach ($PatchName in $Urllib3Patches) {
+        $PatchPath = Join-Path $Urllib3PatchDir $PatchName
+        Assert-File $PatchPath
+
+        & git apply --unidiff-zero --check -p1 $PatchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "urllib3 patch check failed: $PatchName"
+        }
+
+        & git apply --unidiff-zero -p1 $PatchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "urllib3 patch application failed: $PatchName"
+        }
+
+        Write-Host "[PASS] urllib3 $PatchName"
+    }
+}
+finally {
+    Pop-Location
+}
+
+& $RuntimePython -m py_compile $Urllib3Response
+if ($LASTEXITCODE -ne 0) {
+    throw 'urllib3 response.py syntax check failed'
+}
+
+$Urllib3Text = [System.IO.File]::ReadAllText($Urllib3Response)
+foreach ($Marker in @(
+    '_MAX_CHUNK_LINE_LENGTH',
+    'max_decode_links = 5',
+    'unconsumed_tail'
+)) {
+    if (-not $Urllib3Text.Contains($Marker)) {
+        throw "Missing urllib3 protection marker: $Marker"
+    }
+}
+
+Write-Host '[PASS] urllib3 backports applied and syntax verified'
+
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
