@@ -348,7 +348,7 @@ $ExplicitPackages = @(
     "monotonic==1.6",
     "dnspython==1.16.0",
     "plumbum==1.7.2",
-    "winkerberos==0.7.0",
+    "winkerberos==0.9.1",
     "pyasn1==0.5.1",
     "pywin32==228"
 )
@@ -367,7 +367,7 @@ $WindowsPackages = @(
     "kerberos-sspi==0.2",
     "winshell==0.6",
     "winsys-3.x==0.5.2",
-    "WMI==1.4.9"
+    "WMI==1.5.1"
 )
 
 Write-Step "Installing Windows requirement layer offline"

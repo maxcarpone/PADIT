@@ -1,7 +1,7 @@
 pyad==0.5.20
 kerberos-sspi==0.2 
-winkerberos==0.7.0 
+winkerberos==0.9.1
 winshell==0.6 
 winsys-3.x==0.5.2
 ujson==2.0.3
-WMI==1.4.9
+WMI==1.5.1
