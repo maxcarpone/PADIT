@@ -35,7 +35,13 @@ param(
     [Parameter()]
     [string]$Output = "C:\padit-runtime-1.8.3",
 
-    [switch]$Force
+    [switch]$Force,
+
+    [Parameter()]
+    [string]$UjsonPytestPackages = "",
+
+    [Parameter()]
+    [string]$BuildPython = "C:\padit-build-python2\Scripts\python.exe"
 )
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
@@ -87,6 +93,142 @@ function Invoke-Checked {
     }
 }
 
+
+# ---------------------------------------------------------------------------
+# Controlled Windows native dependency build: ujson 2.0.3 (Python 2.7 x86)
+# ---------------------------------------------------------------------------
+
+function Invoke-UjsonNative([string]$Name, [scriptblock]$Command) {
+    & $Command
+    if ($LASTEXITCODE -ne 0) { throw "$Name failed (exit $LASTEXITCODE)" }
+}
+
+function Build-ControlledUjsonWheel {
+    Write-Step "Building patched ujson 2.0.3 wheel with VC9 (wheel absent)"
+    $Archive = Join-Path $BuildKit 'python\sources\ujson-2.0.3.tar.gz'
+    $PatchRoot = Join-Path $RepoRoot 'utils\patch-ujson-2.0.3'
+    $WorkRoot = Join-Path $BuildKit ('python\work\ujson-2.0.3-integrated-' + [guid]::NewGuid().ToString('N'))
+    $SourceDir = Join-Path $WorkRoot 'ujson-2.0.3'
+    $WheelDir = $BuiltWheels
+    $StageDir = Join-Path $WorkRoot 'wheel-dist'
+    $VC9 = Join-Path $env:LOCALAPPDATA 'Programs\Common\Microsoft\Visual C++ for Python\9.0\vcvarsall.bat'
+
+    $Patches = @(
+        @{Name='CVE-2022-31116.patch'; Hash='CCEF883E16BBD8DAD3B790F38FF2D324F5D0515A7E0D6F6377B86F509A6FB18D'},
+        @{Name='issue-334-buffer-overflow.patch'; Hash='1DDBA061DDC6E776E518A5A272D6D7CA0263BAC3B5EE947F554ABC82795658FD'},
+        @{Name='windows-vc9-python27.patch'; Hash='F09F47A57A20ED1C77E9D1AF32CFB6B9BC1DE88799831BB97855DA5A028276A0'},
+        @{Name='CVE-2022-31117.patch'; Hash='BBA4CDAB6C20EA2455B6C278C6CEA0E86E82C2ED4A7666F7DB06EC831DB69E52'},
+        @{Name='CVE-2026-44660.patch'; Hash='09D96A036B39CD4C43555E210E53E778B216E83598F25D3A8BB984A7C4B8AD50'},
+        @{Name='CVE-2026-54911.patch'; Hash='0CAB6CBD582872DB6703989D68CD3DCD1B087153C85C86CC1204E6B5096210B0'}
+    )
+
+    Assert-Sha256 $Archive 'BD2DEFFC983827510E5145FB66E4CC0F577480C62FE0B4882139F8F7D27AE9A3'
+    Assert-File $BuildPython
+    Assert-File $VC9
+    Assert-File (Join-Path $PatchRoot 'tests\test_ujson_security.py')
+    foreach ($Item in $Patches) {
+        Assert-Sha256 (Join-Path $PatchRoot $Item.Name) $Item.Hash
+    }
+
+
+    if ([string]::IsNullOrWhiteSpace($UjsonPytestPackages)) {
+        throw 'UjsonPytestPackages must be provided for tests before wheel production.'
+    }
+    if (-not (Test-Path -LiteralPath $UjsonPytestPackages -PathType Container)) {
+        throw "Missing test dependencies: $UjsonPytestPackages"
+    }
+    if (Test-Path -LiteralPath $WorkRoot) {
+        throw "Work directory exists; refusing to overwrite: $WorkRoot"
+    }
+
+    New-Item -ItemType Directory -Path $WorkRoot -Force | Out-Null
+    Invoke-UjsonNative 'extract archive' { & tar -xf $Archive -C $WorkRoot }
+    if (-not (Test-Path -LiteralPath $SourceDir -PathType Container)) { throw "Missing extracted source: $SourceDir" }
+
+    foreach ($Item in $Patches) {
+        $Path = Join-Path $PatchRoot $Item.Name
+        Invoke-UjsonNative "check patch $($Item.Name)" { & git -C $SourceDir apply --check $Path }
+        Invoke-UjsonNative "apply patch $($Item.Name)" { & git -C $SourceDir apply $Path }
+        Write-Host "[OK] $($Item.Name)"
+    }
+
+    Copy-Item -LiteralPath (Join-Path $PatchRoot 'tests\test_ujson_security.py') -Destination (Join-Path $SourceDir 'tests\test_ujson_security.py')
+
+    $OldPythonPath = $env:PYTHONPATH
+    try {
+        # pytest dependencies are only needed in the test subprocess.
+        $env:PYTHONPATH = $UjsonPytestPackages
+        Push-Location $SourceDir
+        try {
+            $BuildCmd = 'call "' + $VC9 + '" x86 && set DISTUTILS_USE_SDK=1 && set MSSdk=1 && "' + $BuildPython + '" setup.py build_ext --inplace --force'
+            Invoke-UjsonNative 'VC9 extension build' { & cmd.exe /d /s /c $BuildCmd }
+            Invoke-UjsonNative 'pytest' { & $BuildPython -m pytest tests\test_ujson.py tests\test_ujson_security.py -q }
+        }
+        finally { Pop-Location }
+    }
+    finally { $env:PYTHONPATH = $OldPythonPath }
+
+    # CVE-2022-31117: source-level fix reviewed; deterministic realloc-failure
+    # injection has NOT been tested. This limitation is not a wheel build blocker.
+    New-Item -ItemType Directory -Path $StageDir -Force | Out-Null
+    $WheelCmd = 'call "' + $VC9 + '" x86 && set DISTUTILS_USE_SDK=1 && set MSSdk=1 && "' + $BuildPython + '" setup.py bdist_wheel --dist-dir "' + $StageDir + '"'
+    Push-Location $SourceDir
+    try { Invoke-UjsonNative 'VC9 wheel build' { & cmd.exe /d /s /c $WheelCmd } }
+    finally { Pop-Location }
+
+    $Wheels = @(Get-ChildItem -LiteralPath $StageDir -Filter 'ujson-2.0.3-*-win32.whl' -File)
+    if ($Wheels.Count -ne 1) { throw "Expected exactly one ujson 2.0.3 win32 wheel, got $($Wheels.Count)" }
+    $Wheel = $Wheels[0]
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $Zip = [System.IO.Compression.ZipFile]::OpenRead($Wheel.FullName)
+    try {
+        $Names = @($Zip.Entries | ForEach-Object { $_.FullName })
+        if (-not ($Names -contains 'ujson.pyd')) { throw 'Wheel missing ujson.pyd' }
+        if (-not (@($Names | Where-Object { $_ -match '^ujson-2\.0\.3\.dist-info/(METADATA|PKG-INFO)$' }).Count -gt 0)) {
+            throw 'Wheel missing ujson 2.0.3 package metadata'
+        }
+    }
+    finally { $Zip.Dispose() }
+
+    New-Item -ItemType Directory -Path $WheelDir -Force | Out-Null
+    if ($Wheel.Name -ne 'ujson-2.0.3-cp27-cp27m-win32.whl') {
+        throw "Unexpected wheel tag: $($Wheel.Name)"
+    }
+    $FinalWheel = Join-Path $WheelDir $Wheel.Name
+    if (Test-Path -LiteralPath $FinalWheel) {
+        if ((Get-FileHash -LiteralPath $FinalWheel -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $Wheel.FullName -Algorithm SHA256).Hash) {
+            throw "Wheel already exists with different content: $FinalWheel"
+        }
+        Write-Host '[OK] Identical wheel already in controlled wheelhouse'
+    }
+    else { Copy-Item -LiteralPath $Wheel.FullName -Destination $FinalWheel }
+    if ((Get-FileHash -LiteralPath $FinalWheel -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $Wheel.FullName -Algorithm SHA256).Hash) { throw 'Wheel copy verification failed' }
+    Write-Host '[PASS] Patched source compiled and Python tests passed'
+    Write-Host '[PASS] Windows wheel generated and checked:'
+    Get-Item -LiteralPath $FinalWheel | Select-Object FullName, Length
+    Write-Host ('SHA256: ' + (Get-FileHash -LiteralPath $FinalWheel -Algorithm SHA256).Hash)
+    Write-Host '[NOTE] CVE-2022-31117 realloc-failure injection not exercised; source-level fix reviewed.'
+ }
+
+function Ensure-ControlledUjsonWheel {
+    $Expected = '3FB4044AF8DA8BB21C486365EEA4C74BC7C6C0B134FBF83569659DC18D5B05CD'
+    if (Test-Path -LiteralPath $UjsonWheel -PathType Leaf) {
+        Write-Step 'Reusing SHA256-verified patched ujson 2.0.3 wheel'
+        Assert-Sha256 $UjsonWheel $Expected
+    }
+    else {
+        if ([string]::IsNullOrWhiteSpace($UjsonPytestPackages)) {
+            throw 'Wheel absent: provide -UjsonPytestPackages pointing to offline pytest dependencies.'
+        }
+        Build-ControlledUjsonWheel
+        # A new VC9 build may have a different PE timestamp and therefore a
+        # different SHA256. Its source, patches, tests, wheel tag and contents
+        # have been verified by Build-ControlledUjsonWheel.
+        Assert-File $UjsonWheel
+        Write-Host ('[PASS] Freshly built wheel SHA256: ' + (Get-FileHash -LiteralPath $UjsonWheel -Algorithm SHA256).Hash)
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Controlled inputs
 # ---------------------------------------------------------------------------
@@ -99,7 +241,7 @@ $Python27Dll = Join-Path $PaditBins "python27.dll"
 $PythonCom   = Join-Path $PaditBins "pywin32-228\pythoncom27.dll"
 $PythonComL  = Join-Path $PaditBins "pywin32-228\pythoncomloader27.dll"
 $PyWinTypes  = Join-Path $PaditBins "pywin32-228\pywintypes27.dll"
-$Ujson       = Join-Path $PaditBins "ujson-1.35.pyd"
+$UjsonWheel = Join-Path $BuiltWheels "ujson-2.0.3-cp27-cp27m-win32.whl"
 $ActiveDir   = Join-Path $PaditBins "active_directory-0.6.7.py"
 
 $ReqGeneric  = Join-Path $RepoRoot "requirements-agent.txt"
@@ -121,7 +263,7 @@ Assert-Sha256 $Python27Dll "8C81C84548CE191B11390EBAA71397D23662593B1C113AAA0392
 Assert-Sha256 $PythonCom   "074F23F9710BBCF1447763829C0E3D16AFA5502EFC6F784077CF334F28CEFFB7"
 Assert-Sha256 $PythonComL  "CC5BA5439CFA435FC9BD442F6509EBDF83646DF0756093DFF6777775FD2246E6"
 Assert-Sha256 $PyWinTypes  "C4DB872FF7D301186516882EA06422AEE29E1C11B44A4D382ADDD5B801207818"
-Assert-Sha256 $Ujson       "F481A7AFB2DF7D834C2537D3DFA5CE1B22C0C40A83F4BD73602270A728951739"
+Ensure-ControlledUjsonWheel
 Assert-Sha256 $ActiveDir   "EDFE01A38139D79A2EAC7B6F409B0495A447536CBB004318811D5CAF5842A556"
 Assert-Sha256 $OpenSslZip  "644FEDF6FC567716EF25F4FC805E2AAAC5BB7D32D01349EAEB62802CD20AE81A"
 
@@ -218,8 +360,8 @@ Invoke-Checked $RuntimePython (@(
     "--find-links=$BuiltWheels"
 ) + $ExplicitPackages)
 
-# Install the Windows requirements exactly from the repository. ujson is
-# injected from the controlled WAPT binary below, so exclude it from this pass.
+# Install the other Windows dependencies offline. The patched ujson wheel
+# is installed separately below after its source/build integrity checks.
 $WindowsPackages = @(
     "pyad==0.5.20",
     "kerberos-sspi==0.2",
@@ -235,6 +377,13 @@ Invoke-Checked $RuntimePython (@(
     "--find-links=$BuiltWheels"
 ) + $WindowsPackages)
 
+Write-Step "Installing patched ujson 2.0.3 wheel offline"
+Invoke-Checked $RuntimePython @(
+    "-m", "pip", "install",
+    "--no-cache-dir", "--no-index", "--no-deps",
+    $UjsonWheel
+)
+
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
@@ -244,8 +393,7 @@ Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
 $SitePackages = Join-Path $Output "Lib\site-packages"
 
-Write-Step "Injecting controlled ujson and active_directory"
-Copy-Checked $Ujson     (Join-Path $SitePackages "ujson.pyd") "F481A7AFB2DF7D834C2537D3DFA5CE1B22C0C40A83F4BD73602270A728951739"
+Write-Step "Injecting controlled active_directory"
 Copy-Checked $ActiveDir (Join-Path $SitePackages "active_directory.py") "EDFE01A38139D79A2EAC7B6F409B0495A447536CBB004318811D5CAF5842A556"
 
 Write-Step "Applying WAPT SocketIO and cryptography patches"
@@ -414,6 +562,7 @@ assert loaded == expected, "Wrong python27.dll loaded: %s (expected %s)" % (load
 import os, json, ssl, hashlib, sqlite3, ctypes
 import pythoncom, pywintypes, win32api
 import ujson
+assert ujson.__version__ == '2.0.3', ujson.__version__
 import active_directory
 import cryptography.x509.verification
 import waptutils

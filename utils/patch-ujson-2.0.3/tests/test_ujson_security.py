@@ -26,3 +26,22 @@ def test_reject_invalid_utf8(data):
 def test_accept_valid_utf8(data):
     result = ujson.dumps(data)
     assert result
+
+def test_dump_write_failure_refcount():
+    import sys
+
+    class FailingWriter(object):
+        def write(self, data):
+            raise IOError("simulated write failure")
+
+    writer = FailingWriter()
+    payload = [1, 2, 3]
+
+    before = sys.getrefcount(writer)
+
+    for _ in range(1000):
+        with pytest.raises(IOError):
+            ujson.dump(payload, writer)
+
+    after = sys.getrefcount(writer)
+    assert after == before
