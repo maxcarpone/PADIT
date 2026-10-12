@@ -1,6 +1,6 @@
-appdirs==1.4.3
+appdirs==1.4.4
 args==0.1.0
-asn1crypto==0.24.0
+asn1crypto==1.5.1
 astroid==1.5.3
 Babel==2.9.1
 backports.functools-lru-cache==1.4
@@ -37,7 +37,7 @@ lazy-object-proxy==1.3.1
 MarkupSafe==1.1.1
 mccabe==0.6.1
 netifaces==0.10.9
-packaging==16.8
+packaging==20.9
 passlib==1.7.1
 peewee==3.11.2
 pefile==2016.3.28
@@ -46,14 +46,14 @@ psycopg2==2.8.6
 pycparser==2.19
 pylint==1.7.4
 pyOpenSSL==19.0.0
-pyparsing==2.2.0
+pyparsing==2.4.7
 python-engineio==3.11.2
 python-socketio==4.4.0
 pytz==2017.2
 requests==2.27.1
 rpyc==4.1.5
 singledispatch==3.4.0.3
-six==1.11.0
+six==1.16.0
 socketIO-client-2==0.7.5
 urllib3==1.26.20
 wakeonlan==0.2.2
