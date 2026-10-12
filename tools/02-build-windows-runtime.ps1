@@ -363,7 +363,7 @@ Invoke-Checked $RuntimePython (@(
 # Install the other Windows dependencies offline. The patched ujson wheel
 # is installed separately below after its source/build integrity checks.
 $WindowsPackages = @(
-    "pyad==0.5.20",
+    "pyad==0.6.0",
     "kerberos-sspi==0.2",
     "winshell==0.6",
     "winsys-3.x==0.5.2",

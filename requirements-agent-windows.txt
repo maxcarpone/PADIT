@@ -1,4 +1,4 @@
-pyad==0.5.20
+pyad==0.6.0
 kerberos-sspi==0.2 
 winkerberos==0.9.1
 winshell==0.6 
