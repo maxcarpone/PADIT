@@ -388,6 +388,34 @@ Invoke-Checked $RuntimePython @(
 # urllib3 1.26.20 security backports, shared with the Bookworm runtime.
 # Apply after pip installation, before dependency and runtime smoke tests.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Restore WAPT certificate verification compatibility for cryptography 3.3.2.
+# These modules are maintained in utils/patch-cryptography.
+# ---------------------------------------------------------------------------
+Write-Step "Installing WAPT cryptography 3.3.2 compatibility modules"
+
+$CryptoX509Dir = Join-Path $Output 'Lib\site-packages\cryptography\x509'
+$CryptoPatchDir = Join-Path $RepoRoot 'utils\patch-cryptography'
+
+foreach ($Name in @('__init__.py', 'verification.py')) {
+    $Source = Join-Path $CryptoPatchDir $Name
+    $Destination = Join-Path $CryptoX509Dir $Name
+
+    Assert-File $Source
+
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
+& $RuntimePython -m py_compile `
+    (Join-Path $CryptoX509Dir '__init__.py') `
+    (Join-Path $CryptoX509Dir 'verification.py')
+
+if ($LASTEXITCODE -ne 0) {
+    throw 'cryptography compatibility module compilation failed'
+}
+
+Write-Host '[PASS] WAPT cryptography compatibility modules installed'
+
 Write-Step "Applying urllib3 1.26.20 security backports"
 
 $Urllib3Dir = Join-Path $Output 'Lib\site-packages\urllib3'
