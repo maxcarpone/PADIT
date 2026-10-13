@@ -1,4 +1,4 @@
-sphinxcontrib.napoleon
-Sphinx
-ujson
 iniparse
+Sphinx
+sphinxcontrib.napoleon
+ujson

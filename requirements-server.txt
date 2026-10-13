@@ -15,6 +15,7 @@ huey==1.10.5
 iniparse==0.5
 itsdangerous==1.1.0
 Jinja2==2.11.3
+ldap3==2.9.1
 lxml==5.0.2
 MarkupSafe==1.1.1
 netifaces==0.11.0
@@ -29,6 +30,7 @@ python-engineio==3.11.2
 python-socketio==4.4.0
 pytz==2026.5
 requests==2.27.1
+setproctitle==1.1.10
 six==1.17.0
 ujson==2.0.3
 urllib3==1.26.20
@@ -36,5 +38,3 @@ wakeonlan==1.1.6
 Werkzeug==1.0.1
 wsgiref==0.1.2
 WTForms==2.3.3
-ldap3==2.9.1
-setproctitle==1.1.10
