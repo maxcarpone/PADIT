@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
 .SYNOPSIS
   Assemble the autonomous Python/PADIT runtime for PADIT Community 1.8.3.
@@ -341,6 +341,177 @@ function Build-ControlledPyasn1Wheel {
     )
 }
 
+# ---------------------------------------------------------------------------
+# Controlled pywin32 b228 native security build (CVE-2021-32559).
+# This function is intentionally part of the runtime builder, not a new tool.
+# ---------------------------------------------------------------------------
+function Build-ControlledPywin32Native {
+    $Archive = Join-Path $BuildKit 'python\sources\pywin32-b228-source.zip'
+    $PatchDir = Join-Path $RepoRoot 'utils\patch-pywin32-228'
+    $WorkDir = Join-Path $BuildKit ('python\work\pywin32-b228-controlled-' + [guid]::NewGuid().ToString('N'))
+    $SourceDir = Join-Path $WorkDir 'source'
+    $LibDir = Join-Path $WorkDir 'lib'
+    $TempDir = Join-Path $WorkDir 'temp'
+    $CompatDir = Join-Path $WorkDir 'sdk-compat\Lib\x86'
+    $VC9Root = Join-Path $env:LOCALAPPDATA 'Programs\Common\Microsoft\Visual C++ for Python\9.0'
+    $VcVars = Join-Path $VC9Root 'vcvarsall.bat'
+    $SdkRoot = Join-Path $VC9Root 'WinSDK'
+    $SdkLib = Join-Path $SdkRoot 'Lib'
+    $SdkInclude = Join-Path $SdkRoot 'Include'
+    $CmdFile = Join-Path $WorkDir 'build-native.cmd'
+    $LogFile = Join-Path $WorkDir 'build-native.log'
+    $Patches = @(
+        @{Name='CVE-2021-32559-upstream.patch'; Hash='CF8697686F75A93FE23226604649055857A4FFC80D340C84FBC35B2C8CDE134A'},
+        @{Name='CVE-2021-32559-regression.patch'; Hash='8304ED6E3F347D4562BDA221DAD0EC5BF239DB315591457AED378D2E101E4E7E'},
+        @{Name='PADIT-targeted-build.patch'; Hash='C4B7489C94830F4D487B2F73149CB89AEC4FF8EC606E15C52DA42F0B2040CF15'}
+    )
+
+    Write-Step 'Building controlled pywin32 b228 native security modules'
+    Assert-Sha256 $Archive '792247C46F0F51D8EBF37374493FB285E9F2BBD4C5044855BA0379491725C1A0'
+    foreach ($Path in @($BuildPython, $VcVars, (Join-Path $VC9Root 'VC\Bin\cl.exe'))) { Assert-File $Path }
+    foreach ($Path in @($SdkLib, $SdkInclude)) { Assert-Dir $Path }
+    foreach ($Item in $Patches) { Assert-Sha256 (Join-Path $PatchDir $Item.Name) $Item.Hash }
+    $SumFile = Join-Path $PatchDir 'SHA256SUMS'
+    Assert-File $SumFile
+    # Security patch manifest is stored separately from the PADIT build patch.
+    foreach ($Item in $Patches[0..1]) {
+        $Matching = @(Get-Content -LiteralPath $SumFile | Where-Object { $_ -eq ($Item.Hash.ToLowerInvariant() + '  ' + $Item.Name) })
+        if ($Matching.Count -ne 1) { throw "Invalid SHA256SUMS entry for $($Item.Name)" }
+    }
+
+    New-Item -ItemType Directory -Path $WorkDir, $SourceDir, $LibDir, $TempDir, $CompatDir -Force | Out-Null
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $SourceDir)
+    Assert-File (Join-Path $SourceDir 'win32\src\PyACL.cpp')
+    Assert-File (Join-Path $SourceDir 'setup.py')
+
+    foreach ($Item in $Patches) {
+        $Patch = Join-Path $PatchDir $Item.Name
+        Invoke-Checked 'git.exe' @('-C', $SourceDir, 'apply', '--check', $Patch)
+        Invoke-Checked 'git.exe' @('-C', $SourceDir, 'apply', $Patch)
+        Write-Host "[PASS] $($Item.Name)"
+    }
+
+    # VC9 SDK libraries are flat; pywin32 expects an x86 subdirectory.
+    $SdkFiles = @(Get-ChildItem -LiteralPath $SdkLib -Filter '*.lib' -File)
+    if ($SdkFiles.Count -lt 100) { throw "Unexpected VC9 SDK library count: $($SdkFiles.Count)" }
+    foreach ($Name in @('kernel32.lib','user32.lib','advapi32.lib')) {
+        Assert-File (Join-Path $SdkLib $Name)
+    }
+    foreach ($File in $SdkFiles) {
+        Copy-Item -LiteralPath $File.FullName -Destination (Join-Path $CompatDir $File.Name)
+    }
+    $CmdLines = @(
+        '@echo off',
+        ('call "' + $VcVars + '" x86'),
+        'if errorlevel 1 exit /b 10',
+        ('set "MSSDK_INCLUDE=' + $SdkInclude + '"'),
+        ('set "MSSDK_LIB=' + (Join-Path $WorkDir 'sdk-compat\Lib') + '"'),
+        ('cd /d "' + $SourceDir + '"'),
+        'if errorlevel 1 exit /b 11',
+        ('"' + $BuildPython + '" setup.py --skip-verstamp build_ext --build-lib "' + $LibDir + '" --build-temp "' + $TempDir + '"'),
+        'exit /b %ERRORLEVEL%'
+    )
+    [IO.File]::WriteAllLines($CmdFile, $CmdLines, [Text.Encoding]::ASCII)
+    $CmdLine = 'call "' + $CmdFile + '" > "' + $LogFile + '" 2>&1'
+    & cmd.exe /d /c $CmdLine
+    $BuildExit = $LASTEXITCODE
+    if ($BuildExit -ne 0) {
+        Get-Content -LiteralPath $LogFile -Tail 35 | ForEach-Object { Write-Host $_ }
+        throw "pywin32 native build failed ($BuildExit): $LogFile"
+    }
+    if (-not (Select-String -LiteralPath $LogFile -Pattern 'PyACL\.cpp' -Quiet)) {
+        throw "PyACL.cpp was not compiled: $LogFile"
+    }
+    if (-not (Select-String -LiteralPath $LogFile -Pattern 'All extension modules built OK' -Quiet)) {
+        throw "pywin32 native build did not complete: $LogFile"
+    }
+
+    $Dll = Join-Path $LibDir 'pywin32_system32\pywintypes27.dll'
+    $Pyd = Join-Path $LibDir 'win32\win32security.pyd'
+    Assert-File $Dll
+    Assert-File $Pyd
+    $DllHash = (Get-FileHash -LiteralPath $Dll -Algorithm SHA256).Hash
+    $PydHash = (Get-FileHash -LiteralPath $Pyd -Algorithm SHA256).Hash
+    $Site = Join-Path $Output 'Lib\site-packages'
+    $SiteDll = Join-Path $Site 'pywin32_system32\pywintypes27.dll'
+    $SitePyd = Join-Path $Site 'win32\win32security.pyd'
+    Assert-File $SiteDll
+    Assert-File $SitePyd
+    Copy-Checked $Dll $SiteDll $DllHash
+    Copy-Checked $Pyd $SitePyd $PydHash
+    $script:ControlledPywin32Dll = $Dll
+    $script:ControlledPywin32Hash = $DllHash
+    $script:ControlledPywin32PydHash = $PydHash
+    Write-Host "[PASS] pywintypes27.dll SHA256 $DllHash"
+    Write-Host "[PASS] win32security.pyd SHA256 $PydHash"
+    Write-Host "[PASS] pywin32 targeted build log: $LogFile"
+}
+
+function Test-ControlledPywin32Acl {
+    Write-Step 'Testing controlled pywin32 native ACL security (7 variants)'
+    $TestFile = Join-Path $env:TEMP ('padit-pywin32-acl-' + [guid]::NewGuid().ToString('N') + '.py')
+    $Code = @'
+import os, ctypes, hashlib
+import pywintypes, win32security
+root = os.path.normcase(os.path.realpath(__import__('sys').prefix))
+site = os.path.join(root, 'Lib', 'site-packages')
+paths = (os.path.join(root, 'pywintypes27.dll'), os.path.join(site, 'pywin32_system32', 'pywintypes27.dll'))
+assert os.path.isfile(paths[0]) and os.path.isfile(paths[1])
+def digest(p):
+    with open(p, 'rb') as f: return hashlib.sha256(f.read()).hexdigest()
+assert digest(paths[0]) == digest(paths[1]), 'Different root and site pywintypes DLLs'
+for module in (pywintypes, win32security):
+    assert os.path.normcase(os.path.realpath(module.__file__)).startswith(root + os.sep), module.__file__
+k32 = ctypes.windll.kernel32
+h = k32.GetModuleHandleW(u'pywintypes27.dll')
+assert h, 'pywintypes27.dll not loaded'
+buf = ctypes.create_unicode_buffer(32768)
+assert k32.GetModuleFileNameW(h, buf, len(buf)) > 0
+loaded = os.path.normcase(os.path.realpath(buf.value))
+assert loaded in tuple(os.path.normcase(os.path.realpath(p)) for p in paths), 'Wrong DLL loaded: ' + loaded
+sid = win32security.ConvertStringSidToSid('S-1-1-0')
+rev = win32security.ACL_REVISION
+revds = win32security.ACL_REVISION_DS
+guid = pywintypes.IID('{00000000-0000-0000-0000-000000000001}')
+cases = (
+    ('AddAccessAllowedAce', lambda a: a.AddAccessAllowedAce(rev, 1, sid)),
+    ('AddAccessAllowedAceEx', lambda a: a.AddAccessAllowedAceEx(rev, 0, 1, sid)),
+    ('AddAuditAccessAce', lambda a: a.AddAuditAccessAce(rev, 1, sid, 1, 1)),
+    ('AddAuditAccessAceEx', lambda a: a.AddAuditAccessAceEx(rev, 0, 1, sid, 1, 1)),
+    ('AddAccessAllowedObjectAce', lambda a: a.AddAccessAllowedObjectAce(revds, 0, 1, guid, None, sid)),
+    ('AddAccessDeniedObjectAce', lambda a: a.AddAccessDeniedObjectAce(revds, 0, 1, guid, None, sid)),
+    ('AddAuditAccessObjectAce', lambda a: a.AddAuditAccessObjectAce(revds, 0, 1, guid, None, sid, 1, 1)),
+)
+for name, add in cases:
+    acl = win32security.ACL()
+    count = 0
+    caught = False
+    for i in range(5000):
+        try: add(acl); count += 1
+        except OverflowError as exc:
+            assert 'size limit' in str(exc).lower(), (name, str(exc))
+            caught = True
+            break
+    assert caught and acl.GetAceCount() == count, (name, count, acl.GetAceCount())
+    print('[PASS] %s: %d ACEs' % (name, count))
+print('[PASS] 7/7 ACL checks; loaded DLL: %s' % loaded)
+'@
+    [IO.File]::WriteAllText($TestFile, $Code, (New-Object Text.UTF8Encoding($false)))
+    $OldPythonPath = $env:PYTHONPATH
+    try {
+        Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+        Push-Location $env:TEMP
+        try { Invoke-Checked $RuntimePython @($TestFile) }
+        finally { Pop-Location }
+    }
+    finally {
+        if ($null -eq $OldPythonPath) { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue }
+        else { $env:PYTHONPATH = $OldPythonPath }
+        Remove-Item -LiteralPath $TestFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # Controlled inputs
 # ---------------------------------------------------------------------------
 
@@ -351,7 +522,6 @@ $OpenSslZip  = Join-Path $BuildKit "runtime\openssl\openssl-1.0.2u-i386-win32.zi
 $Python27Dll = Join-Path $PaditBins "python27.dll"
 $PythonCom   = Join-Path $PaditBins "pywin32-228\pythoncom27.dll"
 $PythonComL  = Join-Path $PaditBins "pywin32-228\pythoncomloader27.dll"
-$PyWinTypes  = Join-Path $PaditBins "pywin32-228\pywintypes27.dll"
 $UjsonWheel = Join-Path $BuiltWheels "ujson-2.0.3-cp27-cp27m-win32.whl"
 $ActiveDir   = Join-Path $PaditBins "active_directory-0.6.7.py"
 
@@ -373,7 +543,6 @@ Assert-File $ReqWindows
 Assert-Sha256 $Python27Dll "8C81C84548CE191B11390EBAA71397D23662593B1C113AAA0392E40FF0F9307A"
 Assert-Sha256 $PythonCom   "074F23F9710BBCF1447763829C0E3D16AFA5502EFC6F784077CF334F28CEFFB7"
 Assert-Sha256 $PythonComL  "CC5BA5439CFA435FC9BD442F6509EBDF83646DF0756093DFF6777775FD2246E6"
-Assert-Sha256 $PyWinTypes  "C4DB872FF7D301186516882EA06422AEE29E1C11B44A4D382ADDD5B801207818"
 Ensure-ControlledUjsonWheel
 Assert-Sha256 $ActiveDir   "EDFE01A38139D79A2EAC7B6F409B0495A447536CBB004318811D5CAF5842A556"
 Assert-Sha256 $OpenSslZip  "644FEDF6FC567716EF25F4FC805E2AAAC5BB7D32D01349EAEB62802CD20AE81A"
@@ -473,6 +642,7 @@ Invoke-Checked $RuntimePython (@(
 ) + $WindowsPackages)
 
 Build-ControlledPyasn1Wheel
+Build-ControlledPywin32Native
 
 Write-Step "Installing patched ujson 2.0.3 wheel offline"
 Invoke-Checked $RuntimePython @(
@@ -657,7 +827,8 @@ Write-Step "Installing controlled root runtime DLLs"
 Copy-Checked $Python27Dll (Join-Path $Output "python27.dll") "8C81C84548CE191B11390EBAA71397D23662593B1C113AAA0392E40FF0F9307A"
 Copy-Checked $PythonCom   (Join-Path $Output "pythoncom27.dll") "074F23F9710BBCF1447763829C0E3D16AFA5502EFC6F784077CF334F28CEFFB7"
 Copy-Checked $PythonComL  (Join-Path $Output "pythoncomloader27.dll") "CC5BA5439CFA435FC9BD442F6509EBDF83646DF0756093DFF6777775FD2246E6"
-Copy-Checked $PyWinTypes  (Join-Path $Output "pywintypes27.dll") "C4DB872FF7D301186516882EA06422AEE29E1C11B44A4D382ADDD5B801207818"
+Copy-Checked $ControlledPywin32Dll (Join-Path $Output "pywintypes27.dll") $ControlledPywin32Hash
+Test-ControlledPywin32Acl
 
 Copy-Item -LiteralPath $RuntimePython  -Destination (Join-Path $Output "waptpython.exe") -Force
 Copy-Item -LiteralPath $RuntimePythonW -Destination (Join-Path $Output "waptpythonw.exe") -Force
@@ -767,8 +938,8 @@ print("Executable:", sys.executable)
 print("Prefix:", sys.prefix)
 print("Loaded python27.dll:", buf.value)
 print("pywin32: OK")
-print("WAPT core: OK")
-print("WAPT 1.8.3 AUTONOMOUS RUNTIME: PASS")
+print("PADIT core: OK")
+print("PADIT 1.8.3 AUTONOMOUS RUNTIME: PASS")
 '@
 
 $TestFile = Join-Path $env:TEMP ("wapt-runtime-test-" + [Guid]::NewGuid().ToString("N") + ".py")

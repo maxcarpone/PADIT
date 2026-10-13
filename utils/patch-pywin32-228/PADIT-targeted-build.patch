@@ -1,0 +1,29 @@
+diff --git a/setup.py b/setup.py
+index dffe096..b07e549 100644
+--- a/setup.py
++++ b/setup.py
+@@ -961,6 +961,13 @@ class my_build_ext(build_ext):
+         # First, sanity-check the 'extensions' list
+         self.check_extensions_list(self.extensions)
+ 
++        # PADIT W05-B: build only security-relevant native extensions.
++        self.extensions = [
++            ext for ext in self.extensions
++            if ext.name in ("pywintypes", "win32security")
++        ]
++        assert len(self.extensions) == 2, "PADIT: unexpected extension selection"
++
+         self.found_libraries = {}
+ 
+         if not hasattr(self.compiler, 'initialized'):
+@@ -983,6 +990,10 @@ class my_build_ext(build_ext):
+                 raise RuntimeError("Not a win32 package!")
+             self.build_extension(ext)
+ 
++        # PADIT W05-B: only the selected native security extensions.
++        # Skip executables, COM loaders, Scintilla and MFC packaging.
++        return
++
+         for ext in W32_exe_files:
+             ext.finalize_options(self)
+             why = self._why_cant_build_extension(ext)
