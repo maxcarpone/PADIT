@@ -342,32 +342,16 @@ Invoke-Checked $RuntimePython @(
     "--requirement", $ReqGeneric
 )
 
-# These transitive packages were explicitly required by the validated
-# reconstructed runtime and are installed from the same controlled wheel set.
-$ExplicitPackages = @(
-    "monotonic==1.6",
-    "dnspython==1.16.0",
-    "plumbum==1.7.2",
-    "winkerberos==0.9.1",
-    "pyasn1==0.5.1",
-    "pywin32==228"
-)
-
-Write-Step "Installing explicit controlled transitive/native packages"
-Invoke-Checked $RuntimePython (@(
-    "-m", "pip", "install",
-    "--no-cache-dir", "--no-index", "--no-deps",
-    "--find-links=$BuiltWheels"
-) + $ExplicitPackages)
-
-# Install the other Windows dependencies offline. The patched ujson wheel
-# is installed separately below after its source/build integrity checks.
+# Install the Windows-specific requirements directly from their manifest.
+# ujson is excluded because its patched wheel is installed separately.
 $WindowsPackages = @(
-    "pyad==0.6.0",
-    "kerberos-sspi==0.2",
-    "winshell==0.6",
-    "winsys-3.x==0.5.2",
-    "WMI==1.5.1"
+    Get-Content -LiteralPath $ReqWindows |
+        ForEach-Object { $_.Trim() } |
+        Where-Object {
+            $_ -and
+            -not $_.StartsWith('#') -and
+            $_ -notmatch '^ujson=='
+        }
 )
 
 Write-Step "Installing Windows requirement layer offline"

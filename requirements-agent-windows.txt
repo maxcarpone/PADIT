@@ -1,7 +1,12 @@
+dnspython==1.16.0
+kerberos-sspi==0.2
+monotonic==1.6
+plumbum==1.7.2
 pyad==0.6.0
-kerberos-sspi==0.2 
-winkerberos==0.9.1
-winshell==0.6 
-winsys-3.x==0.5.2
+pyasn1==0.5.1
+pywin32==228
 ujson==2.0.3
+winkerberos==0.9.1
+winshell==0.6
+winsys-3.x==0.5.2
 WMI==1.5.1
