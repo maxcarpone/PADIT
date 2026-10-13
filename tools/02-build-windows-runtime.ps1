@@ -230,6 +230,117 @@ function Ensure-ControlledUjsonWheel {
 }
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Controlled Python 2.7 pyasn1 0.5.1 security wheel
+# ---------------------------------------------------------------------------
+function Build-ControlledPyasn1Wheel {
+    $Archive = Join-Path $BuildKit 'python\sources\pyasn1-0.5.1.tar.gz'
+    $PatchRoot = Join-Path $RepoRoot 'utils\patch-pyasn1-0.5.1'
+    $WorkRoot = Join-Path $BuildKit ('python\work\pyasn1-0.5.1-' + [guid]::NewGuid().ToString('N'))
+    $SourceDir = Join-Path $WorkRoot 'pyasn1-0.5.1'
+    $DistDir = Join-Path $WorkRoot 'wheel-dist'
+
+    $Patches = @(
+        'CVE-2026-23490.patch',
+        'CVE-2026-59886.patch',
+        'CVE-2026-59884.patch',
+        'CVE-2026-30922.patch',
+        'CVE-2026-59885.patch',
+        'PADIT-python27-compat.patch',
+        'PADIT-windows-mkstemp.patch'
+    )
+
+    Assert-Sha256 $Archive '6D391A96E59B23130A5CFA74D6FD7F388DBBE26CC8F1EDF39FDDDF08D9D6676C'
+    Assert-File $BuildPython
+
+    # Verify every patch against the committed SHA256SUMS file.
+    $SumsFile = Join-Path $PatchRoot 'SHA256SUMS'
+    Assert-File $SumsFile
+    $ExpectedHashes = @{}
+
+    foreach ($Line in (Get-Content -LiteralPath $SumsFile)) {
+        if ($Line -notmatch '^([0-9a-fA-F]{64})\s+\*?(\S+)$') {
+            throw "Invalid SHA256SUMS entry: $Line"
+        }
+        if ($ExpectedHashes.ContainsKey($Matches[2])) {
+            throw "Duplicate SHA256SUMS entry: $($Matches[2])"
+        }
+        $ExpectedHashes[$Matches[2]] = $Matches[1]
+    }
+
+    if ($ExpectedHashes.Count -ne $Patches.Count) {
+        throw 'Unexpected number of pyasn1 patch hashes'
+    }
+
+    foreach ($Name in $Patches) {
+        if (-not $ExpectedHashes.ContainsKey($Name)) {
+            throw "Missing SHA256 for $Name"
+        }
+        Assert-Sha256 (Join-Path $PatchRoot $Name) $ExpectedHashes[$Name]
+    }
+
+    Write-Step 'Building SHA256-controlled patched pyasn1 0.5.1 wheel'
+
+    New-Item -ItemType Directory -Path $WorkRoot, $DistDir -Force | Out-Null
+    Invoke-UjsonNative 'pyasn1 archive extraction' {
+        & tar -xf $Archive -C $WorkRoot
+    }
+    Assert-Dir $SourceDir
+
+    foreach ($Name in $Patches) {
+        $Patch = Join-Path $PatchRoot $Name
+        Invoke-UjsonNative "check pyasn1 patch $Name" {
+            & git -C $SourceDir apply --check $Patch
+        }
+        Invoke-UjsonNative "apply pyasn1 patch $Name" {
+            & git -C $SourceDir apply $Patch
+        }
+        Write-Host "[PASS] $Name"
+    }
+
+    $OldPythonPath = $env:PYTHONPATH
+    try {
+        $env:PYTHONPATH = $SourceDir
+        Push-Location $SourceDir
+        try {
+            Invoke-Checked $BuildPython @(
+                '-m', 'unittest', 'discover',
+                '-s', 'tests', '-p', 'test_*.py'
+            )
+
+            # Direct setup.py build avoids PEP 517 isolation on Python 2.7.
+            Invoke-Checked $BuildPython @(
+                'setup.py', 'bdist_wheel',
+                '--dist-dir', $DistDir
+            )
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    finally {
+        $env:PYTHONPATH = $OldPythonPath
+    }
+
+    $Wheels = @(
+        Get-ChildItem -LiteralPath $DistDir -Filter 'pyasn1-0.5.1-*.whl' -File
+    )
+    if ($Wheels.Count -ne 1) {
+        throw "Expected one patched pyasn1 wheel; found $($Wheels.Count)"
+    }
+
+    $Wheel = $Wheels[0].FullName
+    Write-Host ('[PASS] Patched wheel SHA256: ' +
+        (Get-FileHash -LiteralPath $Wheel -Algorithm SHA256).Hash)
+
+    Write-Step 'Installing tested patched pyasn1 wheel offline'
+    Invoke-Checked $RuntimePython @(
+        '-m', 'pip', 'install',
+        '--no-cache-dir', '--no-index', '--no-deps',
+        '--force-reinstall', $Wheel
+    )
+}
+
 # Controlled inputs
 # ---------------------------------------------------------------------------
 
@@ -360,6 +471,8 @@ Invoke-Checked $RuntimePython (@(
     "--no-cache-dir", "--no-index", "--no-deps",
     "--find-links=$BuiltWheels"
 ) + $WindowsPackages)
+
+Build-ControlledPyasn1Wheel
 
 Write-Step "Installing patched ujson 2.0.3 wheel offline"
 Invoke-Checked $RuntimePython @(

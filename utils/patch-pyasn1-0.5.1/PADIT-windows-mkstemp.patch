@@ -1,0 +1,32 @@
+--- a/tests/codec/ber/test_decoder.py
++++ b/tests/codec/ber/test_decoder.py
+@@ -2039,7 +2039,8 @@
+ 
+ class CompressedFilesTestCase(BaseTestCase):
+     def testGzip(self):
+-        _, path = tempfile.mkstemp(suffix=".gz")
++        fd, path = tempfile.mkstemp(suffix=".gz")
++        os.close(fd)
+         try:
+             with gzip.open(path, "wb") as out:
+                 out.write(ints2octs((2, 1, 12, 35, 128, 3, 2, 0, 169, 3, 2, 1, 138, 0, 0)))
+@@ -2055,7 +2056,8 @@
+     def testZipfile(self):
+         # File from ZIP archive is a good example of non-seekable stream in Python 2.7
+         #   In Python 3.7, it is a seekable stream.
+-        _, path = tempfile.mkstemp(suffix=".zip")
++        fd, path = tempfile.mkstemp(suffix=".zip")
++        os.close(fd)
+         try:
+             with zipfile.ZipFile(path, "w") as myzip:
+                 myzip.writestr("data", ints2octs((2, 1, 12, 35, 128, 3, 2, 0, 169, 3, 2, 1, 138, 0, 0)))
+@@ -2068,7 +2070,8 @@
+             os.remove(path)
+ 
+     def testZipfileMany(self):
+-        _, path = tempfile.mkstemp(suffix=".zip")
++        fd, path = tempfile.mkstemp(suffix=".zip")
++        os.close(fd)
+         try:
+             with zipfile.ZipFile(path, "w") as myzip:
+                 #for i in range(100):
