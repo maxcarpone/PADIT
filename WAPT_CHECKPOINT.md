@@ -1,6 +1,6 @@
 # PADIT / WAPT — Active Technical Checkpoint
 
-**Updated:** 2026-10-09
+**Updated:** 2026-10-13
 **Status:** authoritative active checkpoint.
 **Historical evidence:** preserve the existing 9,818-line checkpoint unchanged as `WAPT_HISTORY.md`; historical sections are evidence, **not current instructions**.
 
@@ -232,17 +232,108 @@ Known untracked Waptworm artifacts to preserve:
     waptsetup/deb/waptsetup-tis.exe
 
 - Never use `git add .` or indiscriminate cleanup.
-- Do not synchronize VM106 until Windows work resumes.
+- VM106 Windows work resumed and was validated on 2026-10-13; synchronize branches without overwriting untracked Waptworm artifacts.
 - Preserve `WAPT_HISTORY.md` unchanged as historical evidence.
-- Next: commit this checkpoint-only update.
-- Then inventory the remaining Debian 12 server acceptance gates
-  and complete them before opening the client/agent modernization phase.
+- The former checkpoint-only action has been completed.
+- Next: fast-forward Waptworm to the published Windows security commits,
+  then document current Windows work as in section 9.
+- Resume client-agent CVE review separately from remaining Debian 12
+  installed-server acceptance tests.
 
 ## 8. Resume protocol
 
 Gipity: treat **this file** as the **current** PADIT project state and `WAPT_HISTORY.md` as historical evidence only. Speak French; address user as Max; keep answers concise and proceed in validated steps. Do not replay closed Buster DR, Bullseye, previous Bookworm installation or historical author-rewrite investigations without contradictory evidence. Preserve security-scope separation (server vs agents).
 
 **SSH safety:** never paste `set -e` or `exit` into an interactive Bash shell; prefer separate scripts/subshells. Python 2 snippets should declare UTF-8 (or remain ASCII). Long builds use detached execution with persistent log and exit code. Do not claim build success without an actual zero return code and terminal PASS markers.
+
+---
+
+## 9. Windows agent security and modernization — 2026-10-13
+
+### 9.1 Windows source and validation milestone
+
+- Working host VM106: `C:\git\waptdev`, branch `release/1.8.3`.
+- Latest published Windows commit: `fc83e60a5`,
+  `Backport pywin32 CVE-2021-32559 into Windows runtime`.
+- The preceding Windows security commit is `d0052413c`,
+  `Integrate patched pyasn1 Windows wheel and upgrade ldap3 to 2.9.1`.
+- Waptworm was observed at `b403275d` before a successful fetch;
+  `origin/release/1.8.3` was at `fc83e60a`, two commits ahead.
+  Perform a fast-forward-only merge before editing and committing this
+  checkpoint in the Waptworm repository.
+- Existing untracked `waptsetup/deb/` artifacts listed in section 7
+  must remain untouched.
+- The previous Windows dependency modernization commits from October 12–13
+  are already in branch history; do not replay them solely to update records.
+
+### 9.2 W05-A — pyasn1 Windows security: completed
+
+- Windows `pyasn1 0.5.1` uses Python-2.7-compatible security backports,
+  pinned SHA256 validation and a controlled wheel build in
+  `tools/02-build-windows-runtime.ps1`.
+- Python 2.7 native-runtime checks and security regressions passed.
+- Commit `d0052413c` was pushed to `release/1.8.3`.
+- Dependabot alerts #176, #177, #178 and #179 were dismissed with
+  backport justification. Real AD/Kerberos integration remains a
+  separate operational test; do not overstate its coverage.
+
+### 9.3 W05-B — pywin32 CVE-2021-32559: completed
+
+- Retain `pywin32==228` for Windows Python 2.7 x86 compatibility.
+- Two upstream security patches and a distinct targeted-build patch are
+  tracked under `utils/patch-pywin32-228/`.
+- Official unmodified source archive at
+  `C:\padit-build-kit\python\sources\pywin32-b228-source.zip`:
+  SHA256 `792247C46F0F51D8EBF37374493FB285E9F2BBD4C5044855BA0379491725C1A0`.
+- Verified patches apply cleanly to upstream b228, commit `40a8f25a`.
+- Native target build compiles `pywintypes27.dll` and `win32security.pyd`
+  with VC9 x86, `--skip-verstamp`, and no auxiliary `axdebug` build.
+- All construction logic remains in **`tools/02-build-windows-runtime.ps1`**;
+  do not create a separately numbered tool merely for this fix.
+- The corrected `pywintypes27.dll` is installed both in the runtime root
+  and `Lib/site-packages/pywin32_system32`; `win32security.pyd` is replaced.
+- Complete autonomous Windows runtime build on VM106: PASS, exit code 0;
+  runtime `C:\padit-runtime-w05b6-validation-3`.
+- All seven ACL overflow regression cases PASS; native DLL loaded from the
+  expected runtime, and both installed DLL copies have identical SHA256.
+- Runtime acceptance test: `PADIT 1.8.3` autonomous runtime PASS
+  (terminal messages were subsequently rebranded from WAPT to PADIT).
+- Commit `fc83e60a5` published; GitHub Dependabot alert #174
+  `CVE-2021-32559` dismissed with reason `fix_started` and explanatory
+  backport comment. This is *not* an upstream version upgrade.
+- Native build process repeatability is established by a clean-source
+  build and functional tests; bit-for-bit binary reproducibility is not
+  established.
+
+### 9.4 W05-C — dnspython CVE-2023-29483: explicitly deferred
+
+- Dependabot #175 remains **OPEN**, severity medium, declared in
+  `requirements-agent-windows.txt`, `dnspython==1.16.0`.
+- Dependabot fixed version: `2.6.1`; not directly usable on Python 2.7.
+- `eventlet==0.33.3` declares `dnspython>=1.15.0`.
+- PADIT server uses Eventlet; `waptservice` uses the distinct
+  `socketIO-client-2` library. `setuphelpers_unix.py` imports
+  `dns.resolver`. An absence of direct Windows imports does not prove
+  that removal is safe.
+- **Decision:** do not delete or change either dependency, do not dismiss
+  #175, and do not backport the fix yet. Revisit after broader CVE work,
+  with Windows **and Unix** agent/runtime compatibility tests and
+  security assessment of Eventlet/DNS interaction.
+
+### 9.5 Live security inventory and next work
+
+- Last observed OPEN Dependabot findings by manifest:
+  `requirements-agent.txt`: 53;
+  `requirements-agent-unix.txt`: 9;
+  `requirements-agent-windows.txt`: 1 (deferred #175).
+- Counts are a time-limited snapshot; refresh with live GitHub API.
+- Windows security backports do not automatically remediate Unix agent
+  findings, even where both manifests install related packages.
+- Continue common-agent CVE triage and independent Unix-agent validation;
+  do not reopen closed server M01–M10 modernization or Windows W05-A/B
+  without new regression evidence.
+- Remaining Debian 12 installed-server acceptance, isolated Bookworm
+  restore, and physical Wake-on-LAN remain separately tracked in §5A.
 
 ---
 
