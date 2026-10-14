@@ -693,7 +693,8 @@ $Urllib3Patches = @(
     'CVE-2026-97689.patch',
     'CVE-2025-66418.patch',
     'CVE-2025-66471.patch',
-    'CVE-2026-21441.patch'
+    'CVE-2026-21441.patch',
+    'CVE-2026-97687.patch'
 )
 
 Assert-File $Urllib3Response
