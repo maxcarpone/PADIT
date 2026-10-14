@@ -419,3 +419,89 @@ validation PASS on 2026-10-09.
 Full final verification: **10/10 tests PASS**, `pip check` PASS.
 
 Source milestone: `eca7dc02` (M10); roadmap checkpoint: `32b7dc2b`.
+
+## 10. Agent Unix Debian 12 — U01–U88 (2026-10-14)
+
+### Objectif et isolation
+
+- Branche : `release/1.8.3`, hote de travail : `waptworm`.
+- Runtime pilote : `build/python2-runtime-agent-unix-bookworm/`.
+- Python 2.7.18, OpenSSL 3.0.22, pip 20.3.4.
+- Runtime serveur `build/python2-runtime-server-bookworm/` preserve.
+- Windows W07 conserve son jalon de validation independant.
+- Le constructeur Unix complet n'a PAS encore ete execute de zero.
+
+### Constructeurs Unix crees
+
+Constructeur principal :
+`tools/build-python2-runtime-agent-unix-bookworm.sh`
+
+Sous-constructeurs :
+- `tools/build-agent-unix-crypto-bookworm.sh`
+- `tools/build-agent-unix-ujson-bookworm.sh`
+- `tools/build-agent-unix-urllib3-bookworm.sh`
+- `tools/build-agent-unix-requests-bookworm.sh`
+- `tools/build-agent-unix-werkzeug-bookworm.sh`
+- `tools/build-agent-unix-eventlet-bookworm.sh`
+- `tools/build-agent-unix-socketio-bookworm.sh`
+- `tools/build-agent-unix-pyopenssl-bookworm.sh`
+- `tools/build-agent-unix-jinja2-bookworm.sh`
+- `tools/build-agent-unix-flask-bookworm.sh`
+
+Tous les scripts passent `bash -n` (U88).
+Les dix sous-constructeurs sont raccordes au constructeur principal.
+
+### Validations du runtime pilote
+
+- CPython 2.7.18 compile a partir des sources officielles avec SHA256 verifie.
+- `cryptography==3.3.2`, `cffi==1.15.1` : correctifs et tests pilotes PASS.
+- `ujson==2.0.3` : cinq correctifs et regressions pilotes PASS.
+- `urllib3==1.26.20` : cinq correctifs, regressions et
+  tests HTTPS proxy/TLS pilotes PASS.
+- Requests : quatre correctifs et regressions pilotes PASS.
+- Werkzeug : quatre correctifs et regressions pilotes PASS.
+- Eventlet et dnspython : correctifs et regressions pilotes PASS.
+- python-socketio CVE-2026-48804 : PASS (U77).
+- pyOpenSSL CVE-2026-27448 : PASS (U77).
+  Le traceback ValueError dans le test SNI est intentionnel.
+- Jinja2 2.11.3 : CVE-2024-22195, CVE-2024-34064,
+  CVE-2024-56326, CVE-2025-27516 : PASS (U82).
+- Flask 1.1.4 : CVE-2023-30861, CVE-2026-27205,
+  tests de compatibilite session : PASS (U87).
+- `pip check` : aucune dependance cassee a l'issue de U87.
+- `requirements-agent.txt` : ipaddress 1.0.22 -> 1.0.23,
+  a reverifier dans la reconstruction et sur Windows.
+
+### Limites non validees
+
+- Reconstruction autonome complete depuis un repertoire vierge.
+- Ordre d'installation, dependances natives APT et reproductibilite
+  sur Bookworm vierge.
+- Audit exhaustif des dependances et CVE propres a l'agent Unix.
+- Integration des modules de compatibilite PADIT cryptography/x509.
+- Tests de regression HTTPS proxy conserves actuellement sous `/tmp` :
+  les rendre permanents dans Git sans embarquer de cles privees.
+- Verification finale de l'application des correctifs sur l'ensemble
+  du runtime reconstruit.
+- Tests fonctionnels de l'agent Unix reel et integration produit.
+- Aucun avis Dependabot Unix ne doit etre ferme sur la seule base
+  de cette validation pilote.
+
+### Reprise exacte
+
+1. Auditer constructeur principal et sous-constructeurs :
+   chemins, ordre, versions, empreintes, isolation et pre-requis.
+2. Integrer les modules PADIT cryptography/x509 manquants.
+3. Perenniser les tests HTTPS proxy/TLS.
+4. Reconstruire le runtime agent Unix depuis zero et lancer
+   regressions, `pip check` et tests fonctionnels.
+5. Reprendre l'inventaire de securite Unix avant toute cloture d'alerte.
+
+### Securite du depot
+
+- Conserver les trois artefacts Debian non suivis :
+  `waptsetup/deb/Thouet-Software-Signing-Root-CA.cer`,
+  `waptsetup/deb/builddir/`,
+  `waptsetup/deb/waptsetup-tis.exe`.
+- Ne pas modifier le runtime serveur ni invalider le jalon Windows W07.
+- Ne pas considerer les validations pilotes comme une release Unix.
