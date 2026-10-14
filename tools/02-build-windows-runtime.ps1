@@ -692,7 +692,8 @@ $Urllib3PatchDir = Join-Path $RepoRoot 'utils\patch-urllib3-1.26.20'
 $Urllib3Patches = @(
     'CVE-2026-97689.patch',
     'CVE-2025-66418.patch',
-    'CVE-2025-66471.patch'
+    'CVE-2025-66471.patch',
+    'CVE-2026-21441.patch'
 )
 
 Assert-File $Urllib3Response
@@ -734,7 +735,8 @@ $Urllib3Text = [System.IO.File]::ReadAllText($Urllib3Response)
 foreach ($Marker in @(
     '_MAX_CHUNK_LINE_LENGTH',
     'max_decode_links = 5',
-    'unconsumed_tail'
+    'unconsumed_tail',
+    '_has_decoded_content'
 )) {
     if (-not $Urllib3Text.Contains($Marker)) {
         throw "Missing urllib3 protection marker: $Marker"
@@ -742,6 +744,25 @@ foreach ($Marker in @(
 }
 
 Write-Host '[PASS] urllib3 backports applied and syntax verified'
+
+Write-Step 'Running urllib3 security regression tests'
+$Urllib3TestDir = Join-Path $Urllib3PatchDir 'tests'
+
+foreach ($TestName in @(
+    'test_urllib3_security_windows.py',
+    'test_CVE-2026-21441-abandoned.py',
+    'test_CVE-2026-21441-compatibility.py',
+    'test_CVE-2026-21441-redirect.py'
+)) {
+    $TestPath = Join-Path $Urllib3TestDir $TestName
+    Assert-File $TestPath
+    & $RuntimePython $TestPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "urllib3 regression test failed: $TestName"
+    }
+}
+
+Write-Host '[PASS] urllib3 security regression tests'
 
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")

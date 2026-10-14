@@ -1378,6 +1378,70 @@ grep -q 'max_length=amt' \
 echo ">>> urllib3 CVE-2025-66471 backport verified."
 
 ###############################################################################
+# 18b. Apply urllib3 CVE-2026-21441 redirect decompression backport
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Applying urllib3 CVE-2026-21441 backport"
+echo "============================================================"
+
+URLLIB3_PATCH_21441="${REPO_ROOT}/utils/patch-urllib3-1.26.20/CVE-2026-21441.patch"
+
+[ -f "${URLLIB3_PATCH_21441}" ] \
+    || die "urllib3 security patch not found: ${URLLIB3_PATCH_21441}"
+
+if grep -q '_has_decoded_content = False' "${URLLIB3_DIR}/response.py" \
+    && grep -q 'self.read(decode_content=self._has_decoded_content)' "${URLLIB3_DIR}/response.py"; then
+    echo ">>> urllib3 CVE-2026-21441 backport already present."
+else
+    (
+        cd "${URLLIB3_DIR}" || exit 1
+        patch --dry-run -p1 < "${URLLIB3_PATCH_21441}" &&
+        patch -p1 < "${URLLIB3_PATCH_21441}"
+    ) || die "urllib3 CVE-2026-21441 patch failed"
+    echo ">>> urllib3 CVE-2026-21441 backport applied."
+fi
+
+"${PYTHON}" -m py_compile "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 CVE-2026-21441 syntax check failed"
+
+grep -q '_has_decoded_content = False' "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 redirect decompression state marker not found"
+
+grep -q 'self.read(decode_content=self._has_decoded_content)' \
+    "${URLLIB3_DIR}/response.py" \
+    || die "urllib3 redirect safe drain marker not found"
+
+echo ">>> urllib3 CVE-2026-21441 backport verified."
+
+###############################################################################
+# urllib3 security regression tests
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Running urllib3 security regression tests"
+echo "============================================================"
+
+URLLIB3_TEST_DIR="${REPO_ROOT}/utils/patch-urllib3-1.26.20/tests"
+
+for URLLIB3_TEST in \
+    test_urllib3_security_windows.py \
+    test_CVE-2026-21441-abandoned.py \
+    test_CVE-2026-21441-compatibility.py \
+    test_CVE-2026-21441-redirect.py
+do
+    [ -f "${URLLIB3_TEST_DIR}/${URLLIB3_TEST}" ] \
+        || die "urllib3 regression test missing: ${URLLIB3_TEST}"
+
+    "${PYTHON}" "${URLLIB3_TEST_DIR}/${URLLIB3_TEST}" \
+        || die "urllib3 regression test failed: ${URLLIB3_TEST}"
+done
+
+echo ">>> urllib3 security regression tests passed."
+
+###############################################################################
 # requests common setup
 ###############################################################################
 
