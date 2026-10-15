@@ -852,6 +852,87 @@ foreach ($TestName in @(
 
 Write-Host '[PASS] urllib3 security regression tests'
 
+# ---------------------------------------------------------------------------
+# requests 2.27.1 security backports (Python 2.7)
+# ---------------------------------------------------------------------------
+
+Write-Step 'Applying requests 2.27.1 security backports'
+
+$RequestsDir = Join-Path $Output 'Lib\site-packages\requests'
+$RequestsPatchDir = Join-Path $RepoRoot 'utils\patch-requests-2.27.1'
+
+Assert-Dir $RequestsDir
+Assert-Dir $RequestsPatchDir
+
+$RequestsVersion = & $RuntimePython -c 'import requests; print(requests.__version__)'
+if ($LASTEXITCODE -ne 0 -or $RequestsVersion.Trim() -ne '2.27.1') {
+    throw "Unexpected requests version: $RequestsVersion"
+}
+
+$RequestsPatches = @(
+    'CVE-2023-32681.patch',
+    'CVE-2024-35195.patch',
+    'CVE-2024-47081.patch',
+    'CVE-2026-25645.patch'
+)
+
+
+$RequestsExpectedHashes = @{
+    'CVE-2023-32681.patch' = '003EB163893C401F94E65172B6E11E659D4A5983E8CF6F85EED43E674DD8ECA2'
+    'CVE-2024-35195.patch' = '4AF162E6E503F464AE8A62FB208E89D4427F3349606014C2C22901F02A8451D8'
+    'CVE-2024-47081.patch' = '1FFC179DAE25541AAEFB867361535D4FDA56A51462E988CC06C9DF330AB23196'
+    'CVE-2026-25645.patch' = '8B3A91CF7E963B2FA50311525DB2B23F297C966FD1860042190019443384937A'
+}
+
+foreach ($PatchName in $RequestsPatches) {
+    $PatchPath = Join-Path $RequestsPatchDir $PatchName
+    Assert-File $PatchPath
+
+    $ActualHash = (Get-FileHash -LiteralPath $PatchPath -Algorithm SHA256).Hash
+    if ($ActualHash -ne $RequestsExpectedHashes[$PatchName]) {
+        throw "requests patch SHA256 mismatch: $PatchName"
+    }
+
+    Push-Location $RequestsDir
+    try {
+        & git apply --check --unsafe-paths -p1 $PatchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "requests patch check failed: $PatchName"
+        }
+
+        & git apply --unsafe-paths -p1 $PatchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "requests patch application failed: $PatchName"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host "[PASS] requests $PatchName"
+}
+
+& $RuntimePython -m py_compile `
+    (Join-Path $RequestsDir 'sessions.py') `
+    (Join-Path $RequestsDir 'adapters.py') `
+    (Join-Path $RequestsDir 'utils.py')
+
+if ($LASTEXITCODE -ne 0) {
+    throw 'requests Python compilation failed'
+}
+
+Write-Host '[PASS] requests security backports applied'
+Write-Step 'Running requests security regression tests'
+
+$RequestsTest = Join-Path $RequestsPatchDir 'tests\test_requests_security_windows.py'
+Assert-File $RequestsTest
+
+& $RuntimePython $RequestsTest
+if ($LASTEXITCODE -ne 0) {
+    throw 'requests security regression tests failed'
+}
+
+Write-Host '[PASS] requests security regression suite'
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
