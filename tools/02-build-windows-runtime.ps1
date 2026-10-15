@@ -683,6 +683,92 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host '[PASS] WAPT cryptography compatibility modules installed'
 
+# ---------------------------------------------------------------------------
+# CVE-2023-29483 TuDoor: reuse validated Bookworm/Unix backports.
+# ---------------------------------------------------------------------------
+Write-Step "Applying CVE-2023-29483 Eventlet and dnspython backports"
+
+$SecurityPatches = @(
+    @{
+        Name = 'dnspython'
+        Version = '1.16.0'
+        Directory = Join-Path $Output 'Lib\site-packages\dns'
+        Patch = Join-Path $RepoRoot 'utils\patch-dnspython-1.16.0\CVE-2023-29483.patch'
+        SHA256 = 'F87CA8BC3C3608EBD8CB84A5EDE045EA243D1F69D07FFACCC6873F70B5502E84'
+        Files = @('query.py', 'resolver.py')
+    },
+    @{
+        Name = 'eventlet'
+        Version = '0.33.3'
+        Directory = Join-Path $Output 'Lib\site-packages\eventlet'
+        Patch = Join-Path $RepoRoot 'utils\patch-eventlet-0.33.3\CVE-2023-29483.patch'
+        SHA256 = 'CFB887610C8229A14D595921B1FD79D0ECC2997EC74DD6A1A220978E9F7A5AD1'
+        Files = @('support\greendns.py')
+    }
+)
+
+foreach ($Item in $SecurityPatches) {
+    Assert-Dir $Item.Directory
+    Assert-File $Item.Patch
+
+    $ActualHash = (Get-FileHash -LiteralPath $Item.Patch -Algorithm SHA256).Hash
+    if ($ActualHash -ne $Item.SHA256) {
+        throw "Unexpected CVE-2023-29483 patch SHA256: $($Item.Name)"
+    }
+
+    $PackageName = $Item.Name
+    $InstalledVersion = & $RuntimePython -c "import pkg_resources; print(pkg_resources.get_distribution('$PackageName').version)"
+    if ($LASTEXITCODE -ne 0 -or $InstalledVersion.Trim() -ne $Item.Version) {
+        throw "Unexpected $PackageName version: $InstalledVersion"
+    }
+
+    foreach ($RelativeFile in $Item.Files) {
+        Assert-File (Join-Path $Item.Directory $RelativeFile)
+    }
+
+    Push-Location $Item.Directory
+    try {
+        & git apply --check -p1 $Item.Patch
+        if ($LASTEXITCODE -ne 0) {
+            throw "CVE-2023-29483 patch check failed: $PackageName"
+        }
+
+        & git apply -p1 $Item.Patch
+        if ($LASTEXITCODE -ne 0) {
+            throw "CVE-2023-29483 patch application failed: $PackageName"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    foreach ($RelativeFile in $Item.Files) {
+        & $RuntimePython -m py_compile (Join-Path $Item.Directory $RelativeFile)
+        if ($LASTEXITCODE -ne 0) {
+            throw "CVE-2023-29483 Python compilation failed: $PackageName"
+        }
+    }
+
+    Write-Host "[PASS] $PackageName CVE-2023-29483 backport"
+}
+
+$DnsQueryFile = Join-Path $Output 'Lib\site-packages\dns\query.py'
+$DnsResolverFile = Join-Path $Output 'Lib\site-packages\dns\resolver.py'
+$GreenDnsFile = Join-Path $Output 'Lib\site-packages\eventlet\support\greendns.py'
+
+foreach ($Entry in @(
+    @{ Path = $DnsQueryFile; Marker = 'ignore_errors=ignore_errors, query=q' },
+    @{ Path = $DnsResolverFile; Marker = 'ignore_errors=True' },
+    @{ Path = $GreenDnsFile; Marker = 'ignore_errors=False' }
+)) {
+    $Contents = [System.IO.File]::ReadAllText($Entry.Path)
+    if (-not $Contents.Contains($Entry.Marker)) {
+        throw "Missing CVE-2023-29483 protection marker: $($Entry.Path)"
+    }
+}
+
+Write-Host '[PASS] CVE-2023-29483 protection markers verified'
+
 Write-Step "Applying urllib3 1.26.20 security backports"
 
 $Urllib3Dir = Join-Path $Output 'Lib\site-packages\urllib3'
