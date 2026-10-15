@@ -623,3 +623,22 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Follow-up: clean up the overcrowded tools/ directory in a
   dedicated refactoring commit after security remediation.
 
+
+### W10 - requests common-agent CVE remediation
+
+- Retained requests==2.27.1 for Python 2.7 compatibility.
+- Reused four server backports:
+  CVE-2023-32681, CVE-2024-35195,
+  CVE-2024-47081, CVE-2026-25645.
+- Unix R5: all four patches confirmed present by reverse
+  dry-run checks. No rebuild of the validated R5 runtime.
+- Windows VM106: all four patches applied and functional
+  regression tests passed on isolated Python 2.7 x86 sources.
+- Windows autonomous runtime build PASS:
+  C:\padit-runtime-1.8.3-W10-requests
+- Windows builder now validates patch SHA256, applies all
+  four backports and executes four automated regression tests.
+- Commit 0fc9e382c published on release/1.8.3.
+- Dependabot common alerts #28, #46, #54, #67 dismissed.
+- Next: remaining common-agent dependency CVEs.
+
