@@ -278,6 +278,72 @@ bash "${REPO_ROOT}/tools/build-agent-unix-ujson-bookworm.sh"
 echo ">>> Building patched urllib3 for Unix agent..."
 bash "${REPO_ROOT}/tools/build-agent-unix-urllib3-bookworm.sh"
 
+
+###############################################################################
+# Controlled certifi CA bundle - Mozilla 2026.7.22 / Python 2.7 compatibility
+###############################################################################
+
+echo ">>> Installing controlled certifi CA bundle..."
+
+CERTIFI_CONTROLLED_BUNDLE="${REPO_ROOT}/utils/patch-certifi-2021.10.8/cacert-2026.7.22.pem"
+CERTIFI_EXPECTED_SHA256="9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f"
+
+[ -f "${CERTIFI_CONTROLLED_BUNDLE}" ] \
+    || die "Controlled certifi CA bundle missing"
+
+echo "${CERTIFI_EXPECTED_SHA256}  ${CERTIFI_CONTROLLED_BUNDLE}" |
+    sha256sum -c - || die "Controlled certifi CA bundle SHA256 mismatch"
+
+CERTIFI_TARGET="$("${RUNTIME_ROOT}/bin/python" - <<'PYCERTIFIPATH'
+import certifi
+import os
+import sys
+
+assert certifi.__version__ == '2021.10.08'
+path = os.path.realpath(certifi.where())
+runtime = os.path.realpath(sys.prefix)
+assert path.startswith(runtime + os.sep), (path, runtime)
+print(path)
+PYCERTIFIPATH
+)" || die "Cannot resolve runtime certifi bundle"
+
+[ -f "${CERTIFI_TARGET}" ] || die "Runtime certifi CA bundle missing"
+
+cp "${CERTIFI_CONTROLLED_BUNDLE}" "${CERTIFI_TARGET}" \
+    || die "Cannot install controlled certifi CA bundle"
+
+echo "${CERTIFI_EXPECTED_SHA256}  ${CERTIFI_TARGET}" |
+    sha256sum -c - || die "Installed certifi CA bundle SHA256 mismatch"
+
+"${RUNTIME_ROOT}/bin/python" - <<'PYCERTIFITEST'
+import certifi
+import hashlib
+import os
+import ssl
+
+expected = '9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f'
+path = certifi.where()
+
+with open(path, 'rb') as stream:
+    actual = hashlib.sha256(stream.read()).hexdigest()
+
+assert actual == expected, (actual, expected)
+
+context = ssl.create_default_context(cafile=path)
+assert context is not None
+
+print('[PASS] Controlled certifi bundle loaded by Python 2.7/OpenSSL')
+PYCERTIFITEST
+
+
+echo ">>> Running certifi security regression tests..."
+
+"${RUNTIME_ROOT}/bin/python" \
+    "${REPO_ROOT}/utils/patch-certifi-2021.10.8/test_certifi_bundle.py" \
+    || die "certifi security regression tests failed"
+
+echo "[PASS] Controlled certifi 2026.7.22 CA bundle installed"
+
 echo ">>> Final verification of secured python-ldap..."
 
 "${RUNTIME_ROOT}/bin/python" - <<'PYLDAPFINAL'
