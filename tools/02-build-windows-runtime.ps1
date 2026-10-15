@@ -933,6 +933,50 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host '[PASS] requests security regression suite'
+# ---------------------------------------------------------------------------
+# Controlled certifi CA bundle - Mozilla 2026.7.22 / Python 2.7
+# ---------------------------------------------------------------------------
+
+Write-Step 'Installing controlled certifi CA bundle'
+
+$CertifiSource = Join-Path $RepoRoot 'utils\patch-certifi-2021.10.8\cacert-2026.7.22.pem'
+$CertifiTest = Join-Path $RepoRoot 'utils\patch-certifi-2021.10.8\test_certifi_bundle.py'
+$CertifiExpectedHash = '9CC2A774B5198DCFF14D9BE1E66091F538975D867CE029A96BCE15A55DFD730F'
+
+Assert-File $CertifiSource
+Assert-File $CertifiTest
+
+$CertifiActualHash = (Get-FileHash -LiteralPath $CertifiSource -Algorithm SHA256).Hash
+if ($CertifiActualHash -ne $CertifiExpectedHash) {
+    throw 'Controlled certifi source SHA256 mismatch'
+}
+
+$CertifiDir = Join-Path $Output 'Lib\site-packages\certifi'
+$CertifiTarget = Join-Path $CertifiDir 'cacert.pem'
+
+Assert-Dir $CertifiDir
+Assert-File $CertifiTarget
+
+$CertifiVersion = & $RuntimePython -c 'import certifi; print(certifi.__version__)'
+if ($LASTEXITCODE -ne 0 -or $CertifiVersion.Trim() -ne '2021.10.08') {
+    throw "Unexpected certifi version: $CertifiVersion"
+}
+
+Copy-Item -LiteralPath $CertifiSource -Destination $CertifiTarget -Force
+
+$CertifiInstalledHash = (Get-FileHash -LiteralPath $CertifiTarget -Algorithm SHA256).Hash
+if ($CertifiInstalledHash -ne $CertifiExpectedHash) {
+    throw 'Installed certifi bundle SHA256 mismatch'
+}
+
+Write-Step 'Running certifi security regression tests'
+
+& $RuntimePython $CertifiTest
+if ($LASTEXITCODE -ne 0) {
+    throw 'certifi security regression tests failed'
+}
+
+Write-Host '[PASS] Controlled certifi 2026.7.22 bundle installed and validated'
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
