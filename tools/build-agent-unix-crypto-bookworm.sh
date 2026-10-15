@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUNTIME_ROOT="${REPO_ROOT}/build/python2-runtime-agent-unix-bookworm"
+RUNTIME_ROOT="${PADIT_AGENT_UNIX_RUNTIME_ROOT:-${REPO_ROOT}/build/python2-runtime-agent-unix-bookworm}"
 BUILD_ROOT="$(mktemp -d /tmp/padit-agent-unix-crypto-build-XXXXXXXX)"
 
 PYTHON="${RUNTIME_ROOT}/bin/python"
@@ -191,6 +191,61 @@ run "${PIP}" install \
     --no-deps \
     --find-links "${CRYPTOGRAPHY_WHEELHOUSE}" \
     "cryptography==${CRYPTOGRAPHY_VERSION}"
+
+###############################################################################
+# PADIT legacy x509 verification compatibility
+# Preserve upstream cryptography 3.3.2 x509/__init__.py unchanged.
+###############################################################################
+
+PADIT_X509_VERIFICATION_SOURCE="${REPO_ROOT}/utils/patch-cryptography/verification.py"
+PADIT_X509_VERIFICATION_SHA256="be9836ac8835d4cef3d7deb47edaecb9344936d79534f84c95c4576f77a9d737"
+PADIT_X509_DIR="${RUNTIME_ROOT}/lib/python2.7/site-packages/cryptography/x509"
+
+[ -f "${PADIT_X509_VERIFICATION_SOURCE}" ] || die "PADIT x509 verification source missing"
+[ -d "${PADIT_X509_DIR}" ] || die "cryptography x509 directory missing"
+
+echo "${PADIT_X509_VERIFICATION_SHA256}  ${PADIT_X509_VERIFICATION_SOURCE}" | sha256sum -c - || die "PADIT x509 verification source checksum mismatch"
+
+install -m 644 "${PADIT_X509_VERIFICATION_SOURCE}" "${PADIT_X509_DIR}/verification.py"
+
+echo "${PADIT_X509_VERIFICATION_SHA256}  ${PADIT_X509_DIR}/verification.py" | sha256sum -c - || die "PADIT x509 installed module checksum mismatch"
+
+"${PYTHON}" -m py_compile "${PADIT_X509_DIR}/verification.py"
+
+"${PYTHON}" - <<'PYPADITX509'
+from cryptography.x509 import verification
+from cryptography.x509.verification import (
+    CertificateVerificationContext,
+    CertificateRevocationListVerificationContext,
+    InvalidCertificate,
+    InvalidSigningCertificate,
+    InvalidCertificateRevocationList,
+)
+
+required = (
+    CertificateVerificationContext,
+    CertificateRevocationListVerificationContext,
+    InvalidCertificate,
+    InvalidSigningCertificate,
+    InvalidCertificateRevocationList,
+)
+
+assert len(required) == 5
+assert verification.__file__.endswith(
+    "/cryptography/x509/verification.pyc"
+) or verification.__file__.endswith(
+    "/cryptography/x509/verification.py"
+)
+
+print("[PASS] PADIT x509 verification compatibility imports")
+PYPADITX509
+
+echo "[PASS] PADIT x509 compatibility module installed"
+
+echo ">>> Running permanent PADIT x509 regressions..."
+PADIT_X509_TEST_MODE=installed "${PYTHON}" "${REPO_ROOT}/utils/test-agent-unix-x509.py"
+echo "[PASS] PADIT x509 permanent regression suite"
+
 
 "${PYTHON}" - <<'PYCRYPTOGRAPHY'
 import datetime

@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="${REPO_ROOT}/build/python2-runtime-agent-unix-bookworm/bin/python"
+RUNTIME_ROOT="${PADIT_AGENT_UNIX_RUNTIME_ROOT:-${REPO_ROOT}/build/python2-runtime-agent-unix-bookworm}"
+PYTHON="${RUNTIME_ROOT}/bin/python"
 PATCH_DIR="${REPO_ROOT}/utils/patch-ujson-2.0.3"
 WORK="$(mktemp -d /tmp/padit-agent-unix-ujson-XXXXXXXX)"
 
@@ -12,9 +13,7 @@ die() {
 }
 
 [ -x "${PYTHON}" ] || die "Runtime agent Python absent"
-[ ! -e "${WORK}" ] || die "Dossier de travail déjà présent : ${WORK}"
-
-mkdir -p "${WORK}"
+[ -d "${WORK}" ] || die "Creation du repertoire temporaire impossible"
 cd "${WORK}"
 
 "${PYTHON}" -m pip download \

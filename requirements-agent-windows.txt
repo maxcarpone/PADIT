@@ -3,7 +3,6 @@ kerberos-sspi==0.2
 monotonic==1.6
 plumbum==1.7.2
 pyad==0.6.0
-pyasn1==0.5.1
 pywin32==228
 ujson==2.0.3
 winkerberos==0.9.1

@@ -2,7 +2,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="${REPO_ROOT}/build/python2-runtime-agent-unix-bookworm/bin/python"
+RUNTIME_ROOT="${PADIT_AGENT_UNIX_RUNTIME_ROOT:-${REPO_ROOT}/build/python2-runtime-agent-unix-bookworm}"
+PYTHON="${RUNTIME_ROOT}/bin/python"
 PATCH_DIR="${REPO_ROOT}/utils/patch-urllib3-1.26.20"
 WORK="$(mktemp -d /tmp/padit-agent-unix-urllib3-XXXXXXXX)"
 
@@ -12,7 +13,7 @@ die() {
 }
 
 [ -x "${PYTHON}" ] || die "Agent runtime missing"
-[ ! -e "${WORK}" ] || die "Work directory already exists: ${WORK}"
+[ -d "${WORK}" ] || die "Temporary work directory creation failed"
 
 mkdir -p "${WORK}"
 
@@ -53,6 +54,9 @@ for ITEM in "${PATCHES[@]}"; do
     echo "[PASS] ${NAME}"
 done
 
+# Avoid shadowing Python 2 stdlib _collections.so with urllib3/_collections.py.
+cd "${REPO_ROOT}"
+
 mkdir -p "${WORK}/wheelhouse"
 
 "${PYTHON}" -m pip wheel \
@@ -68,7 +72,8 @@ mkdir -p "${WORK}/wheelhouse"
 for TEST in \
     test_urllib3_security_windows.py \
     test_CVE-2026-21441-compatibility.py \
-    test_CVE-2026-21441-redirect.py
+    test_CVE-2026-21441-redirect.py \
+    test_CVE-2026-97687.py
 do
     "${PYTHON}" "${PATCH_DIR}/tests/${TEST}"
 done

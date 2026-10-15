@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUNTIME_ROOT="${REPO_ROOT}/build/python2-runtime-agent-unix-bookworm"
+RUNTIME_ROOT="${PADIT_AGENT_UNIX_RUNTIME_ROOT:-${REPO_ROOT}/build/python2-runtime-agent-unix-bookworm}"
 BUILD_ROOT="$(mktemp -d /tmp/padit-agent-unix-jinja2-XXXXXXXX)"
 
 PYTHON="${RUNTIME_ROOT}/bin/python"

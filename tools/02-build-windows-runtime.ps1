@@ -753,7 +753,8 @@ foreach ($TestName in @(
     'test_urllib3_security_windows.py',
     'test_CVE-2026-21441-abandoned.py',
     'test_CVE-2026-21441-compatibility.py',
-    'test_CVE-2026-21441-redirect.py'
+    'test_CVE-2026-21441-redirect.py',
+    'test_CVE-2026-97687.py'
 )) {
     $TestPath = Join-Path $Urllib3TestDir $TestName
     Assert-File $TestPath
