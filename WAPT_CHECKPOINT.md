@@ -581,3 +581,21 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Reste a valider : relocabilite du runtime, dependances natives,
   cycle installation/mise a niveau/desinstallation et service.
 
+### 10.3 Agent Unix — premier paquet Debian pilote
+
+- Constructeur : `tools/03-build-unix-product.sh`.
+- Produit : `tis-waptagent_1.8.3.7494+unixpilot1_amd64.deb`.
+- Sortie : `/tmp/padit-agent-unix-products/`.
+- Runtime Python 2.7 autonome R5 embarque sans reconstruction.
+- Archive Debian construite et inspectee : PASS.
+- Taille : environ 37 Mio.
+- Extraction isolee et relocalisation Python : PASS.
+- Imports applicatifs PADIT : PASS.
+- python-apt absent et non requis pour les tests effectues.
+- Scripts de maintenance `/bin/sh` : syntaxe PASS.
+- Service systemd present, activation automatique desactivee.
+- Conflit historique avec `tis-waptserver` conserve.
+- Paquet non installe et non valide en production.
+- Restent a qualifier : dependances ELF, configurations persistantes,
+  installation, upgrade, desinstallation et service reel sur VM dediee.
+
