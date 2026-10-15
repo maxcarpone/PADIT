@@ -642,3 +642,26 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Dependabot common alerts #28, #46, #54, #67 dismissed.
 - Next: remaining common-agent dependency CVEs.
 
+
+### W11 - certifi CA bundle remediation
+
+- Retained certifi==2021.10.8 for Python 2.7 compatibility.
+- Replaced its CA data with the controlled Mozilla certifi
+  2026.7.22 cacert.pem bundle.
+- Bundle SHA256:
+  9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f
+- X.509 fingerprint checks confirm the removal of five roots:
+  TrustCor RootCert CA-1, RootCert CA-2, ECA-1,
+  E-Tugra Certification Authority and GLOBALTRUST 2020.
+- Common Python 2.7 regression suite PASS: SHA256,
+  five removed roots and OpenSSL CA bundle loading.
+- Unix Bookworm: controlled bundle integrated into constructor;
+  isolated runtime validation PASS. Historical R5 preserved.
+  Full Unix constructor rebuild remains to be validated.
+- Windows VM106: autonomous W11 runtime build PASS.
+  Controlled bundle installed and security tests PASS.
+- Unix commit: 90a81bd0.
+- Windows commit: 2e8671bdc.
+- Dependabot common certifi alerts #20, #32, #52 dismissed.
+- Next: remaining common-agent CVE remediation.
+
