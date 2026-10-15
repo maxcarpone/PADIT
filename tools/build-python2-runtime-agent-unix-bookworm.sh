@@ -125,6 +125,110 @@ echo ">>> Installing common and Unix agent dependencies..."
 
 echo "[PASS] Initial agent Unix dependencies installed"
 
+# ---------------------------------------------------------------------------
+# pyasn1 0.5.1: controlled Python 2.7 security backports.
+# Reuse Windows-validated patches, excluding the Windows-only adaptation.
+# ---------------------------------------------------------------------------
+echo ">>> Building SHA256-controlled pyasn1 0.5.1 for Unix agent..."
+
+PYASN1_PATCH_ROOT="${REPO_ROOT}/utils/patch-pyasn1-0.5.1"
+PYASN1_WORK="$(mktemp -d "${BUILD_ROOT}/pyasn1-secure-XXXXXX")" \
+    || die "Cannot create pyasn1 build directory"
+PYASN1_DIST="${PYASN1_WORK}/dist"
+PYASN1_SRC="${PYASN1_WORK}/pyasn1-0.5.1"
+PYASN1_ARCHIVE="${PYASN1_WORK}/pyasn1-0.5.1.tar.gz"
+
+mkdir -p "${PYASN1_DIST}" || die "Cannot create pyasn1 dist"
+
+(
+    cd "${PYASN1_PATCH_ROOT}" &&
+    sha256sum -c SHA256SUMS
+) || die "pyasn1 patch SHA256 verification failed"
+
+PYASN1_SOURCE_ARCHIVE="${REPO_ROOT}/utils/sources/pyasn1-0.5.1.tar.gz"
+
+[ -f "${PYASN1_SOURCE_ARCHIVE}" ] \
+    || die "Missing controlled pyasn1 source: ${PYASN1_SOURCE_ARCHIVE}"
+
+cp "${PYASN1_SOURCE_ARCHIVE}" "${PYASN1_ARCHIVE}" \
+    || die "Cannot stage controlled pyasn1 source"
+
+echo "6d391a96e59b23130a5cfa74d6fd7f388dbbe26cc8f1edf39fdddf08d9d6676c  ${PYASN1_ARCHIVE}" \
+    | sha256sum -c - \
+    || die "Unexpected pyasn1 0.5.1 source SHA256"
+
+tar -xzf "${PYASN1_ARCHIVE}" -C "${PYASN1_WORK}" \
+    || die "Cannot extract pyasn1 sources"
+
+for name in \
+    CVE-2026-23490.patch \
+    CVE-2026-59886.patch \
+    CVE-2026-59884.patch \
+    CVE-2026-30922.patch \
+    CVE-2026-59885.patch \
+    PADIT-python27-compat.patch
+do
+    patchfile="${PYASN1_PATCH_ROOT}/${name}"
+
+    git -C "${PYASN1_SRC}" apply --check "${patchfile}" \
+        || die "pyasn1 patch verification failed: ${name}"
+
+    git -C "${PYASN1_SRC}" apply "${patchfile}" \
+        || die "pyasn1 patch application failed: ${name}"
+
+    echo "[PASS] pyasn1 ${name}"
+done
+
+(
+    cd "${PYASN1_SRC}" &&
+    PYTHONPATH="${PYASN1_SRC}" \
+        "${RUNTIME_ROOT}/bin/python" -m unittest discover \
+            -s tests -p 'test_*.py'
+) || die "pyasn1 security regression tests failed"
+
+(
+    cd "${PYASN1_SRC}" &&
+    "${RUNTIME_ROOT}/bin/python" setup.py bdist_wheel \
+        --dist-dir "${PYASN1_DIST}"
+) || die "pyasn1 wheel build failed"
+
+PYASN1_WHEEL="${PYASN1_DIST}/pyasn1-0.5.1-py2.py3-none-any.whl"
+[ -f "${PYASN1_WHEEL}" ] || die "Patched pyasn1 wheel missing"
+
+sha256sum "${PYASN1_WHEEL}" \
+    || die "Cannot hash patched pyasn1 wheel"
+
+"${RUNTIME_ROOT}/bin/python" -m pip install \
+    --no-cache-dir --no-index --no-deps \
+    --force-reinstall "${PYASN1_WHEEL}" \
+    || die "Patched pyasn1 installation failed"
+
+PYASN1_SOURCE_ROOT="${PYASN1_SRC}" \
+"${RUNTIME_ROOT}/bin/python" - <<'PYASN1VERIFY'
+import hashlib
+import os
+import pyasn1
+import pyasn1.codec.ber.decoder as decoder
+
+root = os.environ["PYASN1_SOURCE_ROOT"]
+source = os.path.join(root, "pyasn1", "codec", "ber", "decoder.py")
+installed = decoder.__file__.replace(".pyc", ".py").replace(".pyo", ".py")
+
+def digest(path):
+    with open(path, "rb") as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+assert pyasn1.__version__ == "0.5.1"
+assert os.path.realpath(installed) != os.path.realpath(source)
+assert digest(source) == digest(installed)
+print("[PASS] Installed pyasn1 decoder matches patched source")
+PYASN1VERIFY
+
+[ "$?" -eq 0 ] || die "Installed pyasn1 verification failed"
+
+echo "[PASS] Secured pyasn1 0.5.1 installed for Unix agent"
+
+
 echo ">>> Verifying python-ldap was not installed transitively..."
 
 "${RUNTIME_ROOT}/bin/python" - <<'PYLDAPABSENT'
