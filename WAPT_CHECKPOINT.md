@@ -599,3 +599,27 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Restent a qualifier : dependances ELF, configurations persistantes,
   installation, upgrade, desinstallation et service reel sur VM dediee.
 
+
+### W09 - Common agent CVE remediation
+
+- W08 Windows: Eventlet 0.33.3 and dnspython 1.16.0,
+  CVE-2023-29483 backports validated on Python 2.7 x86.
+  Commit `4bb0b8993`; autonomous W08 build PASS;
+  DNS standalone, Eventlet post-fix and direct UDP tests 3/3 PASS.
+  Dependabot Windows #175 and common Eventlet #43 dismissed.
+- W09 urllib3: common alerts #59, #60, #61 and #105 dismissed.
+  Existing urllib3 1.26.20 backports and Windows/Unix regression
+  evidence reviewed. Remaining urllib3 alerts require separate treatment.
+- W09 pyasn1: five CVE patches plus Python 2.7 compatibility
+  applied to pyasn1 0.5.1. Unix test suite: 1174 tests,
+  3 skipped, no failures. Patched wheel built, contents compared,
+  isolated installation and constructor-block integration PASS.
+  Source tarball vendored with SHA256 verification.
+  Commit `61c8593e`.
+  Dependabot common alerts #180, #181, #182 and #183 dismissed.
+- Unix R5 reference runtime preserved. pyasn1 remediation validated
+  in an isolated copy; complete Unix product runtime not rebuilt.
+- Current focus: remaining common-agent Dependabot alerts.
+- Follow-up: clean up the overcrowded tools/ directory in a
+  dedicated refactoring commit after security remediation.
+
