@@ -505,3 +505,56 @@ Les dix sous-constructeurs sont raccordes au constructeur principal.
   `waptsetup/deb/waptsetup-tis.exe`.
 - Ne pas modifier le runtime serveur ni invalider le jalon Windows W07.
 - Ne pas considerer les validations pilotes comme une release Unix.
+
+
+### 10.1 Agent Unix — reconstruction autonome R5 validee
+Date : 2026-10-15. Etapes U89-U101.
+
+**Jalon Git valide :**
+- Branche : `release/1.8.3`.
+- Commit : `7b652210` — `Validate autonomous Bookworm Unix agent runtime and security regressions`.
+- Construction R5 terminee sans reprise manuelle :
+  `/tmp/padit-agent-unix-validation-runtime-r5`.
+- Journal : `/tmp/padit-agent-unix-validation-r5.log`.
+- Les onze sous-constructeurs de securite ont ete executes.
+- Verification LDAP finale : PASS.
+- Pilote historique conserve ; runtime serveur et Windows W07 non modifies.
+
+**Dependances et securite :**
+- Python 2.7.18, OpenSSL 3.0.22, cryptography 3.3.2.
+- python-ldap 3.3.1 avec trois retroportages :
+  CVE-2021-46823/ReDoS, CVE-2025-61911, CVE-2025-61912.
+- Extension LDAP native et regressions de securite : PASS.
+- Compatibilite cryptographique PADIT et suite X.509 : PASS.
+- ujson 2.0.3 avec cinq correctifs et regressions : PASS.
+- urllib3 1.26.20 avec cinq correctifs et regressions : PASS.
+- CVE-2026-97687 : quatre regressions TLS proxy simulees PASS.
+  Validation TLS reelle et couverture exhaustive encore a qualifier.
+- `pip check` : aucune dependance cassee.
+
+**Correction du blocage OrderedDict :**
+- Cause demontree par `bash -x` et `PYTHONVERBOSE=1`.
+- Le constructeur restait dans `src/urllib3` apres application des patchs.
+- Son `_collections.py` masquait l'extension native Python `_collections.so`.
+- Correction : retour a `${REPO_ROOT}` avant les commandes Python.
+- Sous-constructeur urllib3 valide integralement dans R4 apres correction.
+- Reconstruction autonome R5 : PASS.
+
+**Decision d'architecture :**
+- Maximum trois scripts publics pour reconstruire l'agent Unix,
+  sur le modele des trois scripts Windows 01/02/03.
+- Les onze sous-constructeurs restent provisoirement internes.
+- Simplification a traiter separement, sans invalider le jalon R5.
+- Le runtime agent Unix est construit, mais le produit Unix installable
+  n'est pas encore assemble ni valide.
+
+**Travail restant :**
+1. Organiser la chaine Unix en trois points d'entree maximum.
+2. Concevoir et valider l'assemblage du produit agent Unix.
+3. Effectuer les tests fonctionnels de l'agent installe.
+4. Qualifier separement Windows W07 et les alertes Dependabot encore ouvertes.
+5. Ne pas assimiler les regressions simulees a une validation TLS reelle.
+
+**Protection des artefacts :**
+Ne pas ajouter, modifier ou supprimer les fichiers historiques non suivis
+sous `waptsetup/deb/`, notamment les executables et certificats.
