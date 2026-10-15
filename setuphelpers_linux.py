@@ -130,19 +130,52 @@ def installed_softwares(keywords='',name=None):
             result = result and w in mywords
         return result
 
-    if apt:
-        for pkg in apt.Cache():
-            path_dpkg_info ="/var/lib/dpkg/info/"
-            if pkg.is_installed and ((name_re is None or name_re.match(pkg.name) or name_re.match(pkg.fullname)) or check_words(' '.join[pkg.name,pkg.fullname,pkg.versions[0].homepage],keywords)):
-                try:
-                    if os.path.isfile(os.path.join(path_dpkg_info,(pkg.name+'.list'))):
-                        install_date=os.path.getctime(os.path.join(path_dpkg_info,(pkg.name+'.list')))
-                    else:
-                        install_date=os.path.getctime(os.path.join(path_dpkg_info,(pkg.fullname+'.list')))
-                    install_date=datetime.datetime.fromtimestamp(install_date).strftime('%Y-%m-%d %H:%M:%S')
-                except:
-                    install_date=''
-                list_installed_softwares.append({'key':'','name':pkg.name,'version':str(pkg.installed).rsplit('=',1)[-1],'install_date':install_date,'install_location':'','uninstall_string':'','publisher':pkg.versions[0].homepage,'system_component':''})
+    if type_debian():
+        output = subprocess.check_output([
+            'dpkg-query', '-W',
+            '-f=${db:Status-Abbrev}\\t${binary:Package}\\t${Version}\\t${Homepage}\\n'
+        ])
+        for line in output.splitlines():
+            fields = line.split('\t', 3)
+            if len(fields) != 4 or fields[0].strip() != 'ii':
+                continue
+
+            _, pkg_name, pkg_version, homepage = fields
+            base_name = pkg_name.split(':', 1)[0]
+
+            name_match = name_re is not None and (
+                name_re.match(pkg_name) or name_re.match(base_name)
+            )
+            words_match = check_words(
+                ' '.join((pkg_name, base_name, homepage)), keywords
+            )
+
+            if name_re is not None:
+                if not (name_match or (keywords and words_match)):
+                    continue
+            elif not words_match:
+                continue
+
+            install_date = ''
+            info_dir = '/var/lib/dpkg/info'
+            for candidate in (pkg_name, base_name):
+                info_file = os.path.join(info_dir, candidate + '.list')
+                if os.path.isfile(info_file):
+                    install_date = datetime.datetime.fromtimestamp(
+                        os.path.getctime(info_file)
+                    ).strftime('%Y-%m-%d %H:%M:%S')
+                    break
+
+            list_installed_softwares.append({
+                'key': '',
+                'name': pkg_name,
+                'version': pkg_version,
+                'install_date': install_date,
+                'install_location': '',
+                'uninstall_string': '',
+                'publisher': homepage,
+                'system_component': ''
+            })
     elif rpm:
         trans = rpm.TransactionSet()
         for header in trans.dbMatch():

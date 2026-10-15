@@ -558,3 +558,26 @@ Date : 2026-10-15. Etapes U89-U101.
 **Protection des artefacts :**
 Ne pas ajouter, modifier ou supprimer les fichiers historiques non suivis
 sous `waptsetup/deb/`, notamment les executables et certificats.
+
+
+### 10.2 Agent Unix — preparation produit U102
+
+- `01-prepare-unix-build-environment.sh` : pre-requis Bookworm
+  controles, execution PASS.
+- `02-build-unix-runtime.sh` : interface du constructeur R5 ;
+  syntaxe et cinq protections de chemins testees PASS.
+- Runtime R5 conserve sans reconstruction.
+- Packaging historique `waptservice/deb/createdeb.py` audite :
+  dependances Python systeme et scripts Debian historiques
+  incompatibles avec les exigences PADIT modernes.
+- Decision : paquet agent Debian autonome, Python 2.7 embarque,
+  aucun Python systeme ou pip necessaire sur la cible.
+- `setuphelpers_linux.py` : inventaire Debian remplace par
+  `dpkg-query`, sans python-apt.
+- Test fonctionnel Python R5 PASS : 566 paquets, filtres,
+  version dpkg, structure des resultats.
+- Prochain objectif : `03-build-unix-product.sh`, assemblage
+  du runtime R5 et des composants applicatifs dans un vrai .deb.
+- Reste a valider : relocabilite du runtime, dependances natives,
+  cycle installation/mise a niveau/desinstallation et service.
+
