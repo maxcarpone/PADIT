@@ -1138,6 +1138,101 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host '[PASS] Flask 1.1.4 security backport and regression tests'
 
+
+$Jinja2ExpectedHashes = @{
+    'CVE-2024-22195-CVE-2024-34064.patch' = '1FC110B20B369FFADC501EA06F6CC88C9FA7D09A7965472C7F6388FB2CC5248F'
+    'CVE-2024-56326-CVE-2025-27516.patch' = '61E272F9EC3A062CD419F13A3E6C5D6520A2E1C42426CD08889563E1D3A59B31'
+}
+
+# ---------------------------------------------------------------------------
+# Jinja2 2.11.3 security backports - Windows Python 2.7 x86
+# ---------------------------------------------------------------------------
+
+Write-Step 'Applying Jinja2 2.11.3 security backports'
+
+$Jinja2Dir = Join-Path $Output 'Lib\site-packages\jinja2'
+$Jinja2PatchDir = Join-Path $RepoRoot 'utils\patch-jinja2-2.11.3'
+$Jinja2Test = Join-Path $Jinja2PatchDir 'tests\test_jinja2_security_windows.py'
+
+Assert-Dir $Jinja2Dir
+Assert-Dir $Jinja2PatchDir
+Assert-File $Jinja2Test
+
+$Jinja2Version = & $RuntimePython -c 'import jinja2; print(jinja2.__version__)'
+
+if ($LASTEXITCODE -ne 0 -or $Jinja2Version.Trim() -ne '2.11.3') {
+    throw "Unexpected Jinja2 version: $Jinja2Version"
+}
+
+$Jinja2Patches = @(
+    'CVE-2024-22195-CVE-2024-34064.patch'
+    'CVE-2024-56326-CVE-2025-27516.patch'
+)
+
+$Jinja2Stage = Join-Path $Output '_jinja2_security_stage'
+$Jinja2StageSrc = Join-Path $Jinja2Stage 'src'
+$Jinja2StagePackage = Join-Path $Jinja2StageSrc 'jinja2'
+
+if (Test-Path -LiteralPath $Jinja2Stage) {
+    throw "Jinja2 staging directory already exists: $Jinja2Stage"
+}
+
+New-Item -ItemType Directory -Path $Jinja2StageSrc | Out-Null
+Copy-Item -LiteralPath $Jinja2Dir -Destination $Jinja2StagePackage -Recurse
+
+foreach ($PatchName in $Jinja2Patches) {
+    $PatchPath = Join-Path $Jinja2PatchDir $PatchName
+    Assert-File $PatchPath
+
+    $ActualHash = (Get-FileHash -LiteralPath $PatchPath -Algorithm SHA256).Hash
+
+    if ($ActualHash -ne $Jinja2ExpectedHashes[$PatchName]) {
+        throw "Jinja2 patch SHA256 mismatch: $PatchName"
+    }
+
+    Push-Location $Jinja2Stage
+    try {
+        & git apply --check -p1 $PatchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Jinja2 patch check failed: $PatchName"
+        }
+
+        & git apply -p1 $PatchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Jinja2 patch application failed: $PatchName"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host "[PASS] Jinja2 $PatchName"
+}
+
+foreach ($Name in @('filters.py', 'sandbox.py')) {
+    Copy-Item `
+        -LiteralPath (Join-Path $Jinja2StagePackage $Name) `
+        -Destination (Join-Path $Jinja2Dir $Name) -Force
+}
+
+Remove-Item -LiteralPath $Jinja2Stage -Recurse -Force
+
+& $RuntimePython -m py_compile `
+    (Join-Path $Jinja2Dir 'filters.py') `
+    (Join-Path $Jinja2Dir 'sandbox.py')
+
+if ($LASTEXITCODE -ne 0) {
+    throw 'Jinja2 patched modules compilation failed'
+}
+
+& $RuntimePython -u $Jinja2Test
+
+if ($LASTEXITCODE -ne 0) {
+    throw 'Jinja2 security regression tests failed'
+}
+
+Write-Host '[PASS] Jinja2 security regression suites: 4 CVEs + compatibility'
+
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
