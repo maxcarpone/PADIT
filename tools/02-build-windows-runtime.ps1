@@ -1057,6 +1057,87 @@ foreach ($TestName in $WerkzeugTests) {
 }
 
 Write-Host '[PASS] Werkzeug security regression suites: 5/5'
+# ---------------------------------------------------------------------------
+# Flask 1.1.4 security backport - Python 2.7 Windows x86
+# ---------------------------------------------------------------------------
+
+Write-Step 'Applying Flask 1.1.4 security backport'
+
+$FlaskDir = Join-Path $Output 'Lib\site-packages\flask'
+$FlaskPatch = Join-Path $RepoRoot 'utils\patch-flask-1.1.4\CVE-2023-30861-CVE-2026-27205.patch'
+$FlaskTest = Join-Path $RepoRoot 'utils\patch-flask-1.1.4\tests\test_flask_security_windows.py'
+
+Assert-Dir $FlaskDir
+Assert-File $FlaskPatch
+Assert-File $FlaskTest
+
+$FlaskVersion = & $RuntimePython -c 'import flask; print(flask.__version__)'
+
+if ($LASTEXITCODE -ne 0 -or $FlaskVersion.Trim() -ne '1.1.4') {
+    throw "Unexpected Flask version: $FlaskVersion"
+}
+
+$FlaskActualHash = (Get-FileHash -LiteralPath $FlaskPatch -Algorithm SHA256).Hash
+
+if ($FlaskActualHash -ne '4B2A84CCDC10495DB631719F1B58FA16E2C4A7DEF27695FF39E6A0E3C1CC3312') {
+    throw 'Flask security patch SHA256 mismatch'
+}
+
+# Patch paths use src/flask/*.py. Work on a temporary source layout,
+# then copy only the four patched files into the new runtime.
+$FlaskStage = Join-Path $Output '_flask_security_stage'
+$FlaskStageSrc = Join-Path $FlaskStage 'src'
+$FlaskStagePackage = Join-Path $FlaskStageSrc 'flask'
+
+if (Test-Path -LiteralPath $FlaskStage) {
+    throw "Flask staging directory already exists: $FlaskStage"
+}
+
+New-Item -ItemType Directory -Path $FlaskStageSrc | Out-Null
+Copy-Item -LiteralPath $FlaskDir -Destination $FlaskStagePackage -Recurse
+
+Push-Location $FlaskStage
+try {
+    & git apply --check -p1 $FlaskPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Flask patch validation failed'
+    }
+
+    & git apply -p1 $FlaskPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Flask patch application failed'
+    }
+}
+finally {
+    Pop-Location
+}
+
+foreach ($Name in @('app.py', 'ctx.py', 'sessions.py', 'templating.py')) {
+    Copy-Item `
+        -LiteralPath (Join-Path $FlaskStagePackage $Name) `
+        -Destination (Join-Path $FlaskDir $Name) -Force
+}
+
+Remove-Item -LiteralPath $FlaskStage -Recurse -Force
+
+& $RuntimePython -m py_compile `
+    (Join-Path $FlaskDir 'app.py') `
+    (Join-Path $FlaskDir 'ctx.py') `
+    (Join-Path $FlaskDir 'sessions.py') `
+    (Join-Path $FlaskDir 'templating.py')
+
+if ($LASTEXITCODE -ne 0) {
+    throw 'Flask patched modules compilation failed'
+}
+
+& $RuntimePython -u $FlaskTest
+
+if ($LASTEXITCODE -ne 0) {
+    throw 'Flask security regression tests failed'
+}
+
+Write-Host '[PASS] Flask 1.1.4 security backport and regression tests'
+
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
