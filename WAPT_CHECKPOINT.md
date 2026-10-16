@@ -703,3 +703,27 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Final open common-agent Dependabot inventory: 34 alerts.
 - Next: W13 - select the next common-agent dependency CVE family.
 - Preserve all previously validated Windows runtimes and Unix R5.
+
+### W13 - Flask common-agent CVE remediation (2026-10-16)
+
+- Scope: Flask==1.1.4 in requirements-agent.txt.
+- Dependabot alerts dismissed:
+  - #27 CVE-2023-30861
+  - #65 CVE-2026-27205
+- Existing server security backport reused:
+  utils/patch-flask-1.1.4/CVE-2023-30861-CVE-2026-27205.patch
+- Unix agent R5: security patch presence verified by reverse dry-run
+  using a temporary src/flask source layout. Runtime unchanged.
+- Windows VM106:
+  - Security patch applied to isolated Flask 1.1.4 sources.
+  - Four functional regression checks PASS.
+  - Windows runtime builder integration completed.
+  - Security patch SHA256 checked during construction.
+  - Autonomous Python 2.7.18 x86 build SUCCESS.
+  - Runtime: C:\padit-runtime-1.8.3-W13-flask
+  - Four functional regression checks PASS on W13.
+  - Flask package and all four patched modules provenance verified.
+- Implementation commit: d9530910d.
+- GitHub alert closure verified for #27 and #65.
+- Next: verify remaining Dependabot inventory, then select W14.
+- Preserve Windows W08-W13 runtimes and Unix R5.
