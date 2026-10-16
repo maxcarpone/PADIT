@@ -665,3 +665,41 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Dependabot common certifi alerts #20, #32, #52 dismissed.
 - Next: remaining common-agent CVE remediation.
 
+
+### W12 - Werkzeug common-agent CVE remediation (2026-10-16)
+
+- Scope: Werkzeug==1.0.1 in requirements-agent.txt.
+- Seven Dependabot alerts dismissed:
+  - #25 CVE-2023-25577
+  - #26 CVE-2023-23934
+  - #45 CVE-2024-34069
+  - #49 CVE-2024-49766
+  - #58 CVE-2025-66221
+  - #62 CVE-2026-21860
+  - #64 CVE-2026-27199
+- Existing security patches reused from the validated Debian server/Unix work:
+  - CVE-2023-23934.patch
+  - CVE-2023-25577.patch
+  - CVE-2024-34069.patch
+  - safe-join-security-backports.patch
+- Unix agent R5:
+  - All four patch groups confirmed already applied by reverse dry-run.
+  - Existing Unix regression suites retained.
+  - No modification of the validated R5 runtime.
+- Windows agent VM106:
+  - Four patch groups applied successfully to isolated sources.
+  - Four historical regression suites PASS.
+  - Additional Windows safe_join tests: 15 unsafe paths rejected;
+    3 normal paths accepted.
+  - Five regression suites committed under
+    utils/patch-werkzeug-1.0.1/tests/.
+  - Patches and tests integrated into tools/02-build-windows-runtime.ps1.
+  - Autonomous Python 2.7.18 Windows x86 runtime build SUCCESS.
+  - Runtime: C:\padit-runtime-1.8.3-W12-werkzeug
+  - Five regression suites PASS on the autonomous runtime.
+  - Werkzeug 1.0.1 module provenance verified inside W12.
+- Implementation commit: 3c46f49a.
+- GitHub alerts dismissed after Unix/Windows verification.
+- Final open common-agent Dependabot inventory: 34 alerts.
+- Next: W13 - select the next common-agent dependency CVE family.
+- Preserve all previously validated Windows runtimes and Unix R5.
