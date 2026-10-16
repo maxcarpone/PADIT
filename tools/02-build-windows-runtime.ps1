@@ -977,6 +977,86 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host '[PASS] Controlled certifi 2026.7.22 bundle installed and validated'
+# ---------------------------------------------------------------------------
+# Werkzeug 1.0.1 security backports - Python 2.7 Windows x86
+# ---------------------------------------------------------------------------
+
+Write-Step 'Applying Werkzeug 1.0.1 security backports'
+
+$WerkzeugDir = Join-Path $Output 'Lib\site-packages\werkzeug'
+$WerkzeugPatchDir = Join-Path $RepoRoot 'utils\patch-werkzeug-1.0.1'
+$WerkzeugTestDir = Join-Path $WerkzeugPatchDir 'tests'
+
+Assert-Dir $WerkzeugDir
+Assert-Dir $WerkzeugPatchDir
+Assert-Dir $WerkzeugTestDir
+
+$WerkzeugVersion = & $RuntimePython -c 'import werkzeug; print(werkzeug.__version__)'
+if ($LASTEXITCODE -ne 0 -or $WerkzeugVersion.Trim() -ne '1.0.1') {
+    throw "Unexpected Werkzeug version: $WerkzeugVersion"
+}
+
+$WerkzeugPatches = @(
+    'CVE-2023-23934.patch',
+    'CVE-2023-25577.patch',
+    'CVE-2024-34069.patch',
+    'safe-join-security-backports.patch'
+)
+
+$WerkzeugExpectedHashes = @{
+    'CVE-2023-23934.patch' = '9E682A6132FFCAC899723307E8098ED6ADEE57CD69218A938C1E5B13C315514E'
+    'CVE-2023-25577.patch' = '2E40F24444EC9ADBC8297550116CEAF17506C8CF6887FA4DB4A0201E066866EC'
+    'CVE-2024-34069.patch' = '69C1B353EDB4B311A532C8FD81E9F3DE07A30951A064165047250C28F1CA0F8D'
+    'safe-join-security-backports.patch' = 'ACCA1E1741F0C0B65B2A67498FCE315772B5C9A9C1D763A6BD60AF0436543650'
+}
+
+foreach ($PatchName in $WerkzeugPatches) {
+    $PatchPath = Join-Path $WerkzeugPatchDir $PatchName
+    Assert-File $PatchPath
+
+    $ActualHash = (Get-FileHash -LiteralPath $PatchPath -Algorithm SHA256).Hash
+    if ($ActualHash -ne $WerkzeugExpectedHashes[$PatchName]) {
+        throw "Werkzeug patch SHA256 mismatch: $PatchName"
+    }
+
+    Push-Location $WerkzeugDir
+    try {
+        & git apply --check -p1 $PatchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Werkzeug patch check failed: $PatchName"
+        }
+
+        & git apply -p1 $PatchPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Werkzeug patch application failed: $PatchName"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host "[PASS] Werkzeug $PatchName"
+}
+
+$WerkzeugTests = @(
+    'test_werkzeug_1.py',
+    'test_werkzeug_2.py',
+    'test_werkzeug_3.py',
+    'test_werkzeug_4.py',
+    'test_werkzeug_windows_paths.py'
+)
+
+foreach ($TestName in $WerkzeugTests) {
+    $TestPath = Join-Path $WerkzeugTestDir $TestName
+    Assert-File $TestPath
+
+    & $RuntimePython -u $TestPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Werkzeug regression test failed: $TestName"
+    }
+}
+
+Write-Host '[PASS] Werkzeug security regression suites: 5/5'
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
