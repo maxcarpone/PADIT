@@ -727,3 +727,33 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - GitHub alert closure verified for #27 and #65.
 - Next: verify remaining Dependabot inventory, then select W14.
 - Preserve Windows W08-W13 runtimes and Unix R5.
+
+### W14 - Jinja2 common-agent CVE remediation (2026-10-16)
+
+- Scope: Jinja2==2.11.3 in requirements-agent.txt.
+- Dependabot alerts dismissed:
+  - #38 CVE-2024-22195
+  - #44 CVE-2024-34064
+  - #51 CVE-2024-56326
+  - #53 CVE-2025-27516
+- Existing server security backports reused:
+  - CVE-2024-22195-CVE-2024-34064.patch
+  - CVE-2024-56326-CVE-2025-27516.patch
+- Unix agent R5:
+  - Both security patch groups confirmed present by reverse dry-run.
+  - Existing validated runtime preserved.
+- Windows VM106:
+  - Both patch groups applied successfully to isolated Jinja2 sources.
+  - Four CVE regression tests PASS.
+  - Jinja2 attr compatibility test PASS.
+  - Patches and regression tests integrated into Windows runtime builder.
+  - Patch SHA256 verification included.
+  - Autonomous Python 2.7.18 x86 runtime build SUCCESS.
+  - Runtime: C:\padit-runtime-1.8.3-W14-jinja2
+  - pip check: no broken requirements.
+  - Regression tests PASS on autonomous runtime.
+  - Jinja2, filters and sandbox module provenance verified.
+- Implementation commit: 9fe4b1e8e.
+- GitHub alert closure verified for all four alerts.
+- Next: verify remaining Dependabot inventory and select W15.
+- Preserve Windows W08-W14 runtimes and Unix R5.
