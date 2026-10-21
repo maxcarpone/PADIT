@@ -1233,6 +1233,121 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host '[PASS] Jinja2 security regression suites: 4 CVEs + compatibility'
 
+# ---------------------------------------------------------------------------
+# idna 2.10 security backport - Windows Python 2.7 x86 (W15)
+# ---------------------------------------------------------------------------
+Write-Step 'Applying idna 2.10 security backport'
+
+$IdnaDir = Join-Path $Output 'Lib\site-packages\idna'
+$IdnaPatch = Join-Path $RepoRoot 'utils\patch-idna-2.10\CVE-2024-3651-CVE-2026-45409.patch'
+$IdnaStage = Join-Path $Output '_idna_security_stage'
+$IdnaStagePackage = Join-Path $IdnaStage 'idna'
+
+Assert-Dir $IdnaDir
+Assert-File $IdnaPatch
+
+$IdnaVersion = & $RuntimePython -c 'import idna; print(idna.__version__)'
+if ($LASTEXITCODE -ne 0 -or $IdnaVersion.Trim() -ne '2.10') {
+    throw "Unexpected idna version: $IdnaVersion"
+}
+
+Assert-Sha256 $IdnaPatch '01FCC4AC316420E773B3E64B71FC80773101B659DEA1E8324992B839425CED88'
+
+if (Test-Path -LiteralPath $IdnaStage) {
+    throw "idna stage already exists: $IdnaStage"
+}
+
+New-Item -ItemType Directory -Path $IdnaStage | Out-Null
+Copy-Item -LiteralPath $IdnaDir -Destination $IdnaStagePackage -Recurse
+
+Push-Location $IdnaStage
+try {
+    & git apply --check -p1 $IdnaPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'idna patch validation failed'
+    }
+
+    & git apply -p1 $IdnaPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'idna patch application failed'
+    }
+}
+finally {
+    Pop-Location
+}
+
+foreach ($Name in @('core.py', 'codec.py')) {
+    Copy-Item `
+        -LiteralPath (Join-Path $IdnaStagePackage $Name) `
+        -Destination (Join-Path $IdnaDir $Name) -Force
+}
+
+Remove-Item -LiteralPath $IdnaStage -Recurse -Force
+
+& $RuntimePython -m py_compile `
+    (Join-Path $IdnaDir 'core.py') `
+    (Join-Path $IdnaDir 'codec.py')
+
+if ($LASTEXITCODE -ne 0) {
+    throw 'idna patched module compilation failed'
+}
+
+# Confirm that the installed files match the validated patched sources.
+$IdnaReference = Join-Path $RepoRoot 'utils\patch-idna-2.10\wip'
+
+foreach ($Name in @('core.py', 'codec.py')) {
+    $Installed = Join-Path $IdnaDir $Name
+    $Reference = Join-Path $IdnaReference $Name
+
+    Assert-File $Installed
+    Assert-File $Reference
+
+    $InstalledHash = (Get-FileHash -LiteralPath $Installed -Algorithm SHA256).Hash
+    $ReferenceHash = (Get-FileHash -LiteralPath $Reference -Algorithm SHA256).Hash
+
+    if ($InstalledHash -ne $ReferenceHash) {
+        # Windows git apply may preserve CRLF, unlike the Unix LF reference.
+        $InstalledText = [System.IO.File]::ReadAllText($Installed)
+        $ReferenceText = [System.IO.File]::ReadAllText($Reference)
+
+        $InstalledNormalized = $InstalledText.Replace("`r`n", "`n")
+        $ReferenceNormalized = $ReferenceText.Replace("`r`n", "`n")
+
+        if ($InstalledNormalized -cne $ReferenceNormalized) {
+            throw "idna patched source mismatch: $Name"
+        }
+
+        Write-Host "[PASS] idna $Name matches reference after CRLF normalization"
+    }
+    else {
+        Write-Host "[PASS] idna $Name SHA256 matches reference"
+    }
+
+    Write-Host "       Installed SHA256: $InstalledHash"
+    Write-Host "       Reference SHA256: $ReferenceHash"
+}
+
+$IdnaTests = @(
+    'test_idna_baseline.py',
+    'test_idna_security.py',
+    'test_idna_incremental.py',
+    'test_idna_boundaries.py',
+    'test_idna_unicode_codec.py'
+)
+
+foreach ($TestName in $IdnaTests) {
+    $TestPath = Join-Path $IdnaReference $TestName
+    Assert-File $TestPath
+
+    & $RuntimePython -u $TestPath
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "idna regression failed: $TestName"
+    }
+
+    Write-Host "[PASS] Windows idna regression: $TestName"
+}
+Write-Host '[PASS] idna 2.10 security patch applied'
 Write-Step "Checking Python package dependency consistency"
 Invoke-Checked $RuntimePython @("-m", "pip", "check")
 
