@@ -819,3 +819,60 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Review Dependabot alerts #42 and #74.
 - Record the remediation evidence and decide dismissal state.
 - Continue the remaining agent dependency CVE inventory.
+
+### W16 - soupsieve 1.9.6 common-agent security remediation (2026-10-21)
+
+- Scope: CVE-2026-49476, CVE-2026-49477,
+  CVE-2026-85999 and CVE-2026-86000.
+- Preserve soupsieve 1.9.6 and BeautifulSoup4 4.9.3
+  for Python 2.7 compatibility.
+- Controlled upstream archive:
+  `utils/sources/soupsieve-1.9.6.tar.gz`.
+  SHA256: `7985bacc98c34923a439967c1a602dc4f1e15f923b6fcf02344184f86cc7efaa`.
+- Security patch:
+  `utils/patch-soupsieve-1.9.6/CVE-2026-49476-49477-85999-86000.patch`.
+  SHA256: `dade2c1f8539b7316c2436e9c1c0a9b803055a08cbbd538a8fb84262a88ac201`.
+- Permanent security regression tests:
+  `utils/patch-soupsieve-1.9.6/test_security.py`.
+  SHA256: `b144b07f1b449dd60517917354e3b9387ada9a576dac4352c5fcc98746af8907`.
+- Patched parser SHA256:
+  `9fc72fb3b683704ae27404d66639b7a6960d0dcb27c268fd2fa1202ebabb06dc`.
+
+**Historical compatibility — PASS**
+- Official soupsieve 1.9.6 test suite:
+  306 passed, 51 skipped, 5 deprecation warnings.
+- Same results with the patched sources.
+- Six targeted security regressions: 6/6 PASS.
+- Historical tests were executed in isolated test environments.
+
+**Unix Debian 12 — PASS**
+- Builder: `tools/build-python2-runtime-agent-unix-bookworm.sh`.
+- Autonomous W16 runtime:
+  `/git/paditdev/build/python2-runtime-agent-unix-W16`.
+- Complete autonomous runtime build: PASS.
+- Python 2.7.18 compatibility retained.
+- Corrected soupsieve 1.9.6 installed.
+- Installed parser SHA256: PASS.
+- Six security regressions executed by the builder: 6/6 PASS.
+- Final python-ldap 3.3.1 security checks: PASS.
+- Previous Unix W15 runtime preserved.
+
+**Windows x86/VC9 — PENDING**
+- Integrate the same controlled archive and patch
+  into `tools/02-build-windows-runtime.ps1`.
+- Preserve existing Windows runtimes.
+- Verify patch compatibility, Python 2.7 x86,
+  security regressions and runtime provenance.
+- Validate autonomous construction.
+
+**Security tracking — PENDING**
+- Dependabot alerts #79, #80, #101 and #102.
+- Do not dismiss alerts before validating Windows.
+- Upstream soupsieve 1.9.6 without PADIT backports
+  remains vulnerable.
+- No Python 3 migration in W16.
+
+**Next**
+- Review and version the Unix W16 implementation.
+- Integrate and validate the Windows x86/VC9 runtime.
+- Update the checkpoint and Dependabot evidence.

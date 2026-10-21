@@ -239,6 +239,120 @@ echo "[PASS] W15 idna security regression tests"
 echo "[PASS] Secured idna 2.10 installed"
 
 # ---------------------------------------------------------------------------
+# W16 - soupsieve 1.9.6 controlled Python 2.7 security backports.
+# ---------------------------------------------------------------------------
+echo ">>> Building secured soupsieve 1.9.6..."
+
+SOUP_ARCHIVE="${REPO_ROOT}/utils/sources/soupsieve-1.9.6.tar.gz"
+SOUP_PATCH="${REPO_ROOT}/utils/patch-soupsieve-1.9.6/CVE-2026-49476-49477-85999-86000.patch"
+SOUP_TEST="${REPO_ROOT}/utils/patch-soupsieve-1.9.6/test_security.py"
+SOUP_WORK="${BUILD_ROOT}/soupsieve-secure"
+SOUP_SOURCE="${SOUP_WORK}/soupsieve-1.9.6"
+SOUP_DIST="${SOUP_WORK}/dist"
+
+[ -f "${SOUP_ARCHIVE}" ] || die "Missing soupsieve archive"
+[ -f "${SOUP_PATCH}" ] || die "Missing soupsieve patch"
+[ -f "${SOUP_TEST}" ] || die "Missing soupsieve tests"
+[ ! -e "${SOUP_WORK}" ] || die "soupsieve work directory exists"
+
+echo "7985bacc98c34923a439967c1a602dc4f1e15f923b6fcf02344184f86cc7efaa  ${SOUP_ARCHIVE}" |
+    sha256sum -c - || die "soupsieve archive SHA256 mismatch"
+
+echo "dade2c1f8539b7316c2436e9c1c0a9b803055a08cbbd538a8fb84262a88ac201  ${SOUP_PATCH}" |
+    sha256sum -c - || die "soupsieve patch SHA256 mismatch"
+
+echo "b144b07f1b449dd60517917354e3b9387ada9a576dac4352c5fcc98746af8907  ${SOUP_TEST}" |
+    sha256sum -c - || die "soupsieve test SHA256 mismatch"
+
+python3 - "${SOUP_ARCHIVE}" <<'PYSOUPTAR' || die "soupsieve archive validation failed"
+import pathlib
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1], 'r:gz') as archive:
+    for member in archive.getmembers():
+        name = pathlib.PurePosixPath(member.name)
+        if (
+            name.is_absolute() or
+            '..' in name.parts or
+            not name.parts or
+            name.parts[0] != 'soupsieve-1.9.6' or
+            not (member.isfile() or member.isdir())
+        ):
+            raise SystemExit('[FAIL] Unsafe soupsieve archive member: ' + member.name)
+print('[PASS] soupsieve archive members verified')
+PYSOUPTAR
+
+mkdir -p "${SOUP_WORK}" "${SOUP_DIST}" ||
+    die "Cannot create soupsieve build directory"
+
+tar -xzf "${SOUP_ARCHIVE}" -C "${SOUP_WORK}" ||
+    die "Cannot extract soupsieve sources"
+
+(
+    cd "${SOUP_SOURCE}" &&
+    patch --batch --fuzz=0 -p1 < "${SOUP_PATCH}" &&
+    "${RUNTIME_ROOT}/bin/python" setup.py bdist_wheel --dist-dir "${SOUP_DIST}"
+) || die "soupsieve patch or wheel build failed"
+
+SOUP_WHEEL="${SOUP_DIST}/soupsieve-1.9.6-py2.py3-none-any.whl"
+[ -f "${SOUP_WHEEL}" ] || die "Patched soupsieve wheel missing"
+
+"${RUNTIME_ROOT}/bin/python" -m pip install \
+    --no-index --no-deps --no-cache-dir \
+    --force-reinstall "${SOUP_WHEEL}" ||
+    die "Patched soupsieve installation failed"
+
+SOUP_SOURCE_ROOT="${SOUP_SOURCE}" \
+"${RUNTIME_ROOT}/bin/python" - <<'PYSOUPVERIFY' || die "soupsieve installation provenance failed"
+import hashlib
+import os
+import soupsieve
+
+assert soupsieve.__version__ == '1.9.6'
+source = os.path.join(
+    os.environ['SOUP_SOURCE_ROOT'], 'soupsieve', 'css_parser.py'
+)
+installed = os.path.join(
+    os.path.dirname(os.path.realpath(soupsieve.__file__)),
+    'css_parser.py'
+)
+
+def digest(path):
+    with open(path, 'rb') as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+assert digest(source) == digest(installed)
+assert digest(installed) == (
+    '9fc72fb3b683704ae27404d66639b7a6960d0dcb27c268fd2fa1202ebabb06dc'
+)
+print('[PASS] Secured soupsieve installation provenance')
+PYSOUPVERIFY
+
+# Execute each regression in a separate timeout-bounded Python process.
+# The test module uses plain assertions; pytest is not a runtime dependency.
+for test_name in \
+    test_cve_2026_49476_selector_limit \
+    test_cve_2026_49476_relative_limit \
+    test_cve_2026_49476_token_budget \
+    test_cve_2026_49477_unterminated_quotes \
+    test_cve_2026_85999_whitespace \
+    test_cve_2026_86000_identifier
+do
+    timeout --kill-after=2s 10s \
+        "${RUNTIME_ROOT}/bin/python" - "${SOUP_TEST}" "${test_name}" <<'PYSOUPTEST' || die "soupsieve security regression failed"
+import imp
+import sys
+
+module = imp.load_source('padit_soupsieve_security', sys.argv[1])
+getattr(module, sys.argv[2])()
+print('[PASS] ' + sys.argv[2])
+PYSOUPTEST
+done
+
+echo "[PASS] W16 secured soupsieve 1.9.6 installed"
+
+# ---------------------------------------------------------------------------
 # pyasn1 0.5.1: controlled Python 2.7 security backports.
 # Reuse Windows-validated patches, excluding the Windows-only adaptation.
 # ---------------------------------------------------------------------------
