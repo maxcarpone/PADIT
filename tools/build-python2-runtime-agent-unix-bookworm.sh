@@ -126,6 +126,98 @@ echo ">>> Installing common and Unix agent dependencies..."
 echo "[PASS] Initial agent Unix dependencies installed"
 
 # ---------------------------------------------------------------------------
+# idna 2.10 - controlled Python 2.7 security backport (W15).
+# ---------------------------------------------------------------------------
+echo ">>> Building secured idna 2.10..."
+
+IDNA_ARCHIVE="${REPO_ROOT}/utils/sources/idna-2.10.tar.gz"
+IDNA_PATCH="${REPO_ROOT}/utils/patch-idna-2.10/CVE-2024-3651-CVE-2026-45409.patch"
+IDNA_WORK="${BUILD_ROOT}/idna-secure"
+IDNA_SOURCE="${IDNA_WORK}/idna-2.10"
+IDNA_DIST="${IDNA_WORK}/dist"
+
+[ -f "${IDNA_ARCHIVE}" ] || die "Missing controlled idna source"
+[ -f "${IDNA_PATCH}" ] || die "Missing idna security patch"
+[ ! -e "${IDNA_WORK}" ] || die "idna work directory already exists"
+
+echo "b307872f855b18632ce0c21c5e45be78c0ea7ae4c15c828c20788b26921eb3f6  ${IDNA_ARCHIVE}" |
+    sha256sum -c - || die "idna source SHA256 mismatch"
+
+echo "01fcc4ac316420e773b3e64b71fc80773101b659dea1e8324992b839425ced88  ${IDNA_PATCH}" |
+    sha256sum -c - || die "idna patch SHA256 mismatch"
+
+mkdir -p "${IDNA_WORK}" "${IDNA_DIST}"
+tar -xzf "${IDNA_ARCHIVE}" -C "${IDNA_WORK}" ||
+    die "Cannot extract idna sources"
+
+git -C "${IDNA_SOURCE}" apply --check "${IDNA_PATCH}" ||
+    die "idna patch check failed"
+
+git -C "${IDNA_SOURCE}" apply "${IDNA_PATCH}" ||
+    die "idna patch application failed"
+
+(
+    cd "${IDNA_SOURCE}" &&
+    "${RUNTIME_ROOT}/bin/python" setup.py bdist_wheel --dist-dir "${IDNA_DIST}"
+) || die "idna wheel build failed"
+
+IDNA_WHEEL="${IDNA_DIST}/idna-2.10-py2.py3-none-any.whl"
+[ -f "${IDNA_WHEEL}" ] || die "Patched idna wheel missing"
+
+"${RUNTIME_ROOT}/bin/python" -m pip install \
+    --no-cache-dir --no-index --no-deps \
+    --force-reinstall "${IDNA_WHEEL}" ||
+    die "Patched idna installation failed"
+
+
+IDNA_SOURCE_ROOT="${IDNA_SOURCE}" \
+"${RUNTIME_ROOT}/bin/python" - <<'PYIDNAVERIFY'
+import hashlib
+import idna
+import os
+import sys
+
+source_root = os.environ['IDNA_SOURCE_ROOT']
+runtime_root = os.path.realpath(sys.prefix)
+installed_root = os.path.realpath(os.path.dirname(idna.__file__))
+
+assert idna.__version__ == '2.10'
+assert installed_root.startswith(runtime_root + os.sep)
+
+def digest(path):
+    with open(path, 'rb') as handle:
+        return hashlib.sha256(handle.read()).hexdigest()
+
+for name in ('core.py', 'codec.py'):
+    source = os.path.join(source_root, 'idna', name)
+    installed = os.path.join(installed_root, name)
+    assert digest(source) == digest(installed), name
+    print('[PASS] Installed idna %s matches patched source' % name)
+
+print('[PASS] W15 idna installation provenance')
+PYIDNAVERIFY
+
+[ "$?" -eq 0 ] || die "idna provenance verification failed"
+
+IDNA_TEST_ROOT="${REPO_ROOT}/utils/patch-idna-2.10/wip"
+
+for test in \
+    test_idna_baseline.py \
+    test_idna_security.py \
+    test_idna_incremental.py \
+    test_idna_boundaries.py \
+    test_idna_unicode_codec.py
+do
+    "${RUNTIME_ROOT}/bin/python" \
+        "${IDNA_TEST_ROOT}/${test}" \
+        || die "idna regression failed: ${test}"
+done
+
+echo "[PASS] W15 idna security regression tests"
+
+echo "[PASS] Secured idna 2.10 installed"
+
+# ---------------------------------------------------------------------------
 # pyasn1 0.5.1: controlled Python 2.7 security backports.
 # Reuse Windows-validated patches, excluding the Windows-only adaptation.
 # ---------------------------------------------------------------------------

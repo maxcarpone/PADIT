@@ -6,8 +6,12 @@ import idna
 from idna import core
 from idna.codec import IncrementalEncoder, IncrementalDecoder
 
-expected = "/tmp/padit-idna-W15-validation/idna/"
-assert idna.__file__.startswith(expected)
+import os
+import sys
+
+runtime = os.path.realpath(sys.prefix)
+module = os.path.realpath(idna.__file__)
+assert module.startswith(runtime + os.sep), module
 
 def reject_quickly(name, func):
     start = time.time()

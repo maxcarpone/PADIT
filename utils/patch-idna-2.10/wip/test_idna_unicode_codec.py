@@ -4,9 +4,12 @@ from __future__ import print_function
 import idna
 from idna.codec import IncrementalEncoder, IncrementalDecoder
 
-assert idna.__file__.startswith(
-    "/tmp/padit-idna-W15-validation/idna/"
-)
+import os
+import sys
+
+runtime = os.path.realpath(sys.prefix)
+module = os.path.realpath(idna.__file__)
+assert module.startswith(runtime + os.sep), module
 
 def reject(name, function):
     try:

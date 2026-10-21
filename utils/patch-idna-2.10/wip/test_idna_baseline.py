@@ -4,10 +4,13 @@ from __future__ import print_function
 import sys
 import idna
 
-expected = "/tmp/padit-idna-W15-validation/idna/"
+import os
 
-if not idna.__file__.startswith(expected):
-    raise AssertionError("Wrong idna source: %s" % idna.__file__)
+runtime = os.path.realpath(sys.prefix)
+module = os.path.realpath(idna.__file__)
+
+if not module.startswith(runtime + os.sep):
+    raise AssertionError("idna outside runtime: %s" % module)
 
 print("=== W15-J / IDNA 2.10 BASELINE ===")
 print("Version:", idna.__version__)
