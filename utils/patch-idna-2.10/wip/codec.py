@@ -99,16 +99,26 @@ class IncrementalDecoder(codecs.BufferedIncrementalDecoder):
     def __init__(self, errors='strict'):
         codecs.BufferedIncrementalDecoder.__init__(self, errors)
         self._consumed = 0
+        self._trailing_dot = False
 
     def reset(self):
         codecs.BufferedIncrementalDecoder.reset(self)
         self._consumed = 0
+        self._trailing_dot = False
 
     def getstate(self):
-        return (self.buffer, self._consumed)
+        # Preserve the Python 2 buffered decoder state shape.
+        # Bit 256 records the trailing-dot flag.
+        flags = 256 if self._trailing_dot else 0
+        return (self.buffer, self._consumed | flags)
 
     def setstate(self, state):
-        self.buffer, self._consumed = state
+        buffer, value = state
+        if not isinstance(value, (int, long)) or value < 0 or value > 510:
+            raise ValueError('Invalid incremental IDNA decoder state')
+        self.buffer = buffer
+        self._consumed = value & 255
+        self._trailing_dot = bool(value & 256)
 
     def _buffer_decode(self, data, errors, final):
         if errors != 'strict':
@@ -116,7 +126,7 @@ class IncrementalDecoder(codecs.BufferedIncrementalDecoder):
 
         if not data:
             # A final empty call must still enforce the domain limit.
-            if final and self._consumed > 253:
+            if final and self._consumed > 253 and not self._trailing_dot:
                 raise IDNAError('Domain too long')
             return (u"", 0)
 
@@ -163,6 +173,8 @@ class IncrementalDecoder(codecs.BufferedIncrementalDecoder):
 
         # Only consumed input contributes to the persistent counter.
         self._consumed += size
+        if result:
+            self._trailing_dot = result.endswith(u'.')
         return (result, size)
 
 
