@@ -146,6 +146,27 @@ echo "b307872f855b18632ce0c21c5e45be78c0ea7ae4c15c828c20788b26921eb3f6  ${IDNA_A
 echo "01fcc4ac316420e773b3e64b71fc80773101b659dea1e8324992b839425ced88  ${IDNA_PATCH}" |
     sha256sum -c - || die "idna patch SHA256 mismatch"
 
+# Validate archive members before extraction.
+python3 - "${IDNA_ARCHIVE}" <<'PYIDNATAR' || die "idna archive validation failed"
+import sys
+import tarfile
+from pathlib import PurePosixPath
+
+with tarfile.open(sys.argv[1], 'r:gz') as archive:
+    for member in archive.getmembers():
+        name = PurePosixPath(member.name)
+
+        if (name.is_absolute() or '..' in name.parts or
+                not name.parts or name.parts[0] != 'idna-2.10' or
+                not (member.isfile() or member.isdir())):
+            raise SystemExit('[FAIL] Unsafe idna archive member: ' +
+                             member.name)
+
+print('[PASS] idna source archive members verified')
+PYIDNATAR
+
+
+
 mkdir -p "${IDNA_WORK}" "${IDNA_DIST}"
 tar -xzf "${IDNA_ARCHIVE}" -C "${IDNA_WORK}" ||
     die "Cannot extract idna sources"
@@ -171,7 +192,7 @@ IDNA_WHEEL="${IDNA_DIST}/idna-2.10-py2.py3-none-any.whl"
 
 
 IDNA_SOURCE_ROOT="${IDNA_SOURCE}" \
-"${RUNTIME_ROOT}/bin/python" - <<'PYIDNAVERIFY'
+"${RUNTIME_ROOT}/bin/python" - <<'PYIDNAVERIFY' || die "idna provenance verification failed"
 import hashlib
 import idna
 import os
@@ -197,7 +218,7 @@ for name in ('core.py', 'codec.py'):
 print('[PASS] W15 idna installation provenance')
 PYIDNAVERIFY
 
-[ "$?" -eq 0 ] || die "idna provenance verification failed"
+
 
 IDNA_TEST_ROOT="${REPO_ROOT}/utils/patch-idna-2.10/wip"
 
