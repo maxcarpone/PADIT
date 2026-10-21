@@ -757,3 +757,57 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - GitHub alert closure verified for all four alerts.
 - Next: verify remaining Dependabot inventory and select W15.
 - Preserve Windows W08-W14 runtimes and Unix R5.
+
+### W15 - idna 2.10 common-agent security remediation (2026-10-21)
+
+- Scope: CVE-2024-3651 and CVE-2026-45409, idna 2.10,
+  Python 2.7-compatible Unix and Windows agents.
+- Controlled upstream archive:
+  `utils/sources/idna-2.10.tar.gz`.
+  SHA256: `b307872f855b18632ce0c21c5e45be78c0ea7ae4c15c828c20788b26921eb3f6`.
+- Security patch:
+  `utils/patch-idna-2.10/CVE-2024-3651-CVE-2026-45409.patch`.
+  SHA256: `01fcc4ac316420e773b3e64b71fc80773101b659dea1e8324992b839425ced88`.
+- Patched modules: `idna/core.py` and `idna/codec.py`.
+- Five versioned regression suites: baseline, security,
+  incremental codec, boundaries, Unicode codec.
+
+**Unix Debian 12 — PASS**
+- Autonomous W15 runtime:
+  `/git/paditdev/build/python2-runtime-agent-unix-W15`.
+- Builder completed with exit code 0.
+- Patched module provenance and SHA256: PASS.
+- Five regression suites: 5/5 PASS.
+- `pip check`: PASS.
+- Previous Unix R5 runtime preserved.
+
+**Windows x86/VC9 — idna PASS**
+- Functional runtime:
+  `C:\padit-runtime-1.8.3-W15-idna-retry`.
+- Python 2.7.18, 32-bit: PASS.
+- Patched sources match the Unix W15 reference after CRLF/LF normalization.
+- Five regression suites: 5/5 PASS.
+- `pip check`: PASS.
+- Autonomous functional acceptance: PASS (three exit codes 0).
+- Historical W14 runtime preserved.
+- Qualification caveat: the Windows constructor was interrupted;
+  a complete uninterrupted build was not demonstrated.
+  The recovered runtime passed the subsequent functional checks.
+
+**Git milestones**
+- `93ad2c26`: Unix idna integration.
+- `3f8dbcbb`: Unix archive verification hardening.
+- `dcb62ba3`: Windows idna integration.
+- Branch: `release/1.8.3`.
+
+**Security tracking**
+- Dependabot #42 and #74: remediation validated in both agent runtimes.
+- Alert dismissal/closure not yet performed.
+- GitHub reported 28 remaining vulnerabilities at the last push.
+- No additional runtime rebuild required for the completed idna
+  regression checks; preserve the Windows build qualification caveat.
+
+**Next**
+- Review Dependabot alerts #42 and #74.
+- Record the remediation evidence and decide dismissal state.
+- Continue the remaining agent dependency CVE inventory.
