@@ -802,8 +802,16 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 
 **Security tracking**
 - Dependabot #42 and #74: remediation validated in both agent runtimes.
-- Alert dismissal/closure not yet performed.
-- GitHub reported 28 remaining vulnerabilities at the last push.
+- Dependabot #42 (CVE-2024-3651) and #74 (CVE-2026-45409):
+  dismissed with reason `fix_started`, 2026-10-21.
+- Detailed remediation evidence retained in this section.
+- `requirements-agent.txt` now pins `idna==2.10` without Python 3
+  markers: commit `93ed38fa`.
+- Original `idna==3.2` marker was inherited from historical WAPT
+  commit `8a091e5b`; Python 3 porting remains a separate future project.
+- Dismissal covers PADIT-controlled patched runtimes only.
+  Unpatched upstream idna 2.10 remains vulnerable.
+- GitHub reported 28 vulnerabilities before dismissal of these alerts.
 - No additional runtime rebuild required for the completed idna
   regression checks; preserve the Windows build qualification caveat.
 
