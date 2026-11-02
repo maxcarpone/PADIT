@@ -857,13 +857,21 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Final python-ldap 3.3.1 security checks: PASS.
 - Previous Unix W15 runtime preserved.
 
-**Windows x86/VC9 — PENDING**
-- Integrate the same controlled archive and patch
-  into `tools/02-build-windows-runtime.ps1`.
-- Preserve existing Windows runtimes.
-- Verify patch compatibility, Python 2.7 x86,
-  security regressions and runtime provenance.
-- Validate autonomous construction.
+**Windows x86/VC9 — PASS (2026-11-02)**
+- Builder: `tools/02-build-windows-runtime.ps1`.
+- Runtime: `C:\padit-runtime-1.8.3-W16-soupsieve-retry`.
+- Complete autonomous runtime construction: PASS (`SUCCESS`).
+- Python 2.7.18 x86: PASS.
+- soupsieve 1.9.6 and BeautifulSoup 4.9.3: PASS.
+- Git for Windows patch application: PASS.
+- Installed parser SHA256 after CRLF/LF normalization: PASS.
+- Six security regression logs: 6/6 PASS.
+- Final `pip check`: PASS.
+- PADIT autonomous runtime acceptance: PASS.
+- Historical Windows W15 runtime preserved.
+- First W16 build attempt interrupted by PowerShell 5.1
+  stderr redirection; direct retry completed successfully.
+- Windows integration commits: `e6cd45fd`, `dde55f7a`.
 
 **Security tracking — PENDING**
 - Dependabot alerts #79, #80, #101 and #102.
