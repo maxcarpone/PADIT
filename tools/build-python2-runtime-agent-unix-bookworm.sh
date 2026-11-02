@@ -628,3 +628,83 @@ LDAP_SITE="$("${RUNTIME_ROOT}/bin/python" -c \
     "${LDAP_SITE}/ldap"
 
 echo "[PASS] Agent Unix python-ldap security verification completed"
+
+# ---------------------------------------------------------------------------
+# W20 - waitress 1.4.4 security backports.
+# ---------------------------------------------------------------------------
+echo ">>> Applying secured waitress 1.4.4..."
+
+WAITRESS_PATCH="${REPO_ROOT}/utils/patch-waitress-1.4.4/CVE-2022-24761-CVE-2024-49769.patch"
+WAITRESS_TEST="${REPO_ROOT}/utils/patch-waitress-1.4.4/test_security.py"
+WAITRESS_STAGE="${BUILD_ROOT}/waitress-security-stage"
+
+[ -f "${WAITRESS_PATCH}" ] || die "Missing waitress security patch"
+[ -f "${WAITRESS_TEST}" ] || die "Missing waitress security tests"
+[ ! -e "${WAITRESS_STAGE}" ] || die "waitress stage already exists"
+
+echo "7c4144fd7a6506499aa42ec177080e28f6bf24198678545e92858543cf50731b  ${WAITRESS_PATCH}" |
+    sha256sum -c - || die "waitress patch SHA256 mismatch"
+
+echo "6d637d365173c9ec9e7444715501f00561e9ff8ff47c95c1725e8c05dae05ba0  ${WAITRESS_TEST}" |
+    sha256sum -c - || die "waitress test SHA256 mismatch"
+
+WAITRESS_SITE="$("${RUNTIME_ROOT}/bin/python" -c     'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+WAITRESS_DIR="${WAITRESS_SITE}/waitress"
+
+[ -d "${WAITRESS_DIR}" ] || die "waitress runtime package missing"
+
+mkdir -p "${WAITRESS_STAGE}" || die "Cannot create waitress stage"
+cp -a "${WAITRESS_DIR}" "${WAITRESS_STAGE}/waitress" ||
+    die "Cannot stage waitress package"
+
+(
+    cd "${WAITRESS_STAGE}" &&
+    patch --batch --fuzz=0 -p1 < "${WAITRESS_PATCH}"
+) || die "waitress security patch failed"
+
+# Verify the exact corrected sources before installation.
+WAITRESS_HASHES="${WAITRESS_STAGE}/SHA256SUMS"
+cat > "${WAITRESS_HASHES}" <<'W20WAITRESSHASHES'
+0d8a2cdfe498965c76fd602c61219033c98f1ab7d938a66d37874c7d87bf41f3  waitress/parser.py
+a37e9f6c6ee878a3d6e1363da5bb6948969290b4fcef01db3054fb8fe62bc6e1  waitress/receiver.py
+f58afb134931f2951a817bc091ff5b63d770e5a8ca8ce4e1ba1b90e7ea01cc71  waitress/rfc7230.py
+b4e89d3bd7276fbb88153797be5116e75c3ed823aa89811c6d7d9bfa795501a5  waitress/channel.py
+3ba7cce83aeb68f22d8ae9e3c809862672ecf1d6efaa1697d4dbabdc12eeeba0  waitress/wasyncore.py
+W20WAITRESSHASHES
+
+(
+    cd "${WAITRESS_STAGE}" &&
+    sha256sum -c SHA256SUMS
+) || die "waitress corrected sources SHA256 mismatch"
+
+echo "[PASS] W20 waitress corrected sources SHA256 verified"
+
+"${RUNTIME_ROOT}/bin/python" -m py_compile     "${WAITRESS_STAGE}/waitress/parser.py"     "${WAITRESS_STAGE}/waitress/receiver.py"     "${WAITRESS_STAGE}/waitress/rfc7230.py"     "${WAITRESS_STAGE}/waitress/channel.py"     "${WAITRESS_STAGE}/waitress/wasyncore.py" ||
+    die "waitress patched module compilation failed"
+
+for name in parser receiver rfc7230 channel wasyncore; do
+    cp "${WAITRESS_STAGE}/waitress/${name}.py" "${WAITRESS_DIR}/${name}.py" ||
+        die "Cannot install patched waitress module: ${name}"
+    cmp -s "${WAITRESS_STAGE}/waitress/${name}.py" "${WAITRESS_DIR}/${name}.py" ||
+        die "waitress installed file differs: ${name}"
+
+    # Remove stale Python 2 bytecode for patched modules only.
+    rm -f "${WAITRESS_DIR}/${name}.pyc" "${WAITRESS_DIR}/${name}.pyo" ||
+        die "Cannot remove waitress bytecode cache: ${name}"
+done
+
+WAITRESS_INSTALLED_HASHES="${WAITRESS_STAGE}/SHA256SUMS-installed"
+sed 's|  waitress/|  |' "${WAITRESS_HASHES}" > "${WAITRESS_INSTALLED_HASHES}" ||
+    die "Cannot prepare waitress installed SHA256 manifest"
+
+(
+    cd "${WAITRESS_DIR}" &&
+    sha256sum -c "${WAITRESS_INSTALLED_HASHES}"
+) || die "waitress installed source SHA256 mismatch"
+
+echo "[PASS] W20 waitress installed source SHA256 verified"
+
+"${RUNTIME_ROOT}/bin/python" "${WAITRESS_TEST}" ||
+    die "waitress security regression tests failed"
+
+echo "[PASS] W20 secured waitress 1.4.4 installed"
