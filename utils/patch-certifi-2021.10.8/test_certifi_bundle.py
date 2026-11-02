@@ -9,11 +9,13 @@ import sys
 import certifi
 
 EXPECTED_SHA256 = (
-    "9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f"
+    "50f79f98dac192b20dbf73f35c56f0b0c557ab267ff5199d1117cc1180b70785"
 )
 
 # Exact SHA256 fingerprints of the five historical vulnerable roots.
 BLOCKED_ROOTS = {
+    "emSign ECC Root CA - G3":
+        "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b",
     "TrustCor RootCert CA-2":
         "0753e940378c1bd5e3836e395daea5cb839e5046f1bd0eae1951cf10fec7c965",
     "TrustCor ECA-1":
@@ -47,7 +49,7 @@ fingerprints = set(
     for certificate in certificates
 )
 
-assert len(certificates) == 121, len(certificates)
+assert len(certificates) == 120, len(certificates)
 
 for name, fingerprint in sorted(BLOCKED_ROOTS.items()):
     assert fingerprint not in fingerprints, name

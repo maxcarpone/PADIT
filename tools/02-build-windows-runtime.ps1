@@ -934,14 +934,14 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host '[PASS] requests security regression suite'
 # ---------------------------------------------------------------------------
-# Controlled certifi CA bundle - Mozilla 2026.7.22 / Python 2.7
+# Controlled certifi CA bundle - Mozilla 2026.10.19 / Python 2.7
 # ---------------------------------------------------------------------------
 
 Write-Step 'Installing controlled certifi CA bundle'
 
-$CertifiSource = Join-Path $RepoRoot 'utils\patch-certifi-2021.10.8\cacert-2026.7.22.pem'
+$CertifiSource = Join-Path $RepoRoot 'utils\patch-certifi-2021.10.8\cacert-2026.10.19.pem'
 $CertifiTest = Join-Path $RepoRoot 'utils\patch-certifi-2021.10.8\test_certifi_bundle.py'
-$CertifiExpectedHash = '9CC2A774B5198DCFF14D9BE1E66091F538975D867CE029A96BCE15A55DFD730F'
+$CertifiExpectedHash = '50F79F98DAC192B20DBF73F35C56F0B0C557AB267FF5199D1117CC1180B70785'
 
 Assert-File $CertifiSource
 Assert-File $CertifiTest
@@ -969,6 +969,20 @@ if ($CertifiInstalledHash -ne $CertifiExpectedHash) {
     throw 'Installed certifi bundle SHA256 mismatch'
 }
 
+# W17: secure pip's separate vendored certifi trust store.
+$PipCertifiDir = Join-Path $Output 'Lib\site-packages\pip\_vendor\certifi'
+$PipCertifiTarget = Join-Path $PipCertifiDir 'cacert.pem'
+Assert-Dir $PipCertifiDir
+Assert-File $PipCertifiTarget
+
+Copy-Item -LiteralPath $CertifiSource -Destination $PipCertifiTarget -Force
+
+$PipCertifiHash = (Get-FileHash -LiteralPath $PipCertifiTarget -Algorithm SHA256).Hash
+if ($PipCertifiHash -ne $CertifiExpectedHash) {
+    throw 'pip vendored certifi bundle SHA256 mismatch'
+}
+Write-Host '[PASS] Controlled pip vendored certifi 2026.10.19 bundle installed'
+
 Write-Step 'Running certifi security regression tests'
 
 & $RuntimePython $CertifiTest
@@ -976,7 +990,7 @@ if ($LASTEXITCODE -ne 0) {
     throw 'certifi security regression tests failed'
 }
 
-Write-Host '[PASS] Controlled certifi 2026.7.22 bundle installed and validated'
+Write-Host '[PASS] Controlled certifi 2026.10.19 bundle installed and validated'
 # ---------------------------------------------------------------------------
 # Werkzeug 1.0.1 security backports - Python 2.7 Windows x86
 # ---------------------------------------------------------------------------

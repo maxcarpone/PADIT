@@ -507,13 +507,13 @@ bash "${REPO_ROOT}/tools/build-agent-unix-urllib3-bookworm.sh"
 
 
 ###############################################################################
-# Controlled certifi CA bundle - Mozilla 2026.7.22 / Python 2.7 compatibility
+# Controlled certifi CA bundle - Mozilla 2026.10.19 / Python 2.7 compatibility
 ###############################################################################
 
 echo ">>> Installing controlled certifi CA bundle..."
 
-CERTIFI_CONTROLLED_BUNDLE="${REPO_ROOT}/utils/patch-certifi-2021.10.8/cacert-2026.7.22.pem"
-CERTIFI_EXPECTED_SHA256="9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f"
+CERTIFI_CONTROLLED_BUNDLE="${REPO_ROOT}/utils/patch-certifi-2021.10.8/cacert-2026.10.19.pem"
+CERTIFI_EXPECTED_SHA256="50f79f98dac192b20dbf73f35c56f0b0c557ab267ff5199d1117cc1180b70785"
 
 [ -f "${CERTIFI_CONTROLLED_BUNDLE}" ] \
     || die "Controlled certifi CA bundle missing"
@@ -548,7 +548,7 @@ import hashlib
 import os
 import ssl
 
-expected = '9cc2a774b5198dcff14d9be1e66091f538975d867ce029a96bce15a55dfd730f'
+expected = '50f79f98dac192b20dbf73f35c56f0b0c557ab267ff5199d1117cc1180b70785'
 path = certifi.where()
 
 with open(path, 'rb') as stream:
@@ -569,7 +569,25 @@ echo ">>> Running certifi security regression tests..."
     "${REPO_ROOT}/utils/patch-certifi-2021.10.8/test_certifi_bundle.py" \
     || die "certifi security regression tests failed"
 
-echo "[PASS] Controlled certifi 2026.7.22 CA bundle installed"
+# W17: secure pip's separate vendored certifi trust store.
+PIP_CERTIFI_TARGET="$("${RUNTIME_ROOT}/bin/python" - <<'PYPIPCERTIFI'
+import pip._vendor.certifi as certifi
+print(certifi.where())
+PYPIPCERTIFI
+)" || die "Cannot resolve pip vendored certifi bundle"
+
+[ -f "${PIP_CERTIFI_TARGET}" ] || die "pip vendored certifi bundle missing"
+[ "${PIP_CERTIFI_TARGET}" != "${CERTIFI_TARGET}" ] || die "pip certifi unexpectedly shares runtime bundle"
+
+cp "${CERTIFI_CONTROLLED_BUNDLE}" "${PIP_CERTIFI_TARGET}" \
+    || die "Cannot install controlled pip certifi bundle"
+
+echo "${CERTIFI_EXPECTED_SHA256}  ${PIP_CERTIFI_TARGET}" |
+    sha256sum -c - || die "pip certifi SHA256 mismatch"
+
+echo "[PASS] Controlled pip vendored certifi 2026.10.19 bundle installed"
+
+echo "[PASS] Controlled certifi 2026.10.19 CA bundle installed"
 
 echo ">>> Final verification of secured python-ldap..."
 
