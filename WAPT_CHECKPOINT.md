@@ -956,3 +956,26 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 
 **Next:** Inventory remaining open Dependabot alerts and prioritize
 the next compatible security remediation.
+
+
+## W20 - waitress 1.4.4 / validation finale
+
+Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
+
+- CVE-2022-24761 : retroportage du correctif HTTP.
+- CVE-2024-49769 : retroportage du correctif de gestion des sockets.
+- Version : waitress 1.4.4 (Python 2.7).
+- Patch : utils/patch-waitress-1.4.4/CVE-2022-24761-CVE-2024-49769.patch
+- Patch SHA256 : 7c4144fd7a6506499aa42ec177080e28f6bf24198678545e92858543cf50731b
+- Tests : utils/patch-waitress-1.4.4/test_security.py
+- Tests SHA256 : 6d637d365173c9ec9e7444715501f00561e9ff8ff47c95c1725e8c05dae05ba0
+- Tests de securite : 34/34 PASS sur Windows et Unix.
+- Tests historiques waitress adaptes : 354 PASS, 9 SKIPPED.
+- Windows : C:\padit-runtime-1.8.3-W20-clean ; construction autonome PASS.
+- Unix : build/python2-runtime-agent-unix-W20 ; construction et pip check PASS.
+- Cinq modules verifies par SHA256 ; normalisation CRLF/LF sur Windows.
+- Runtimes W19 conserves.
+- Artefacts Debian proteges conserves.
+- Integration : commits 5dbe16cc et 8859562c.
+- Dependabot : alertes #19 et #50 a traiter apres validation documentaire.
+- Chantier suivant : W21, nouvelles alertes pyasn1.
