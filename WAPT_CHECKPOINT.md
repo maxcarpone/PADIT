@@ -907,3 +907,25 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - W15/W16 historical runtimes preserved.
 
 **Next:** Review Dependabot #187 (dnspython) and #186 (pylint).
+
+### W18 - dnspython CVE-2026-114605 (2026-11-02)
+
+**Status: PASS - Unix Bookworm and Windows x86/VC9**
+
+- Dependabot #187: HIGH, CVE-2026-114605.
+- Keep dnspython 1.16.0 for Python 2.7 compatibility.
+- Backport: limit DNS compression pointer traversal to 16 hops.
+- Preserve existing CVE-2023-29483 TuDoor backport.
+- Patch SHA256: 3fd7d9501cc7874943b98e1877e7713f898073e79b818329bb6cd984afc0d559.
+- Regression SHA256: 6135449c996f6c858d544cc4a9a563b66febd0ebbf0afb8ba49798d1b0987f6f.
+- Unix runtime: build/python2-runtime-agent-unix-W18.
+- Windows runtime: C:\padit-runtime-1.8.3-W18-dnspython.
+- Unix and Windows: 16 pointers accepted, 17 rejected - PASS.
+- Unix pip check: PASS.
+- Windows autonomous runtime acceptance: PASS.
+- Implementation commit: fe3a594c.
+- Dependabot #187 dismissed, reason fix_started.
+- Dismissal covers only PADIT-controlled patched runtimes.
+- Historical W17 runtimes preserved.
+
+**Next:** Investigate Dependabot #186, pylint CVE-2026-114608.
