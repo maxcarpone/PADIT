@@ -1,7 +1,6 @@
 appdirs==1.4.4
 args==0.1.0
 asn1crypto==1.5.1
-astroid==1.5.3
 Babel==2.9.1
 backports.functools-lru-cache==1.4
 backports.ssl-match-hostname==3.5.0.1
@@ -46,7 +45,6 @@ psycopg2==2.8.6
 pyasn1-modules==0.3.0
 pyasn1==0.5.1
 pycparser==2.19
-pylint==1.7.4
 pyOpenSSL==19.0.0
 pyparsing==2.4.7
 python-engineio==3.11.2
