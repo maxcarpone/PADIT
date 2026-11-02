@@ -1418,6 +1418,12 @@ if ($SoupNormalizedHash -ne '9FC72FB3B683704AE27404D66639B7A6960D0DCB27C268FD2FA
 }
 
 Copy-Item -LiteralPath $SoupPatched -Destination $SoupParser -Force
+
+# Confirm installed parser is byte-for-byte identical to the patched stage.
+$SoupStageHash = (Get-FileHash -LiteralPath $SoupPatched -Algorithm SHA256).Hash
+Assert-Sha256 $SoupParser $SoupStageHash
+Write-Host '[PASS] Installed soupsieve parser SHA256 verified'
+
 Remove-Item -LiteralPath $SoupStage -Recurse -Force
 
 & $RuntimePython -m py_compile $SoupParser
@@ -1457,6 +1463,12 @@ try {
         )
         $SoupProcess.StartInfo.UseShellExecute = $false
         $SoupProcess.StartInfo.CreateNoWindow = $true
+        $SoupLog = Join-Path $Output ("_soupsieve_test_" + $SoupName + ".log")
+        if (Test-Path -LiteralPath $SoupLog) {
+            throw "soupsieve test log already exists: $SoupLog"
+        }
+        $SoupProcess.StartInfo.RedirectStandardOutput = $true
+        $SoupProcess.StartInfo.RedirectStandardError = $true
 
         try {
             if (-not $SoupProcess.Start()) {
@@ -1469,10 +1481,20 @@ try {
                 throw "soupsieve regression TIMEOUT: $SoupName"
             }
 
+            $SoupStdout = $SoupProcess.StandardOutput.ReadToEnd()
+            $SoupStderr = $SoupProcess.StandardError.ReadToEnd()
+            [IO.File]::WriteAllText(
+                $SoupLog,
+                $SoupStdout + $SoupStderr,
+                [Text.Encoding]::UTF8
+            )
+
             if ($SoupProcess.ExitCode -ne 0) {
+                Write-Host ($SoupStdout + $SoupStderr)
                 throw "soupsieve regression failed: $SoupName"
             }
 
+            Write-Host ($SoupStdout.Trim())
             Write-Host "[PASS] Windows soupsieve regression: $SoupName"
         }
         finally {
