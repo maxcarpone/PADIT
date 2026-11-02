@@ -188,6 +188,30 @@ grep -A6 'response = dns.query.udp' "${DNSPYTHON_DIR}/resolver.py" \
     | grep -q 'ignore_errors=True' \
     || die "dnspython CVE-2023-29483 resolver marker not found"
 
+# W18: CVE-2026-114605 - limit DNS compression pointer traversal.
+DNSPYTHON_PATCH_W18="${REPO_ROOT}/utils/patch-dnspython-1.16.0/CVE-2026-114605.patch"
+DNSPYTHON_TEST_W18="${REPO_ROOT}/utils/patch-dnspython-1.16.0/test_cve_2026_114605.py"
+
+echo "3fd7d9501cc7874943b98e1877e7713f898073e79b818329bb6cd984afc0d559  ${DNSPYTHON_PATCH_W18}" |
+    sha256sum -c - || die "W18 dnspython patch SHA256 mismatch"
+
+echo "6135449c996f6c858d544cc4a9a563b66febd0ebbf0afb8ba49798d1b0987f6f  ${DNSPYTHON_TEST_W18}" |
+    sha256sum -c - || die "W18 dnspython test SHA256 mismatch"
+
+(
+    cd "${DNSPYTHON_DIR}"
+    patch --dry-run -p1 < "${DNSPYTHON_PATCH_W18}"
+    patch -p1 < "${DNSPYTHON_PATCH_W18}"
+) || die "W18 dnspython patch application failed"
+
+"${PYTHON}" -m py_compile "${DNSPYTHON_DIR}/name.py" ||
+    die "W18 dnspython compilation failed"
+
+"${PYTHON}" "${DNSPYTHON_TEST_W18}" ||
+    die "W18 dnspython security regression failed"
+
+echo "[PASS] W18 dnspython CVE-2026-114605"
+
 echo ">>> Running CVE-2023-29483 dnspython standalone regression test..."
 
 "${PYTHON}" - <<'PYTEST'

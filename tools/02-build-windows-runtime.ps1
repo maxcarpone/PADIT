@@ -752,6 +752,53 @@ foreach ($Item in $SecurityPatches) {
     Write-Host "[PASS] $PackageName CVE-2023-29483 backport"
 }
 
+# W18: CVE-2026-114605 - limit DNS compression pointer traversal.
+Write-Step 'Applying dnspython CVE-2026-114605 backport'
+
+$DnsW18Dir = Join-Path $Output 'Lib\site-packages\dns'
+$DnsW18Patch = Join-Path $RepoRoot 'utils\patch-dnspython-1.16.0\CVE-2026-114605.patch'
+$DnsW18Test = Join-Path $RepoRoot 'utils\patch-dnspython-1.16.0\test_cve_2026_114605.py'
+
+Assert-Dir $DnsW18Dir
+Assert-File $DnsW18Patch
+Assert-File $DnsW18Test
+
+if ((Get-FileHash -LiteralPath $DnsW18Patch -Algorithm SHA256).Hash -ne
+    '3FD7D9501CC7874943B98E1877E7713F898073E79B818329BB6CD984AFC0D559') {
+    throw 'W18 dnspython patch SHA256 mismatch'
+}
+if ((Get-FileHash -LiteralPath $DnsW18Test -Algorithm SHA256).Hash -ne
+    '6135449C996F6C858D544CC4A9A563B66FEBD0EBBF0AFB8BA49798D1B0987F6F') {
+    throw 'W18 dnspython test SHA256 mismatch'
+}
+
+Push-Location $DnsW18Dir
+try {
+    & git apply --check -p1 $DnsW18Patch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'W18 dnspython patch check failed'
+    }
+
+    & git apply -p1 $DnsW18Patch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'W18 dnspython patch application failed'
+    }
+}
+finally {
+    Pop-Location
+}
+
+& $RuntimePython -m py_compile (Join-Path $DnsW18Dir 'name.py')
+if ($LASTEXITCODE -ne 0) {
+    throw 'W18 dnspython compilation failed'
+}
+
+& $RuntimePython $DnsW18Test
+if ($LASTEXITCODE -ne 0) {
+    throw 'W18 dnspython security regression failed'
+}
+Write-Host '[PASS] W18 dnspython CVE-2026-114605'
+
 $DnsQueryFile = Join-Path $Output 'Lib\site-packages\dns\query.py'
 $DnsResolverFile = Join-Path $Output 'Lib\site-packages\dns\resolver.py'
 $GreenDnsFile = Join-Path $Output 'Lib\site-packages\eventlet\support\greendns.py'
