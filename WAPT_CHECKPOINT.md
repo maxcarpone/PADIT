@@ -884,3 +884,26 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Review and version the Unix W16 implementation.
 - Integrate and validate the Windows x86/VC9 runtime.
 - Update the checkpoint and Dependabot evidence.
+
+### W17 - certifi emSign root CA security remediation (2026-11-02)
+
+**Status: PASS - Unix Bookworm and Windows x86/VC9**
+
+- Dependabot #185: GHSA-6q48-6c7w-9gw2, critical.
+- Keep certifi 2021.10.8 for Python 2.7 compatibility.
+- Controlled Mozilla CA bundle: 2026.10.19, 120 certificates.
+- SHA256: 50f79f98dac192b20dbf73f35c56f0b0c557ab267ff5199d1117cc1180b70785.
+- Removed emSign ECC Root CA - G3; three other emSign roots retained.
+- Exactly one certificate removed compared with 2026.7.22; none added.
+- Controlled bundle installed into both certifi and pip/_vendor/certifi.
+- Unix W17 runtime: build/python2-runtime-agent-unix-W17.
+- Unix security regressions, both bundle SHA256 checks, imports and pip check: PASS.
+- Windows W17 runtime: C:\padit-runtime-1.8.3-W17-certifi.
+- Windows autonomous runtime acceptance: PASS.
+- Windows certifi and pip-vendored bundle SHA256: 2/2 PASS.
+- Implementation commit: 65cc83f8.
+- Dependabot #185 dismissed with reason fix_started.
+- Dismissal applies only to PADIT-controlled corrected runtimes.
+- W15/W16 historical runtimes preserved.
+
+**Next:** Review Dependabot #187 (dnspython) and #186 (pylint).
