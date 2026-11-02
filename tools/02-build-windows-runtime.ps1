@@ -1587,7 +1587,7 @@ Assert-File $WaitressTest
 Assert-Sha256 $WaitressPatch '7C4144FD7A6506499AA42EC177080E28F6BF24198678545E92858543CF50731B'
 Assert-Sha256 $WaitressTest '6D637D365173C9EC9E7444715501F00561E9FF8FF47C95C1725E8C05DAE05BA0'
 
-$WaitressVersion = & $RuntimePython -c 'import pkg_resources; print(pkg_resources.get_distribution("waitress").version)'
+$WaitressVersion = & $RuntimePython -c "import pkg_resources; print(pkg_resources.get_distribution('waitress').version)"
 if ($LASTEXITCODE -ne 0 -or $WaitressVersion.Trim() -ne '1.4.4') {
     throw "Unexpected waitress version: $WaitressVersion"
 }
@@ -1620,7 +1620,7 @@ $WaitressHashes = @{
     'receiver'  = 'A37E9F6C6EE878A3D6E1363DA5BB6948969290B4FCEF01DB3054FB8FE62BC6E1'
     'rfc7230'   = 'F58AFB134931F2951A817BC091FF5B63D770E5A8CA8CE4E1BA1B90E7EA01CC71'
     'channel'   = 'B4E89D3BD7276FBB88153797BE5116E75C3ED823AA89811C6D7D9BFA795501A5'
-    'wasyncore' = '3BA7CCE83AEB68F22D8AE9E3C809862672ECF1D6EF AA1697D4DBABDC12EEBEA0'.Replace(' ', '')
+    'wasyncore' = '3BA7CCE83AEB68F22D8AE9E3C809862672ECF1D6EFAA1697D4DBABDC12EEEBA0'
 }
 
 foreach ($Name in @('parser', 'receiver', 'rfc7230', 'channel', 'wasyncore')) {
@@ -1628,9 +1628,31 @@ foreach ($Name in @('parser', 'receiver', 'rfc7230', 'channel', 'wasyncore')) {
     $StagedFile = Join-Path $WaitressStagePackage $FileName
     $InstalledFile = Join-Path $WaitressDir $FileName
 
-    Assert-Sha256 $StagedFile $WaitressHashes[$Name]
-    Copy-Item -LiteralPath $StagedFile -Destination $InstalledFile -Force
-    Assert-Sha256 $InstalledFile $WaitressHashes[$Name]
+    # Normalize CRLF to LF before comparing against the Unix reference.
+    foreach ($File in @($StagedFile, $InstalledFile)) {
+        if ($File -eq $InstalledFile) {
+            Copy-Item -LiteralPath $StagedFile -Destination $InstalledFile -Force
+        }
+
+        $RawBytes = [IO.File]::ReadAllBytes($File)
+        $NormalizedBytes = [Text.Encoding]::UTF8.GetBytes(
+            ([Text.Encoding]::UTF8.GetString($RawBytes)).Replace("`r`n", "`n")
+        )
+
+        $Hasher = [Security.Cryptography.SHA256]::Create()
+        try {
+            $Actual = (
+                [BitConverter]::ToString($Hasher.ComputeHash($NormalizedBytes))
+            ).Replace('-', '')
+        }
+        finally {
+            $Hasher.Dispose()
+        }
+
+        if ($Actual -ne $WaitressHashes[$Name]) {
+            throw "waitress normalized SHA256 mismatch: $File"
+        }
+    }
 
     foreach ($Extension in @('.pyc', '.pyo')) {
         $Cache = Join-Path $WaitressDir ($Name + $Extension)
