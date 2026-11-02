@@ -929,3 +929,30 @@ sous `waptsetup/deb/`, notamment les executables et certificats.
 - Historical W17 runtimes preserved.
 
 **Next:** Investigate Dependabot #186, pylint CVE-2026-114608.
+
+### W19 - pylint CVE-2026-114608 (2026-11-02)
+
+**Status: PASS - Unix Bookworm and Windows x86/VC9**
+
+- Dependabot #186: MEDIUM, CVE-2026-114608.
+- Vulnerable dependency: pylint 1.7.4 (Python 2.7).
+- Upstream fixed version requires Python 3.
+- No functional imports of pylint or astroid in PADIT sources.
+- No production dependency requires pylint.
+- Only pylint requires astroid.
+- Removed pylint==1.7.4 and astroid==1.5.3 from requirements-agent.txt.
+- No vulnerability backport required.
+- Implementation commit: b3099c8a.
+- Unix runtime: build/python2-runtime-agent-unix-W19.
+- Unix autonomous build and security regressions: PASS.
+- Unix: pylint absent, astroid absent, imports and pip check: PASS.
+- Windows runtime: C:\padit-runtime-1.8.3-W19.
+- Windows autonomous runtime construction: SUCCESS.
+- Windows: pylint absent, astroid absent, imports and pip check: PASS.
+- Dependabot #186 dismissed, reason fix_started.
+- Existing historical runtimes preserved.
+- Three protected Debian artifacts untouched.
+- Python 2.7.18 retained; no Python 3 migration.
+
+**Next:** Inventory remaining open Dependabot alerts and prioritize
+the next compatible security remediation.
