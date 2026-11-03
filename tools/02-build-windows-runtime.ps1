@@ -1856,7 +1856,10 @@ if ($LASTEXITCODE -ne 0 -or $RpycVersion.Trim() -ne '4.1.5') {
     throw "Unexpected W22 RPyC version: $RpycVersion"
 }
 
-Push-Location $Output
+$RpycSite = Join-Path $Output 'Lib\site-packages'
+Assert-Dir $RpycSite
+
+Push-Location $RpycSite
 try {
     & git apply --check -p1 $RpycPatch
     if ($LASTEXITCODE -ne 0) {
