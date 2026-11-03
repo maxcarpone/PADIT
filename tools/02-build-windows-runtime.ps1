@@ -1825,6 +1825,73 @@ finally {
     Remove-Item -LiteralPath $sslTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+
+# ---------------------------------------------------------------------------
+# W22 - RPyC 4.1.5 / CVE-2024-27758.
+# ---------------------------------------------------------------------------
+Write-Step 'Applying RPyC CVE-2024-27758 backport'
+
+$RpycDir = Join-Path $Output 'Lib\site-packages\rpyc'
+$RpycFile = Join-Path $RpycDir 'core\netref.py'
+$RpycPatch = Join-Path $RepoRoot 'utils\patch-rpyc-4.1.5\CVE-2024-27758.patch'
+$RpycTest = Join-Path $RepoRoot 'utils\patch-rpyc-4.1.5\test_security.py'
+
+Assert-Dir $RpycDir
+Assert-File $RpycFile
+Assert-File $RpycPatch
+Assert-File $RpycTest
+
+if ((Get-FileHash -LiteralPath $RpycPatch -Algorithm SHA256).Hash -ne
+    'BE30DDFB1C633F4A54A4F6DA575D01AC43452C94F769C6ADC894CF99D1433BE9') {
+    throw 'W22 RPyC patch SHA256 mismatch'
+}
+
+if ((Get-FileHash -LiteralPath $RpycTest -Algorithm SHA256).Hash -ne
+    'BDB5C9EFA2319594839C3A3B6B9250590AFAE152E59B578805B873A04E910F09') {
+    throw 'W22 RPyC test SHA256 mismatch'
+}
+
+$RpycVersion = & $RuntimePython -c "import pkg_resources; print(pkg_resources.get_distribution('rpyc').version)"
+if ($LASTEXITCODE -ne 0 -or $RpycVersion.Trim() -ne '4.1.5') {
+    throw "Unexpected W22 RPyC version: $RpycVersion"
+}
+
+Push-Location $Output
+try {
+    & git apply --check -p1 $RpycPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'W22 RPyC patch check failed'
+    }
+
+    & git apply -p1 $RpycPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'W22 RPyC patch application failed'
+    }
+}
+finally {
+    Pop-Location
+}
+
+& $RuntimePython -m py_compile $RpycFile
+if ($LASTEXITCODE -ne 0) {
+    throw 'W22 RPyC Python compilation failed'
+}
+
+if ((Get-FileHash -LiteralPath $RpycFile -Algorithm SHA256).Hash -ne
+    '92B477B86552E05875A133B8CFAD9A0069D69776009B39504C1A960F950B3321') {
+    throw 'W22 RPyC corrected module SHA256 mismatch'
+}
+
+Remove-Item -LiteralPath (Join-Path $RpycDir 'core\netref.pyc') -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $RpycDir 'core\netref.pyo') -Force -ErrorAction SilentlyContinue
+
+& $RuntimePython -B $RpycTest
+if ($LASTEXITCODE -ne 0) {
+    throw 'W22 RPyC security regression failed'
+}
+
+Write-Host '[PASS] W22 secured RPyC 4.1.5 installed'
+
 # ---------------------------------------------------------------------------
 # Acceptance tests
 # ---------------------------------------------------------------------------

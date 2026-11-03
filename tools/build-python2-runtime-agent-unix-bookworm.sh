@@ -712,3 +712,67 @@ echo "[PASS] W20 waitress installed source SHA256 verified"
     die "waitress security regression tests failed"
 
 echo "[PASS] W20 secured waitress 1.4.4 installed"
+
+# ---------------------------------------------------------------------------
+# W22 - RPyC 4.1.5 / CVE-2024-27758.
+# ---------------------------------------------------------------------------
+echo ">>> Applying RPyC CVE-2024-27758 security backport..."
+
+RPYC_PATCH="${REPO_ROOT}/utils/patch-rpyc-4.1.5/CVE-2024-27758.patch"
+RPYC_TEST="${REPO_ROOT}/utils/patch-rpyc-4.1.5/test_security.py"
+RPYC_STAGE="${BUILD_ROOT}/rpyc-security-stage"
+
+[ -f "${RPYC_PATCH}" ] || die "Missing RPyC patch"
+[ -f "${RPYC_TEST}" ] || die "Missing RPyC security test"
+[ ! -e "${RPYC_STAGE}" ] || die "RPyC stage already exists"
+
+echo "be30ddfb1c633f4a54a4f6da575d01ac43452c94f769c6adc894cf99d1433be9  ${RPYC_PATCH}" |
+    sha256sum -c - || die "RPyC patch SHA256 mismatch"
+
+echo "bdb5c9efa2319594839c3a3b6b9250590afae152e59b578805b873a04e910f09  ${RPYC_TEST}" |
+    sha256sum -c - || die "RPyC test SHA256 mismatch"
+
+RPYC_SITE="$("${RUNTIME_ROOT}/bin/python" -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
+RPYC_DIR="${RPYC_SITE}/rpyc"
+
+[ -f "${RPYC_DIR}/core/netref.py" ] ||
+    die "RPyC runtime module missing"
+
+"${RUNTIME_ROOT}/bin/python" -c \
+    "import pkg_resources; assert pkg_resources.get_distribution('rpyc').version == '4.1.5'" ||
+    die "Unexpected RPyC version"
+
+mkdir -p "${RPYC_STAGE}/rpyc/core" ||
+    die "Cannot create RPyC stage"
+
+cp "${RPYC_DIR}/core/netref.py" "${RPYC_STAGE}/rpyc/core/netref.py" ||
+    die "Cannot stage RPyC module"
+
+(
+    cd "${RPYC_STAGE}" &&
+    patch --batch --fuzz=0 -p1 < "${RPYC_PATCH}"
+) || die "RPyC security patch failed"
+
+echo "92b477b86552e05875a133b8cfad9a0069d69776009b39504c1a960f950b3321  ${RPYC_STAGE}/rpyc/core/netref.py" |
+    sha256sum -c - || die "RPyC corrected module SHA256 mismatch"
+
+"${RUNTIME_ROOT}/bin/python" -m py_compile \
+    "${RPYC_STAGE}/rpyc/core/netref.py" ||
+    die "RPyC patched module compilation failed"
+
+cp "${RPYC_STAGE}/rpyc/core/netref.py" "${RPYC_DIR}/core/netref.py" ||
+    die "Cannot install RPyC security patch"
+
+cmp -s "${RPYC_STAGE}/rpyc/core/netref.py" "${RPYC_DIR}/core/netref.py" ||
+    die "RPyC installed module differs"
+
+rm -f "${RPYC_DIR}/core/netref.pyc" "${RPYC_DIR}/core/netref.pyo" ||
+    die "Cannot remove RPyC bytecode cache"
+
+echo "92b477b86552e05875a133b8cfad9a0069d69776009b39504c1a960f950b3321  ${RPYC_DIR}/core/netref.py" |
+    sha256sum -c - || die "RPyC installed module SHA256 mismatch"
+
+"${RUNTIME_ROOT}/bin/python" -B "${RPYC_TEST}" ||
+    die "RPyC security regression failed"
+
+echo "[PASS] W22 secured RPyC 4.1.5 installed"
