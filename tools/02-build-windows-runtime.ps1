@@ -729,38 +729,6 @@ if ($LASTEXITCODE -ne 0) {
     throw 'pyOpenSSL SSL.py compilation failed'
 }
 
-$OpenSSLExe = Join-Path $Output 'openssl.exe'
-Assert-File $OpenSSLExe
-
-$W28Temp = Join-Path $env:TEMP ('padit-W28-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $W28Temp | Out-Null
-
-$PreviousOpenSSLConf = $env:OPENSSL_CONF
-$PreviousPath = $env:PATH
-
-try {
-    $W28Config = Join-Path $W28Temp 'openssl.cnf'
-
-    [System.IO.File]::WriteAllText(
-        $W28Config,
-        "[req]`ndistinguished_name = dn`nprompt = no`n[dn]`nCN = localhost`n"
-    )
-
-    $env:OPENSSL_CONF = $W28Config
-    $env:PATH = "$Output;$PreviousPath"
-
-    & $RuntimePython $PyOpenSSLTest
-    if ($LASTEXITCODE -ne 0) {
-        throw 'pyOpenSSL CVE-2026-27448 TLS regression failed'
-    }
-}
-finally {
-    $env:OPENSSL_CONF = $PreviousOpenSSLConf
-    $env:PATH = $PreviousPath
-    Remove-Item -LiteralPath $W28Temp -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-Write-Host '[PASS] W28 pyOpenSSL CVE-2026-27448 security backport'
 
 # ---------------------------------------------------------------------------
 # W26 - Eventlet CVE-2025-58068 HTTP trailer handling security backport.
@@ -2180,6 +2148,39 @@ try {
 finally {
     Remove-Item -LiteralPath $TestFile -Force -ErrorAction SilentlyContinue
 }
+
+$OpenSSLExe = Join-Path $Output 'openssl.exe'
+Assert-File $OpenSSLExe
+
+$W28Temp = Join-Path $env:TEMP ('padit-W28-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $W28Temp | Out-Null
+
+$PreviousOpenSSLConf = $env:OPENSSL_CONF
+$PreviousPath = $env:PATH
+
+try {
+    $W28Config = Join-Path $W28Temp 'openssl.cnf'
+
+    [System.IO.File]::WriteAllText(
+        $W28Config,
+        "[req]`ndistinguished_name = dn`nprompt = no`n[dn]`nCN = localhost`n"
+    )
+
+    $env:OPENSSL_CONF = $W28Config
+    $env:PATH = "$Output;$PreviousPath"
+
+    & $RuntimePython $PyOpenSSLTest
+    if ($LASTEXITCODE -ne 0) {
+        throw 'pyOpenSSL CVE-2026-27448 TLS regression failed'
+    }
+}
+finally {
+    $env:OPENSSL_CONF = $PreviousOpenSSLConf
+    $env:PATH = $PreviousPath
+    Remove-Item -LiteralPath $W28Temp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host '[PASS] W28 pyOpenSSL CVE-2026-27448 security backport'
 
 Write-Step "SUCCESS"
 Write-Host "Autonomous PADIT 1.8.3 runtime assembled at:"
