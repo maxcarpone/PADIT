@@ -1053,3 +1053,39 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 - Inventory remaining open Dependabot alerts.
 - Prioritize Python 2.7-compatible security remediations.
 - Preserve existing validated Unix and Windows runtimes.
+
+## W23 - python-socketio 4.4.0 / CVE-2026-48804 (2026-11-03)
+
+**Status: PASS - Unix Bookworm and Windows x86.**
+
+- Dependabot #78: HIGH, CVE-2026-48804.
+- Package: python-socketio==4.4.0, Python 2.7 compatible.
+- Reused validated Bookworm server backport U77.
+- Original patch commit: 38e4ffc8.
+- Windows integration commit: 5ce7c0eb.
+- Patch: utils/patch-python-socketio-4.4.0/CVE-2026-48804.patch.
+- Patch SHA256:
+  5bc5f0ce38f7d748415a2264fb869d0a6b36325bf7b765673fa65160130983d7.
+- Regression test:
+  utils/patch-python-socketio-4.4.0/test_security.py.
+- Test SHA256:
+  217a9285b370d91f8808f61337a968df9589921ae2aad2bc08a6a9f266f09919.
+- Security: unauthenticated binary packet rejected.
+- Security: incomplete binary packet cleared on disconnect.
+- Unix Bookworm W22 runtime: regression 2/2 PASS.
+- Windows x86 W23 runtime: regression 2/2 PASS.
+- Windows runtime:
+  C:\padit-runtime-1.8.3-W23-socketio.
+- Windows autonomous build: SUCCESS, exit code 0.
+- Unix and Windows: pip check PASS.
+- Windows PowerShell syntax: 0 parse errors.
+- Dependabot #78 dismissed, reason fix_started.
+- Dismissal applies to PADIT-controlled patched runtimes.
+- Historical validated runtimes preserved.
+- Three protected Debian artifacts preserved.
+- Full Windows product/installer integration remains deferred.
+
+**Next**
+- Continue inventory of remaining Dependabot alerts.
+- Reuse validated Bookworm server fixes for Unix and Windows agents.
+- Preserve previously validated runtimes and security tests.
