@@ -1191,3 +1191,63 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
   pyOpenSSL #66 and cryptography alerts.
 - Reuse validated Bookworm server security backports.
 - Preserve all previously validated runtimes.
+
+## W26 - Eventlet 0.33.3 / CVE-2025-58068 (2026-11-03)
+
+**Status: PASS - Unix Bookworm and Windows x86/VC9.**
+
+- Dependabot #56: CVE-2025-58068, HTTP request smuggling.
+- Package: eventlet==0.33.3, retained for Python 2.7.
+- Reused existing validated Bookworm server security backport.
+- Patch: utils/patch-eventlet-0.33.3/CVE-2025-58068.patch.
+- Patch SHA256:
+  897e91e4e5c77fe8205408e4daca9c9fc12da7540f34f2c19f92875343ea151d.
+- Security fix: discard all HTTP chunked request trailers.
+- Existing CVE-2023-29483 TuDoor backport preserved.
+
+**Regression test**
+
+- File: utils/patch-eventlet-0.33.3/test_CVE-2025-58068.py.
+- SHA256:
+  d3d48cffcdeb41a01af2b15822e6ddf5ef82ca17eb91173de671d6557a1ec38f.
+- HTTP trailers discarded: PASS.
+- Following HTTP request preserved: PASS.
+
+**Unix Bookworm**
+
+- Runtime: build/python2-runtime-agent-unix-W25.
+- Existing Unix Eventlet builder already applies this backport.
+- Regression: 2/2 PASS.
+- pip check: PASS.
+- No Unix runtime reconstruction required.
+
+**Windows x86/VC9**
+
+- Runtime: C:\padit-runtime-1.8.3-W26-eventlet.
+- Python: 2.7.18, MSC v.1500, 32-bit.
+- Eventlet: 0.33.3.
+- Autonomous construction: SUCCESS.
+- Regression: 2/2 PASS.
+- pip check: PASS.
+- Patch and regression test SHA256 verified.
+- PowerShell syntax validation: PASS.
+- Historical Windows runtimes preserved.
+
+**GitHub / Dependabot**
+
+- Windows implementation commit: 5fba724d.
+- Branch: release/1.8.3.
+- Dependabot #56 dismissed, reason fix_started.
+- Dismissal independently verified via GitHub API.
+- Remaining open Dependabot alerts: 13.
+- Inventory: 11 cryptography, 1 pyOpenSSL,
+  1 python-socketio.
+- Three protected Debian artifacts preserved.
+- Full Windows installer/product build remains deferred.
+
+**Next**
+
+- W27: investigate python-socketio #57 / CVE-2025-61765.
+- Reuse validated Bookworm server fixes where applicable.
+- Then investigate pyOpenSSL #66 and cryptography alerts.
+- Preserve previously validated Unix and Windows runtimes.
