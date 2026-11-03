@@ -688,6 +688,81 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host '[PASS] WAPT cryptography compatibility modules installed'
 
 # ---------------------------------------------------------------------------
+# W28 - pyOpenSSL CVE-2026-27448 SNI callback security backport.
+# ---------------------------------------------------------------------------
+Write-Step 'Applying pyOpenSSL CVE-2026-27448 backport'
+
+$PyOpenSSLDir = Join-Path $Output 'Lib\site-packages\OpenSSL'
+$PyOpenSSLSite = Join-Path $Output 'Lib\site-packages'
+$PyOpenSSLSSL = Join-Path $PyOpenSSLDir 'SSL.py'
+$PyOpenSSLPatchDir = Join-Path $RepoRoot 'utils\patch-pyopenssl-19.0.0'
+$PyOpenSSLPatch = Join-Path $PyOpenSSLPatchDir 'CVE-2026-27448.patch'
+$PyOpenSSLTest = Join-Path $PyOpenSSLPatchDir 'test-CVE-2026-27448.py'
+
+Assert-File $PyOpenSSLSSL
+Assert-Sha256 $PyOpenSSLPatch '30AA14431D2F886AB8A4CAF421C8E4811938FD7B1C32D98EC5E9FFCCCAD171D0'
+Assert-Sha256 $PyOpenSSLTest 'D5FE1693F07184DEB77BB451F6BF721F1E29D89BCFCEFB80176667CBEC5C85C0'
+
+$PyOpenSSLVersion = & $RuntimePython -c 'import OpenSSL;print(OpenSSL.__version__)'
+if ($LASTEXITCODE -ne 0 -or $PyOpenSSLVersion.Trim() -ne '19.0.0') {
+    throw "Unexpected pyOpenSSL version: $PyOpenSSLVersion"
+}
+
+Push-Location $PyOpenSSLSite
+try {
+    & git apply --check -p1 $PyOpenSSLPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'pyOpenSSL CVE-2026-27448 patch check failed'
+    }
+
+    & git apply -p1 $PyOpenSSLPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'pyOpenSSL CVE-2026-27448 patch application failed'
+    }
+}
+finally {
+    Pop-Location
+}
+
+& $RuntimePython -m py_compile $PyOpenSSLSSL
+if ($LASTEXITCODE -ne 0) {
+    throw 'pyOpenSSL SSL.py compilation failed'
+}
+
+$OpenSSLExe = Join-Path $Output 'openssl.exe'
+Assert-File $OpenSSLExe
+
+$W28Temp = Join-Path $env:TEMP ('padit-W28-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $W28Temp | Out-Null
+
+$PreviousOpenSSLConf = $env:OPENSSL_CONF
+$PreviousPath = $env:PATH
+
+try {
+    $W28Config = Join-Path $W28Temp 'openssl.cnf'
+
+    [System.IO.File]::WriteAllText(
+        $W28Config,
+        "[req]`ndistinguished_name = dn`nprompt = no`n[dn]`nCN = localhost`n"
+    )
+
+    $env:OPENSSL_CONF = $W28Config
+    $env:PATH = "$Output;$PreviousPath"
+
+    & $RuntimePython $PyOpenSSLTest
+    if ($LASTEXITCODE -ne 0) {
+        throw 'pyOpenSSL CVE-2026-27448 TLS regression failed'
+    }
+}
+finally {
+    $env:OPENSSL_CONF = $PreviousOpenSSLConf
+    $env:PATH = $PreviousPath
+    Remove-Item -LiteralPath $W28Temp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+Write-Host '[PASS] W28 pyOpenSSL CVE-2026-27448 security backport'
+
+# ---------------------------------------------------------------------------
 # W26 - Eventlet CVE-2025-58068 HTTP trailer handling security backport.
 # ---------------------------------------------------------------------------
 Write-Step 'Applying Eventlet CVE-2025-58068 backport'
