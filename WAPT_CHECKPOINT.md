@@ -1251,3 +1251,43 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 - Reuse validated Bookworm server fixes where applicable.
 - Then investigate pyOpenSSL #66 and cryptography alerts.
 - Preserve previously validated Unix and Windows runtimes.
+
+## W27 - python-socketio 4.4.0 / CVE-2025-61765 (2026-11-03)
+
+**Status: PASS - deployment-specific non-applicability verified.**
+
+- Dependabot #57: CVE-2025-61765, pickle deserialization RCE.
+- Package: python-socketio==4.4.0, retained for Python 2.7.
+- Vulnerability affects inter-server message queue managers
+  that deserialize messages using pickle.loads().
+- Exploitation requires prior access to the inter-server queue.
+- Audited PADIT application sources and Socket.IO configuration.
+- No RedisManager, KombuManager or KafkaManager usage identified.
+- No message_queue or client_manager configuration identified.
+- PADIT production initialization:
+  waptserver/server_socketio.py.
+- Flask-SocketIO initialized without an inter-server queue.
+- Dynamic verification using Unix Bookworm W25 runtime:
+  manager = socketio.base_manager.BaseManager.
+- Dynamic verification:
+  async_mode = eventlet.
+- Local BaseManager selected: PASS.
+- No inter-server message queue configured: PASS.
+- Existing W23 CVE-2026-48804 security backport preserved.
+- Dependabot #57 dismissed, reason not_used.
+- Dismissal verified through GitHub API.
+- No new patch or runtime reconstruction required.
+- Scope: current validated PADIT configuration only.
+- Vulnerable pickle handling remains in optional queue managers.
+- Reassess if Redis, Kombu, Kafka or other inter-server
+  messaging is introduced, or if deployment topology changes.
+- Three protected Debian artifacts preserved.
+- Remaining open Dependabot alerts: 12.
+- Inventory: 11 cryptography, 1 pyOpenSSL.
+
+**Next**
+
+- W28: investigate pyOpenSSL #66 / CVE-2026-27448.
+- Then review remaining cryptography alerts.
+- Reuse validated Bookworm server security backports.
+- Preserve existing Unix and Windows runtimes.
