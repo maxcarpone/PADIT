@@ -1015,3 +1015,41 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 - Inventory remaining open Dependabot alerts.
 - Continue compatible Python 2.7 security remediations.
 - Validate integration in full autonomous Windows and Unix runtimes separately.
+
+## W22 - RPyC 4.1.5 / CVE-2024-27758 (2026-11-03)
+
+**Status: PASS - Unix Bookworm and Windows x86 autonomous runtimes.**
+
+- Dependabot #41: HIGH, CVE-2024-27758.
+- Package: rpyc==4.1.5, retained for Python 2.7 compatibility.
+- Upstream reference: bba1d3562e6f9f1256ec64048cc23001c0bb7516.
+- Backport: reject netref __array__ pickling when allow_pickle=False.
+- Patch: utils/patch-rpyc-4.1.5/CVE-2024-27758.patch.
+- Patch SHA256:
+  be30ddfb1c633f4a54a4f6da575d01ac43452c94f769c6adc894cf99d1433be9.
+- Test: utils/patch-rpyc-4.1.5/test_security.py.
+- Test SHA256:
+  bdb5c9efa2319594839c3a3b6b9250590afae152e59b578805b873a04e910f09.
+- Corrected netref.py SHA256 (LF):
+  92b477b86552e05875a133b8cfad9a0069d69776009b39504c1a960f950b3321.
+- Original W20 Unix netref.py SHA256:
+  d828fa1e6f7bc091b26545c4295bb6123ee720adc2be6ddf468f6a7a553d7d86.
+- Unix runtime: build/python2-runtime-agent-unix-W22.
+- Unix autonomous construction: PASS; pip check: PASS.
+- Windows runtime: C:\padit-runtime-1.8.3-W22-rpyc-ter.
+- Windows autonomous construction: SUCCESS; pip check: PASS.
+- Windows source SHA256 checked after CRLF/LF normalization.
+- Unix and Windows: security regression 2/2 PASS.
+- Denied configuration: no remote request or deserialization.
+- Allowed configuration: historical behavior preserved.
+- Implementation commits: 626326bb, c3b2bd83, 8e15f5e3.
+- Dependabot #41 dismissed, reason fix_started.
+- Dismissal applies to PADIT-controlled corrected runtimes.
+- Historical runtimes preserved.
+- Three protected Debian artifacts untouched.
+- PyScripter console integration not functionally retested.
+
+**Next**
+- Inventory remaining open Dependabot alerts.
+- Prioritize Python 2.7-compatible security remediations.
+- Preserve existing validated Unix and Windows runtimes.
