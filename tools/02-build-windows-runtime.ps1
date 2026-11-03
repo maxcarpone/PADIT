@@ -247,6 +247,10 @@ function Build-ControlledPyasn1Wheel {
         'CVE-2026-30922.patch',
         'CVE-2026-59885.patch',
         'PADIT-python27-compat.patch',
+        'CVE-2026-119194.patch',
+        'CVE-2026-119195.patch',
+        'CVE-2026-119197.patch',
+        'CVE-2026-119196.patch',
         'PADIT-windows-mkstemp.patch'
     )
 
