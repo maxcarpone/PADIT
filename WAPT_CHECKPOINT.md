@@ -1291,3 +1291,51 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 - Then review remaining cryptography alerts.
 - Reuse validated Bookworm server security backports.
 - Preserve existing Unix and Windows runtimes.
+
+## W28 - pyOpenSSL 19.0.0 / CVE-2026-27448 (2026-11-03)
+
+**Status: PASS - Unix Bookworm and Windows x86/VC9 validated.**
+
+### Security remediation
+
+- Dependabot #66 / CVE-2026-27448.
+- Vulnerability: an unhandled exception in the TLS SNI callback could allow a TLS connection to be accepted.
+- Existing Bookworm backport reused unchanged:
+  `utils/patch-pyopenssl-19.0.0/CVE-2026-27448.patch`.
+- Patch SHA256:
+  `30aa14431d2f886ab8a4caf421c8e4811938fd7b1c32d98ec5e9ffcccad171d0`.
+- Regression test:
+  `utils/patch-pyopenssl-19.0.0/test-CVE-2026-27448.py`.
+- Test SHA256:
+  `d5fe1693f07184deb77bb451f6bf721f1e29d89bcfcefb80176667cbec5c85c0`.
+
+### Windows validation
+
+- VM106 / Python 2.7.18 / Windows x86 / MSC v.1500 (VC9).
+- W26 vulnerable baseline: normal SNI handshake accepted; handshake also accepted when the SNI callback raised an exception.
+- Windows builder integration commit: `6875d54f`.
+- Build-order fix commit: `ed8e35a6`.
+- Final autonomous runtime:
+  `C:\padit-runtime-1.8.3-W28-pyopenssl-v2`.
+- W28-v2 build: SUCCESS.
+- Normal SNI callback: TLS handshake accepted, PASS.
+- Exception in SNI callback: TLS handshake rejected on client and server, PASS.
+- CVE-2026-27448 TLS regression: PASS.
+- pyOpenSSL 19.0.0 / Python 2.7.18 x86/VC9: PASS.
+- OpenSSL executable: 1.0.2u.
+- `pip check`: PASS (no broken requirements).
+- Historical W26 and incomplete first W28 runtimes preserved.
+
+### Dependabot
+
+- Alert #66 dismissed with reason `fix_started`.
+- Direct alert state: `dismissed`.
+- Fresh open-alert inventory: 11, all for `cryptography`.
+- Previous GitHub listing lag resolved on fresh query.
+
+### Next
+
+- W29: inventory and classify the 11 remaining cryptography alerts.
+- Compare with existing Bookworm security backports.
+- Preserve validated server and Windows runtimes.
+- Do not rebuild unnecessarily or modify protected Debian artifacts.
