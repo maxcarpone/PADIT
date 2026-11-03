@@ -1877,9 +1877,23 @@ if ($LASTEXITCODE -ne 0) {
     throw 'W22 RPyC Python compilation failed'
 }
 
-if ((Get-FileHash -LiteralPath $RpycFile -Algorithm SHA256).Hash -ne
-    '92B477B86552E05875A133B8CFAD9A0069D69776009B39504C1A960F950B3321') {
-    throw 'W22 RPyC corrected module SHA256 mismatch'
+# Validate LF-normalized content without modifying the installed source.
+$RpycBytes = [System.IO.File]::ReadAllBytes($RpycFile)
+$RpycText = [System.Text.Encoding]::ASCII.GetString($RpycBytes)
+$RpycNormalized = $RpycText.Replace("`r`n", "`n")
+$RpycHashBytes = [System.Text.Encoding]::ASCII.GetBytes($RpycNormalized)
+$RpycSHA = [System.Security.Cryptography.SHA256]::Create()
+try {
+    $RpycHash = [BitConverter]::ToString(
+        $RpycSHA.ComputeHash($RpycHashBytes)
+    ).Replace('-', '')
+}
+finally {
+    $RpycSHA.Dispose()
+}
+
+if ($RpycHash -ne '92B477B86552E05875A133B8CFAD9A0069D69776009B39504C1A960F950B3321') {
+    throw 'W22 RPyC normalized SHA256 mismatch'
 }
 
 Remove-Item -LiteralPath (Join-Path $RpycDir 'core\netref.pyc') -Force -ErrorAction SilentlyContinue
