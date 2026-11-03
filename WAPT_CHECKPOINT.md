@@ -1120,3 +1120,74 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 - Continue remaining Dependabot security inventory.
 - Reuse previously validated Bookworm server fixes when applicable.
 - Preserve Unix/Windows validated runtimes and protected artifacts.
+
+## W25 - urllib3 1.26.20 / CVE-2025-50181 and CVE-2026-44431 (2026-11-03)
+
+**Status: PASS - Unix Bookworm and Windows x86/VC9 autonomous runtimes.**
+
+- Dependabot #55: CVE-2025-50181.
+- Dependabot #73: CVE-2026-44431.
+- Package: urllib3==1.26.20, retained for Python 2.7 compatibility.
+- Seven urllib3 security patches integrated into both agent builders.
+- Five previously validated urllib3 patches preserved.
+- CVE-2025-50181: PoolManager constructor retry configuration respected.
+- CVE-2026-44431: sensitive headers stripped on cross-origin redirects
+  through the low-level connection pool.
+- No mutable shared connection-pool state introduced.
+- Custom Retry.remove_headers_on_redirect policy respected.
+
+**Security artifacts**
+
+- utils/patch-urllib3-1.26.20/CVE-2025-50181.patch
+  SHA256: 61b801a0221bbf0df4a3212b73089d44b95615c4844a79dda58d08fa8bb85fdd
+- utils/patch-urllib3-1.26.20/CVE-2026-44431.patch
+  SHA256: d633c43dfb96063b2c7be9e996e531813c5db40084cfdec3f836f2840692944e
+- utils/patch-urllib3-1.26.20/tests/test_CVE-2025-50181.py
+  SHA256: 6517dc15ce5f4ebec72888b2e6ef7ea2e3d76682d5c904b2b541ef7d349d8f7e
+- utils/patch-urllib3-1.26.20/tests/test_CVE-2026-44431.py
+  SHA256: d5e72443b5191b98172d496f2f8d56d67437a41a521657711227f4cad53c3b39
+
+**Unix Bookworm validation**
+
+- Runtime: build/python2-runtime-agent-unix-W25.
+- Autonomous construction: PASS.
+- CVE-2025-50181 regression: 5/5 PASS.
+- CVE-2026-44431 regression: 4/4 PASS.
+- pip check: PASS.
+- urllib3 1.26.20 confirmed.
+- Historical Unix W22 runtime preserved.
+
+**Windows x86/VC9 validation**
+
+- Runtime: C:\padit-runtime-1.8.3-W25-urllib3.
+- Python executable: Scripts\python.exe.
+- Python 2.7.18, MSC v.1500, 32-bit: confirmed.
+- Autonomous runtime construction: SUCCESS, exit code 0.
+- CVE-2025-50181 regression: 5/5 PASS.
+- CVE-2026-44431 regression: 4/4 PASS.
+- pip check: PASS.
+- urllib3 1.26.20 confirmed.
+- PowerShell builder syntax: PASS.
+- Historical Windows runtimes preserved.
+
+**GitHub / Dependabot**
+
+- Implementation commit: 059f0103.
+- Branch: release/1.8.3.
+- Commit pushed to github.com/maxcarpone/PADIT.
+- Dependabot #55: dismissed, reason fix_started.
+- Dependabot #73: dismissed, reason fix_started.
+- Both dismissal states independently verified via GitHub API.
+- Remaining open Dependabot alerts: 14.
+- Inventory: 11 cryptography, 1 pyOpenSSL,
+  1 python-socketio and 1 eventlet.
+- Three protected Debian artifacts untouched.
+- Full Windows product/installer integration remains deferred.
+
+**Next**
+
+- Resume remaining Dependabot security inventory.
+- Prioritize eventlet #56, python-socketio #57,
+  pyOpenSSL #66 and cryptography alerts.
+- Reuse validated Bookworm server security backports.
+- Preserve all previously validated runtimes.
