@@ -1089,3 +1089,34 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 - Continue inventory of remaining Dependabot alerts.
 - Reuse validated Bookworm server fixes for Unix and Windows agents.
 - Preserve previously validated runtimes and security tests.
+
+## W24 - Engine.IO 3.11.2 / CVE-2026-48809 and CVE-2026-48802 (2026-11-03)
+
+**Status: PASS - deployment-specific non-applicability verified.**
+
+- Dependabot #76: HIGH, CVE-2026-48809.
+- Dependabot #77: HIGH, CVE-2026-48802.
+- Package: python-engineio==3.11.2, retained for Python 2.7.
+- No existing PADIT server backport identified for these CVEs.
+- Audited historical Engine.IO server and socket implementations.
+- Runtime used for verification:
+  build/python2-runtime-agent-unix-W22.
+- Dynamic test: engineio.Server() selected async_mode=eventlet.
+- PADIT server uses Flask-SocketIO and Eventlet.
+- CVE-2026-48809 affects ASGI polling and aiohttp WebSocket paths.
+- Those asynchronous drivers are not used by the validated PADIT deployment.
+- CVE-2026-48802 describes excessive heartbeat task/thread creation.
+- Historical Engine.IO 3.11.2 uses client PING/server PONG.
+- Socket.receive() updates last_ping and sends PONG without launching a task.
+- Dynamic source inspection: PASS.
+- Dependabot #76 dismissed with reason not_used.
+- Dependabot #77 dismissed with reason not_used.
+- No patch applied; no runtime reconstruction necessary.
+- Scope: verified PADIT Eventlet deployment and historical heartbeat behavior.
+- Not a claim that all Engine.IO configurations are unaffected.
+- Reassess if the async driver, Engine.IO version or deployment changes.
+
+**Next**
+- Continue remaining Dependabot security inventory.
+- Reuse previously validated Bookworm server fixes when applicable.
+- Preserve Unix/Windows validated runtimes and protected artifacts.
