@@ -977,5 +977,41 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 - Runtimes W19 conserves.
 - Artefacts Debian proteges conserves.
 - Integration : commits 5dbe16cc et 8859562c.
-- Dependabot : alertes #19 et #50 a traiter apres validation documentaire.
+- Dependabot : alertes #19 et #50 dismissed (fix_started), validations W20 conservees.
 - Chantier suivant : W21, nouvelles alertes pyasn1.
+
+## W21 - pyasn1 0.5.1 / four CVE security backports (2026-11-03)
+
+**Status: PASS - source reconstruction, Unix Bookworm and Windows x86 validation.**
+
+- Package: pyasn1==0.5.1, retained for Python 2.7 compatibility.
+- Dependabot #188: CVE-2026-119194, schemaless tag hash collisions.
+- Dependabot #189: CVE-2026-119195, OCTET STRING / ANY assembly.
+- Dependabot #190: CVE-2026-119197, REAL binary mantissa decoding.
+- Dependabot #191: CVE-2026-119196, BIT STRING fragment assembly.
+- Four separate security patches in utils/patch-pyasn1-0.5.1/.
+- Historical patches preserved; 10 common patches for Unix, 11 for Windows.
+- PADIT-windows-mkstemp.patch normalized to LF without logical changes.
+- SHA256SUMS: 11/11 PASS.
+- Reproducible decoder SHA256 (LF):
+  b0e5f66ac55eecc3cdc0d2f767ca61f3fa041d140aaebdfe15cff3ffa598bb89.
+- Unix Bookworm Python 2.7.18: 1174 tests, 3 skipped, 0 failures.
+- Windows VM106 Python 2.7.18 x86: 1174 tests, 3 skipped, 0 failures.
+- Windows Git core.autocrlf=true: CRLF decoder verified identical after LF normalization.
+- Windows patched wheel: pyasn1-0.5.1-py2.py3-none-any.whl.
+- Wheel SHA256:
+  ac6b461fb8eec8fdd31d127c7d656fbff1d5ff4aa4b48e1d017e1b74ccad9709.
+- Offline wheel installation in isolated VM106 directory: PASS.
+- Installed package imports and four security-fix signatures: 6/6 PASS.
+- Implementation commit: 3a9c2e881e62857c53c1b676e69cfda660b23a66.
+- Commit pushed to origin/release/1.8.3; VM106 synchronized.
+- Dependabot alerts #188, #189, #190, #191:
+  dismissed with reason fix_started and validation evidence.
+- Full PADIT runtime rebuild remains pending; isolated wheel validation is complete.
+- Historical W07/W19/W20 runtimes preserved.
+- Three protected Debian artifacts untouched.
+
+**Next**
+- Inventory remaining open Dependabot alerts.
+- Continue compatible Python 2.7 security remediations.
+- Validate integration in full autonomous Windows and Unix runtimes separately.
