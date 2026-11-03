@@ -688,6 +688,56 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host '[PASS] WAPT cryptography compatibility modules installed'
 
 # ---------------------------------------------------------------------------
+# W26 - Eventlet CVE-2025-58068 HTTP trailer handling security backport.
+# ---------------------------------------------------------------------------
+Write-Step 'Applying Eventlet CVE-2025-58068 backport'
+
+$EventletDir = Join-Path $Output 'Lib\site-packages\eventlet'
+$EventletWsgi = Join-Path $EventletDir 'wsgi.py'
+$EventletSecurityDir = Join-Path $RepoRoot 'utils\patch-eventlet-0.33.3'
+$EventletPatch58068 = Join-Path $EventletSecurityDir 'CVE-2025-58068.patch'
+$EventletTest58068 = Join-Path $EventletSecurityDir 'test_CVE-2025-58068.py'
+
+Assert-Dir $EventletDir
+Assert-File $EventletWsgi
+
+Assert-Sha256 $EventletPatch58068 '897E91E4E5C77FE8205408E4DACA9C9FC12DA7540F34F2C19F92875343EA151D'
+Assert-Sha256 $EventletTest58068 'D3D48CFFCDEB41A01AF2B15822E6DDf5EF82CA17EB91173DE671D6557A1EC38F'
+
+$EventletVersion = & $RuntimePython -c 'import eventlet;print(eventlet.__version__)'
+if ($LASTEXITCODE -ne 0 -or $EventletVersion.Trim() -ne '0.33.3') {
+    throw "Unexpected Eventlet version: $EventletVersion"
+}
+
+Push-Location $EventletDir
+try {
+    & git apply --check -p1 $EventletPatch58068
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Eventlet CVE-2025-58068 patch check failed'
+    }
+
+    & git apply -p1 $EventletPatch58068
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Eventlet CVE-2025-58068 patch application failed'
+    }
+}
+finally {
+    Pop-Location
+}
+
+& $RuntimePython -m py_compile $EventletWsgi
+if ($LASTEXITCODE -ne 0) {
+    throw 'Eventlet wsgi.py compilation failed'
+}
+
+& $RuntimePython $EventletTest58068
+if ($LASTEXITCODE -ne 0) {
+    throw 'Eventlet CVE-2025-58068 regression failed'
+}
+
+Write-Host '[PASS] W26 Eventlet CVE-2025-58068 security backport'
+
+# ---------------------------------------------------------------------------
 # CVE-2023-29483 TuDoor: reuse validated Bookworm/Unix backports.
 # ---------------------------------------------------------------------------
 Write-Step "Applying CVE-2023-29483 Eventlet and dnspython backports"
