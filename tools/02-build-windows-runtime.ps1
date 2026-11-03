@@ -1910,6 +1910,59 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host '[PASS] W22 secured RPyC 4.1.5 installed'
 
 # ---------------------------------------------------------------------------
+# W23 - python-socketio 4.4.0 / CVE-2026-48804.
+# Reuse the validated Bookworm server and Unix agent backport.
+# ---------------------------------------------------------------------------
+
+Write-Step "Applying W23 python-socketio CVE-2026-48804 security backport"
+
+$W23SocketDir = Join-Path $Output 'Lib\site-packages\socketio'
+$W23SocketFile = Join-Path $W23SocketDir 'server.py'
+$W23SocketPatch = Join-Path $RepoRoot 'utils\patch-python-socketio-4.4.0\CVE-2026-48804.patch'
+$W23SocketTest = Join-Path $RepoRoot 'utils\patch-python-socketio-4.4.0\test_security.py'
+
+Assert-Dir $W23SocketDir
+Assert-File $W23SocketFile
+Assert-File $W23SocketPatch
+Assert-File $W23SocketTest
+
+$W23PatchHash = (Get-FileHash -LiteralPath $W23SocketPatch -Algorithm SHA256).Hash
+if ($W23PatchHash -ne '5BC5F0CE38F7D748415A2264FB869D0A6B36325BF7B765673FA65160130983D7') {
+    throw 'W23 Socket.IO security patch SHA256 mismatch'
+}
+
+& $RuntimePython -B -c "import pkg_resources; assert pkg_resources.get_distribution('python-socketio').version == '4.4.0'"
+if ($LASTEXITCODE -ne 0) {
+    throw 'Unexpected W23 python-socketio version'
+}
+
+Push-Location $W23SocketDir
+try {
+    & git apply --check $W23SocketPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'W23 Socket.IO security patch check failed'
+    }
+
+    & git apply $W23SocketPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'W23 Socket.IO security patch application failed'
+    }
+}
+finally {
+    Pop-Location
+}
+
+Remove-Item -LiteralPath (Join-Path $W23SocketDir 'server.pyc') -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $W23SocketDir 'server.pyo') -Force -ErrorAction SilentlyContinue
+
+& $RuntimePython -B $W23SocketTest
+if ($LASTEXITCODE -ne 0) {
+    throw 'W23 Socket.IO security regression failed'
+}
+
+Write-Host '[PASS] W23 secured python-socketio 4.4.0 installed'
+
+# ---------------------------------------------------------------------------
 # Acceptance tests
 # ---------------------------------------------------------------------------
 
