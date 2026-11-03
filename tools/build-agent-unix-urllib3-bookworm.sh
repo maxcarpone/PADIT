@@ -38,6 +38,8 @@ PATCHES=(
     'CVE-2025-66471.patch:eea23e54a0a1124c90de4fb2a8dbe13925023bb718b76a916dd71e3ba6796fb3'
     'CVE-2026-21441.patch:33d018d0378da1588062af31ff422ee932ba81567b977871a7a25146132ffbf3'
     'CVE-2026-97687.patch:5e60845a9d461a3e248ae68ee94b88aaebf454b5e4bcbcf27fd4e2932727f12c'
+    'CVE-2025-50181.patch:61b801a0221bbf0df4a3212b73089d44b95615c4844a79dda58d08fa8bb85fdd'
+    'CVE-2026-44431.patch:d633c43dfb96063b2c7be9e996e531813c5db40084cfdec3f836f2840692944e'
 )
 
 for ITEM in "${PATCHES[@]}"; do
@@ -73,7 +75,9 @@ for TEST in \
     test_urllib3_security_windows.py \
     test_CVE-2026-21441-compatibility.py \
     test_CVE-2026-21441-redirect.py \
-    test_CVE-2026-97687.py
+    test_CVE-2026-97687.py \
+    test_CVE-2025-50181.py \
+    test_CVE-2026-44431.py
 do
     "${PYTHON}" "${PATCH_DIR}/tests/${TEST}"
 done

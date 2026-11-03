@@ -831,10 +831,31 @@ $Urllib3Patches = @(
     'CVE-2025-66418.patch',
     'CVE-2025-66471.patch',
     'CVE-2026-21441.patch',
-    'CVE-2026-97687.patch'
+    'CVE-2026-97687.patch',
+    'CVE-2025-50181.patch',
+    'CVE-2026-44431.patch'
 )
 
 Assert-File $Urllib3Response
+# W25 - Verify new urllib3 security patches and regression tests.
+$W25Files = @{
+    'CVE-2025-50181.patch' = '61B801A0221BBF0DF4A3212B73089D44B95615C4844A79DDA58D08FA8BB85FDD'
+    'CVE-2026-44431.patch' = 'D633C43DFB96063B2C7BE9E996E531813C5DB40084CFDEC3F836F2840692944E'
+    'tests\test_CVE-2025-50181.py' = '6517DC15CE5F4EBEC72888B2E6EF7EA2E3D76682D5C904B2B541EF7D349D8F7E'
+    'tests\test_CVE-2026-44431.py' = 'D5E72443B5191B98172D496F2F8D56D67437A41A521657711227F4CAD53C3B39'
+}
+
+foreach ($Entry in $W25Files.GetEnumerator()) {
+    $File = Join-Path $Urllib3PatchDir $Entry.Key
+    Assert-File $File
+    $Actual = (Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash
+    if ($Actual -ne $Entry.Value) {
+        throw "W25 urllib3 SHA256 mismatch: $($Entry.Key)"
+    }
+}
+
+Write-Host '[PASS] W25 urllib3 patch and test SHA256 verified'
+
 
 $Urllib3Version = & $RuntimePython -c 'import urllib3; print(urllib3.__version__)'
 if ($LASTEXITCODE -ne 0 -or $Urllib3Version.Trim() -ne '1.26.20') {
@@ -891,7 +912,9 @@ foreach ($TestName in @(
     'test_CVE-2026-21441-abandoned.py',
     'test_CVE-2026-21441-compatibility.py',
     'test_CVE-2026-21441-redirect.py',
-    'test_CVE-2026-97687.py'
+    'test_CVE-2026-97687.py',
+    'test_CVE-2025-50181.py',
+    'test_CVE-2026-44431.py'
 )) {
     $TestPath = Join-Path $Urllib3TestDir $TestName
     Assert-File $TestPath
