@@ -105,6 +105,51 @@ export PADIT_AGENT_UNIX_BUILD_ROOT="${BUILD_ROOT}"
 unset PYTHONPATH PYTHONHOME PYTHONVERBOSE
 unset PIP_PREFIX PIP_TARGET PIP_USER VIRTUAL_ENV
 
+OPENSSL_MODE="${PADIT_OPENSSL_MODE:-isolated}"
+
+case "$OPENSSL_MODE" in
+    system)
+        echo "[INFO] Historical OpenSSL mode"
+        ;;
+    isolated)
+        OPENSSL_PREFIX="${PADIT_OPENSSL_PREFIX:-${BUILD_ROOT}-openssl-prefix}"
+        OPENSSL_BUILD_ROOT="${PADIT_OPENSSL_BUILD_ROOT:-${BUILD_ROOT}-openssl-build}"
+        OPENSSL_ARCHIVE="${PADIT_OPENSSL_ARCHIVE:-${BUILD_ROOT}-openssl-3.5.9.tar.gz}"
+
+        for candidate in "$OPENSSL_PREFIX" "$OPENSSL_BUILD_ROOT" "$OPENSSL_ARCHIVE"; do
+            case "$candidate" in
+                /*) ;;
+                *) die "Absolute OpenSSL path required: $candidate" ;;
+            esac
+            candidate="$(realpath -m -- "$candidate")"
+            protect_path "$candidate" "$REPO_ROOT"
+            protect_path "$candidate" "$RUNTIME_ROOT"
+            protect_path "$candidate" "$BUILD_ROOT"
+        done
+
+        protect_path "$(realpath -m -- "$OPENSSL_PREFIX")"                      "$(realpath -m -- "$OPENSSL_BUILD_ROOT")"
+
+        [ ! -e "$OPENSSL_PREFIX" ] && [ ! -L "$OPENSSL_PREFIX" ] ||
+            die "OpenSSL prefix already exists"
+
+        [ ! -e "$OPENSSL_BUILD_ROOT" ] && [ ! -L "$OPENSSL_BUILD_ROOT" ] ||
+            die "OpenSSL build directory already exists"
+
+        env PADIT_OPENSSL_PREFIX="$OPENSSL_PREFIX" \
+            PADIT_OPENSSL_BUILD_ROOT="$OPENSSL_BUILD_ROOT" \
+            PADIT_OPENSSL_ARCHIVE="$OPENSSL_ARCHIVE" \
+            bash "${REPO_ROOT}/tools/build-openssl-bookworm.sh"
+
+        export PADIT_OPENSSL_PREFIX="$OPENSSL_PREFIX"
+        echo "[PASS] OpenSSL 3.5.9 built"
+        ;;
+    *)
+        die "Unsupported OpenSSL mode: $OPENSSL_MODE"
+        ;;
+esac
+
+export PADIT_OPENSSL_MODE="$OPENSSL_MODE"
+
 bash "${REPO_ROOT}/tools/build-python2-runtime-agent-unix-bookworm.sh"
 
 echo "[PASS] PADIT Unix runtime build completed"

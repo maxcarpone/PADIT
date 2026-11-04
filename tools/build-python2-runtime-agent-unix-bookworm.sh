@@ -49,9 +49,8 @@ case "$OPENSSL_MODE" in
 
         OPENSSL_PREFIX="$(realpath -e -- "$OPENSSL_PREFIX")"
 
-        case "$OPENSSL_PREFIX" in
-            /opt/padit-lab/*) ;;
-            *) die "Isolated OpenSSL must be inside /opt/padit-lab" ;;
+        case "$OPENSSL_PREFIX/" in
+            "$REPO_ROOT/"*) die "OpenSSL inside Git repository" ;;
         esac
 
         OPENSSL_VERSION="$(
@@ -76,9 +75,7 @@ ARCHIVE="Python-${PYTHON_VERSION}.tgz"
 SOURCE_ARCHIVE="/tmp/wapt-python2-build/${ARCHIVE}"
 
 if [ "$OPENSSL_MODE" = isolated ]; then
-    SOURCE_ARCHIVE="/opt/padit-lab/work/python-2.7.18-openssl35/Python-2.7.18.tgz"
-    [ -f "$SOURCE_ARCHIVE" ] ||
-        die "Verified Python source archive missing"
+    SOURCE_ARCHIVE="${PADIT_PYTHON_SOURCE_ARCHIVE:-}"
 fi
 EXPECTED_SHA256="da3080e3b488f648a3d7a4560ddee895284c3380b11d6de75edb986526b9a814"
 SOURCE_DIR="${BUILD_ROOT}/Python-${PYTHON_VERSION}"
@@ -171,11 +168,63 @@ EXISTING_GET_PIP="/tmp/wapt-python2-build/get-pip.py"
 if [ "$OPENSSL_MODE" = isolated ]; then
     echo ">>> Offline Python 2 packaging bootstrap..."
 
-    WHEELHOUSE="/opt/padit-lab/work/python2-openssl35-bootstrap/wheels"
+    WHEELHOUSE="${PADIT_BOOTSTRAP_WHEELHOUSE:-${BUILD_ROOT}/bootstrap-wheels}"
+    mkdir -p "$WHEELHOUSE"
 
     PIP_WHEEL="${WHEELHOUSE}/pip-20.3.4-py2.py3-none-any.whl"
     SETUP_WHEEL="${WHEELHOUSE}/setuptools-44.1.1-py2.py3-none-any.whl"
     WHEEL_WHEEL="${WHEELHOUSE}/wheel-0.37.1-py2.py3-none-any.whl"
+
+    python3 - "$PIP_WHEEL" "$SETUP_WHEEL" "$WHEEL_WHEEL" <<'PYWHEELS'
+import hashlib
+import json
+import os
+import sys
+from urllib.request import urlopen
+
+packages = [
+    ("pip", "20.3.4", sys.argv[1],
+     "217ae5161a0e08c0fb873858806e3478c9775caffce5168b50ec885e358c199d"),
+    ("setuptools", "44.1.1", sys.argv[2],
+     "27a714c09253134e60a6fa68130f78c7037e5562c4f21f8f318f2ae900d152d5"),
+    ("wheel", "0.37.1", sys.argv[3],
+     "4bdcd7d840138086126cd09254dc6195fb4fc6f01c050a1d7236f2630db1d22a"),
+]
+
+for name, version, target, expected in packages:
+    if not os.path.isfile(target):
+        url = "https://pypi.org/pypi/%s/%s/json" % (name, version)
+        with urlopen(url, timeout=60) as response:
+            metadata = json.load(response)
+
+        matches = [
+            item for item in metadata["urls"]
+            if item["filename"] == os.path.basename(target)
+            and item["digests"]["sha256"] == expected
+            and item["url"].startswith("https://files.pythonhosted.org/")
+        ]
+        if len(matches) != 1:
+            raise SystemExit("[FAIL] Wheel unavailable: " + name)
+
+        with urlopen(matches[0]["url"], timeout=120) as response:
+            content = response.read()
+
+        if hashlib.sha256(content).hexdigest() != expected:
+            raise SystemExit("[FAIL] Download checksum: " + name)
+
+        temporary = target + ".part"
+        with open(temporary, "xb") as output:
+            output.write(content)
+        os.rename(temporary, target)
+
+    with open(target, "rb") as source:
+        actual = hashlib.sha256(source.read()).hexdigest()
+
+    if actual != expected:
+        raise SystemExit("[FAIL] Wheel checksum: " + name)
+
+    print("[PASS] Verified bootstrap wheel:", name)
+PYWHEELS
 
     echo '217ae5161a0e08c0fb873858806e3478c9775caffce5168b50ec885e358c199d  '"$PIP_WHEEL" |
         sha256sum -c - || die "pip wheel checksum mismatch"

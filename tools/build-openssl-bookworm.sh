@@ -7,7 +7,9 @@ set -euo pipefail
 VERSION="3.5.9"
 EXPECTED_SHA256="603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"
 
-LAB="/opt/padit-lab"
+# Paths may be configured by the Environment/Runtime orchestrator.
+# Defaults do not depend on the historical laboratory.
+LAB="${PADIT_BUILD_BASE:-/tmp/padit-build}"
 
 ARCHIVE="${PADIT_OPENSSL_ARCHIVE:-${LAB}/sources/openssl-${VERSION}.tar.gz}"
 BUILD_ROOT="${PADIT_OPENSSL_BUILD_ROOT:-${LAB}/work/openssl-${VERSION}-builder}"
@@ -23,18 +25,40 @@ die() {
 echo "=== PADIT OPENSSL ${VERSION} BUILDER ==="
 
 [ "$(id -u)" -eq 0 ] || die "Root privileges required"
-[ -f "$ARCHIVE" ] || die "Source archive missing: $ARCHIVE"
 [ "$RUN_TESTS" = 0 ] || [ "$RUN_TESTS" = 1 ] ||
     die "PADIT_OPENSSL_RUN_TESTS must be 0 or 1"
 
-case "$PREFIX" in
-    "$LAB"/*) ;;
-    *) die "Installation prefix must be inside $LAB" ;;
+# Canonicalize destinations and reject overlaps with the Git checkout.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+for candidate in "$PREFIX" "$BUILD_ROOT"; do
+    case "$candidate" in
+        /*) ;;
+        *) die "Absolute path required: $candidate" ;;
+    esac
+
+    canonical="$(realpath -m -- "$candidate")"
+
+    case "$canonical/" in
+        "$REPO_ROOT/"*|"/")
+            die "Unsafe destination: $canonical" ;;
+    esac
+
+    case "$REPO_ROOT/" in
+        "$canonical/"*)
+            die "Destination contains repository: $canonical" ;;
+    esac
+done
+
+PREFIX="$(realpath -m -- "$PREFIX")"
+BUILD_ROOT="$(realpath -m -- "$BUILD_ROOT")"
+
+case "$PREFIX/" in
+    "$BUILD_ROOT/"*) die "Overlapping build/install paths" ;;
 esac
 
-case "$BUILD_ROOT" in
-    "$LAB"/work/*) ;;
-    *) die "Build directory must be inside $LAB/work" ;;
+case "$BUILD_ROOT/" in
+    "$PREFIX/"*) die "Overlapping build/install paths" ;;
 esac
 
 case "$PREFIX:$BUILD_ROOT" in
@@ -49,6 +73,15 @@ esac
 
 [ ! -e "$BUILD_ROOT" ] && [ ! -L "$BUILD_ROOT" ] ||
     die "Build directory already exists: $BUILD_ROOT"
+
+if [ ! -f "$ARCHIVE" ]; then
+    echo ">>> Downloading verified OpenSSL source..."
+    mkdir -p "$(dirname "$ARCHIVE")"
+    curl -fL --retry 3 \
+        "https://github.com/openssl/openssl/releases/download/openssl-${VERSION}/openssl-${VERSION}.tar.gz" \
+        -o "$ARCHIVE" ||
+        die "Cannot download OpenSSL source"
+fi
 
 echo "=== VERIFY SOURCE SHA256 ==="
 
