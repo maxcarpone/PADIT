@@ -1,0 +1,24 @@
+--- a/setup.py
++++ b/setup.py
+@@ -899,6 +899,21 @@
+                     m = openssl_ver_re.match(line)
+                     if m:
+                         openssl_ver = eval(m.group(1))
++                if not openssl_ver:
++                    incfile.seek(0)
++                    version_parts = {}
++                    version_re = re.compile(
++                        r'^\s*#\s*define\s+OPENSSL_VERSION_(MAJOR|MINOR|PATCH)\s+(\d+)\s*$')
++                    for line in incfile:
++                        match = version_re.match(line)
++                        if match:
++                            version_parts[match.group(1)] = int(match.group(2))
++                    if all(key in version_parts
++                           for key in ('MAJOR', 'MINOR', 'PATCH')):
++                        openssl_ver = (
++                            (version_parts['MAJOR'] << 28) |
++                            (version_parts['MINOR'] << 20) |
++                            (version_parts['PATCH'] << 4))
+             except IOError, msg:
+                 print "IOError while reading opensshv.h:", msg
+                 pass
