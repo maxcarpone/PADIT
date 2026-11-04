@@ -1339,3 +1339,92 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 - Compare with existing Bookworm security backports.
 - Preserve validated server and Windows runtimes.
 - Do not rebuild unnecessarily or modify protected Debian artifacts.
+
+## W29 - OpenSSL 3.5.9 Unix agent runtime (2026-11-04)
+
+**Status: PASS - complete Unix agent runtime build validated.**
+
+### Validated construction
+
+- Branch: `release/1.8.3`.
+- Python 2.7.18 / isolated OpenSSL 3.5.9.
+- Python OpenSSL 3 version detection patch:
+  commit `984fa58b`.
+- OpenSSL and Unix agent builder integration:
+  commit `393bd748`.
+- OpenSSL 3.5.9 compiled from verified upstream sources.
+- Reproducible OpenSSL builder:
+  `tools/build-openssl-bookworm.sh`.
+- Existing Unix agent main builder updated:
+  `tools/build-python2-runtime-agent-unix-bookworm.sh`.
+- Existing crypto sub-builder updated:
+  `tools/build-agent-unix-crypto-bookworm.sh`.
+- Temporary build modes: `system` and `isolated`.
+- Python 2 bootstrap uses local verified wheels in isolated mode.
+- Modernized dependencies: wheel 0.37.1,
+  pycparser 2.21, enum34 1.1.10.
+- CFFI 1.15.1 and cryptography 3.3.2 rebuilt with
+  PADIT compatibility and security patches.
+- Cryptography native module and PADIT X.509 source
+  integrity verified before and after other installations.
+- OpenSSL 3.5.9 runtime linkage verified without
+  `LD_LIBRARY_PATH`.
+- All loaded libssl/libcrypto libraries originate from
+  the isolated OpenSSL prefix.
+- Existing Unix agent security backports retained.
+- Waitress W20 and RPyC W22 regressions: PASS.
+- Final `pip check`: PASS.
+- Full automated build W29-O74: PASS.
+- Final consolidation W29-O75: PASS.
+
+### Reproducibility references
+
+- Runtime:
+  `/opt/padit-lab/runtime-agent-unix-openssl35-W29`.
+- Runtime size: approximately 226 MiB as reported by `du -sh`.
+- OpenSSL prefix:
+  `/opt/padit-lab/openssl-3.5.9-builder`.
+- Build workspace:
+  `/opt/padit-lab/work/agent-unix-openssl35-W29`.
+- Build log:
+  `/opt/padit-lab/logs/W29-O74-agent-unix-openssl35.log`.
+- Build log SHA256:
+  `79e2909499d4e64a5244f2325455b9503ea986eeb62492bc0c5d7d546f9d670c`.
+- System OpenSSL 3.0.22 preserved.
+- Previously validated server, Unix and Windows runtimes preserved.
+- Three protected Debian packaging artifacts preserved.
+
+### Remaining limitations
+
+- Build validated; autonomous Debian package not yet validated.
+- Runtime still depends on laboratory OpenSSL absolute paths.
+- Relocatable OpenSSL packaging and `$ORIGIN` linkage remain.
+- Some dependencies still require network access during builds.
+- Windows x86/VC9 compatibility with OpenSSL 3.5.9
+  has not been established.
+- Eleven Dependabot cryptography alerts remain to investigate.
+- No Python 3 migration in this milestone.
+
+### Builder rationalization decision
+
+- Long-term goal: one public build entry point per product:
+  Unix agent, Windows agent, Bookworm server.
+- Each product follows three stages:
+  Environment / Runtime / Build.
+- Retain automated security regressions, source checksums,
+  binary provenance checks and final PASS/FAIL validations.
+- Consolidate specialized dependency sub-builders where useful.
+- Avoid a new monolithic constructor or unnecessary new scripts.
+- Remove transitional `system` / `isolated` complexity only
+  after the autonomous standard build is validated.
+- Do not refactor validated builders while establishing
+  the next functional baseline.
+
+### Next
+
+1. Preserve W29 validated runtime and builder commits.
+2. Establish portable isolated OpenSSL linkage and packaging.
+3. Validate autonomous Unix agent Debian installation.
+4. Consolidate build orchestration with Environment / Runtime / Build.
+5. Reuse the validated crypto architecture for Bookworm server.
+6. Investigate remaining cryptography alerts and Windows compatibility.
