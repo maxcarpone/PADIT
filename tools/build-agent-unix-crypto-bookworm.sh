@@ -20,6 +20,36 @@ run() {
 
 [ -x "${PYTHON}" ] || die "Python agent Unix absent"
 
+# Explicit OpenSSL selection for the isolated build.
+case "${PADIT_OPENSSL_MODE:-system}" in
+    system)
+        ;;
+    isolated)
+        OPENSSL_PREFIX="${PADIT_OPENSSL_PREFIX:?Missing OpenSSL prefix}"
+        OPENSSL_PREFIX="$(realpath -e -- "$OPENSSL_PREFIX")"
+        OPENSSL_LIBDIR="$OPENSSL_PREFIX/lib64"
+
+        [ -f "$OPENSSL_LIBDIR/libssl.so.3" ] ||
+            die "Isolated libssl missing"
+        [ -f "$OPENSSL_LIBDIR/libcrypto.so.3" ] ||
+            die "Isolated libcrypto missing"
+
+        [ "${CPPFLAGS:-}" = "-I$OPENSSL_PREFIX/include" ] ||
+            die "Unexpected CPPFLAGS"
+
+        [ "${LDFLAGS:-}" = "-L$OPENSSL_LIBDIR -Wl,-rpath,$OPENSSL_LIBDIR" ] ||
+            die "Unexpected LDFLAGS"
+
+        [ "${LD_LIBRARY_PATH:-}" = "$OPENSSL_LIBDIR" ] ||
+            die "Unexpected LD_LIBRARY_PATH"
+
+        echo "[PASS] Isolated OpenSSL compiler configuration"
+        ;;
+    *)
+        die "Unsupported PADIT_OPENSSL_MODE"
+        ;;
+esac
+
 # 10. Build cffi 1.15.1 from source
 ###############################################################################
 
@@ -320,5 +350,39 @@ print("CRYPTOGRAPHY CVE-2023-49083 REGRESSION TEST: PASS")
 PYCRYPTOGRAPHY
 
 ###############################################################################
+
+if [ "${PADIT_OPENSSL_MODE:-system}" = isolated ]; then
+    echo "=== VERIFY CRYPTOGRAPHY OPENSSL LINKAGE ==="
+
+    env -u LD_LIBRARY_PATH -u PYTHONPATH \
+        "${PYTHON}" -B - <<'PYPADITLINK'
+from __future__ import print_function
+import os
+import ssl
+from cryptography.hazmat.backends.openssl.backend import backend
+
+expected = os.path.realpath(
+    os.environ["PADIT_OPENSSL_PREFIX"]
+) + "/lib64/"
+
+assert ssl.OPENSSL_VERSION.startswith("OpenSSL 3.5.9 ")
+assert backend.openssl_version_text().startswith("OpenSSL 3.5.9 ")
+
+loaded = set()
+with open("/proc/self/maps") as maps:
+    for line in maps:
+        if "libssl.so" in line or "libcrypto.so" in line:
+            path = line.strip().split()[-1]
+            loaded.add(os.path.realpath(path))
+
+for path in sorted(loaded):
+    print(path)
+    assert path.startswith(expected), path
+
+assert len(loaded) == 2, loaded
+
+print("[PASS] cryptography and Python use isolated OpenSSL 3.5.9")
+PYPADITLINK
+fi
 
 echo "[PASS] U53 - Agent Unix cffi and cryptography build"

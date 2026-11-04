@@ -28,9 +28,58 @@ echo "Runtime: ${RUNTIME_ROOT}"
 echo "Python: ${PYTHON_VERSION}"
 
 
+# Optional isolated OpenSSL build.
+# Default remains the historical system OpenSSL behavior.
+OPENSSL_MODE="${PADIT_OPENSSL_MODE:-system}"
+
+case "$OPENSSL_MODE" in
+    system)
+        ;;
+    isolated)
+        OPENSSL_PREFIX="${PADIT_OPENSSL_PREFIX:?Set PADIT_OPENSSL_PREFIX}"
+
+        [ -d "$OPENSSL_PREFIX/include/openssl" ] ||
+            die "OpenSSL headers missing"
+        [ -f "$OPENSSL_PREFIX/lib64/libcrypto.so.3" ] ||
+            die "Isolated libcrypto missing"
+        [ -f "$OPENSSL_PREFIX/lib64/libssl.so.3" ] ||
+            die "Isolated libssl missing"
+        [ -x "$OPENSSL_PREFIX/bin/openssl" ] ||
+            die "Isolated OpenSSL executable missing"
+
+        OPENSSL_PREFIX="$(realpath -e -- "$OPENSSL_PREFIX")"
+
+        case "$OPENSSL_PREFIX" in
+            /opt/padit-lab/*) ;;
+            *) die "Isolated OpenSSL must be inside /opt/padit-lab" ;;
+        esac
+
+        OPENSSL_VERSION="$(
+            env LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" \
+                "$OPENSSL_PREFIX/bin/openssl" version
+        )"
+
+        case "$OPENSSL_VERSION" in
+            "OpenSSL 3.5.9 "*) ;;
+            *) die "Unexpected OpenSSL: $OPENSSL_VERSION" ;;
+        esac
+
+        echo "[PASS] Isolated OpenSSL 3.5.9 selected"
+        ;;
+    *)
+        die "Unsupported PADIT_OPENSSL_MODE: $OPENSSL_MODE"
+        ;;
+esac
+
 # Python 2.7.18 - isolated agent build
 ARCHIVE="Python-${PYTHON_VERSION}.tgz"
 SOURCE_ARCHIVE="/tmp/wapt-python2-build/${ARCHIVE}"
+
+if [ "$OPENSSL_MODE" = isolated ]; then
+    SOURCE_ARCHIVE="/opt/padit-lab/work/python-2.7.18-openssl35/Python-2.7.18.tgz"
+    [ -f "$SOURCE_ARCHIVE" ] ||
+        die "Verified Python source archive missing"
+fi
 EXPECTED_SHA256="da3080e3b488f648a3d7a4560ddee895284c3380b11d6de75edb986526b9a814"
 SOURCE_DIR="${BUILD_ROOT}/Python-${PYTHON_VERSION}"
 
@@ -52,39 +101,118 @@ tar -xzf "${BUILD_ROOT}/${ARCHIVE}" -C "${BUILD_ROOT}"
 
 cd "${SOURCE_DIR}"
 
-./configure \
-    --prefix="${RUNTIME_ROOT}" \
-    --enable-unicode=ucs4 \
-    --with-ensurepip=no
+if [ "$OPENSSL_MODE" = isolated ]; then
+    PYTHON_PATCH="${REPO_ROOT}/utils/patch-python2-2.7.18/openssl3-version-detection.patch"
 
-make -j"$(nproc)"
-make install
+    echo '9890f51257d966062bdf57422f97cf2a792cd17472dc8e216bcbcc288d3a9be5  '"$PYTHON_PATCH" |
+        sha256sum -c - || die "Python OpenSSL patch checksum mismatch"
+
+    patch --dry-run --fuzz=0 -p1 < "$PYTHON_PATCH" ||
+        die "Python OpenSSL patch dry-run failed"
+
+    patch --fuzz=0 -p1 < "$PYTHON_PATCH"
+
+    OPENSSL_CPPFLAGS="-I$OPENSSL_PREFIX/include"
+    OPENSSL_LDFLAGS="-L$OPENSSL_PREFIX/lib64 -Wl,-rpath,$OPENSSL_PREFIX/lib64"
+
+    env CPPFLAGS="$OPENSSL_CPPFLAGS" \
+        LDFLAGS="$OPENSSL_LDFLAGS" \
+        LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" \
+        ./configure \
+            --prefix="${RUNTIME_ROOT}" \
+            --enable-unicode=ucs4 \
+            --with-ensurepip=no
+
+    env CPPFLAGS="$OPENSSL_CPPFLAGS" \
+        LDFLAGS="$OPENSSL_LDFLAGS" \
+        LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" \
+        make -j"$(nproc)"
+
+    env LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" make install
+else
+    ./configure \
+        --prefix="${RUNTIME_ROOT}" \
+        --enable-unicode=ucs4 \
+        --with-ensurepip=no
+
+    make -j"$(nproc)"
+    make install
+fi
+
+if [ "$OPENSSL_MODE" = isolated ]; then
+    env -u LD_LIBRARY_PATH -u PYTHONPATH \
+        "${RUNTIME_ROOT}/bin/python" -B - <<'PYCHECKSSL'
+import ssl
+import _hashlib
+import hashlib
+assert ssl.OPENSSL_VERSION.startswith("OpenSSL 3.5.9 ")
+assert hashlib.sha256("PADIT W29").digest_size == 32
+print("[PASS] Native SSL and hashlib / OpenSSL 3.5.9")
+PYCHECKSSL
+fi
 
 "${RUNTIME_ROOT}/bin/python" -c \
     'import sys, ssl, sqlite3, zlib, bz2, ctypes; assert sys.version_info[:3] == (2,7,18); print("[PASS] Agent Unix CPython 2.7.18")'
 
 echo "[PASS] U10 - Python agent Unix compiled"
 
+# Modern packaging stack only for the isolated OpenSSL build.
+WHEEL_VERSION="0.34.2"
+
+if [ "$OPENSSL_MODE" = isolated ]; then
+    WHEEL_VERSION="0.37.1"
+fi
+
 echo ">>> Installing Python 2 packaging tools..."
 
 GET_PIP="${BUILD_ROOT}/get-pip.py"
 EXISTING_GET_PIP="/tmp/wapt-python2-build/get-pip.py"
 
-if [ -f "${EXISTING_GET_PIP}" ]; then
-    cp "${EXISTING_GET_PIP}" "${GET_PIP}"
+if [ "$OPENSSL_MODE" = isolated ]; then
+    echo ">>> Offline Python 2 packaging bootstrap..."
+
+    WHEELHOUSE="/opt/padit-lab/work/python2-openssl35-bootstrap/wheels"
+
+    PIP_WHEEL="${WHEELHOUSE}/pip-20.3.4-py2.py3-none-any.whl"
+    SETUP_WHEEL="${WHEELHOUSE}/setuptools-44.1.1-py2.py3-none-any.whl"
+    WHEEL_WHEEL="${WHEELHOUSE}/wheel-0.37.1-py2.py3-none-any.whl"
+
+    echo '217ae5161a0e08c0fb873858806e3478c9775caffce5168b50ec885e358c199d  '"$PIP_WHEEL" |
+        sha256sum -c - || die "pip wheel checksum mismatch"
+
+    echo '27a714c09253134e60a6fa68130f78c7037e5562c4f21f8f318f2ae900d152d5  '"$SETUP_WHEEL" |
+        sha256sum -c - || die "setuptools wheel checksum mismatch"
+
+    echo '4bdcd7d840138086126cd09254dc6195fb4fc6f01c050a1d7236f2630db1d22a  '"$WHEEL_WHEEL" |
+        sha256sum -c - || die "wheel checksum mismatch"
+
+    env -u LD_LIBRARY_PATH \
+        PYTHONPATH="$PIP_WHEEL" \
+        "${RUNTIME_ROOT}/bin/python" -B -m pip install \
+        --no-index --no-deps "$PIP_WHEEL"
+
+    env -u PYTHONPATH -u LD_LIBRARY_PATH \
+        "${RUNTIME_ROOT}/bin/python" -m pip install \
+        --no-index --no-deps \
+        "$SETUP_WHEEL" "$WHEEL_WHEEL"
 else
-    curl -fL --retry 3 \
-        https://bootstrap.pypa.io/pip/2.7/get-pip.py \
-        -o "${GET_PIP}"
+    if [ -f "${EXISTING_GET_PIP}" ]; then
+        cp "${EXISTING_GET_PIP}" "${GET_PIP}"
+    else
+        curl -fL --retry 3 \
+            https://bootstrap.pypa.io/pip/2.7/get-pip.py \
+            -o "${GET_PIP}"
+    fi
+
+    "${RUNTIME_ROOT}/bin/python" "${GET_PIP}" \
+        'pip==20.3.4' \
+        'setuptools==44.1.1' \
+        "wheel==${WHEEL_VERSION}"
 fi
 
-"${RUNTIME_ROOT}/bin/python" "${GET_PIP}" \
-    'pip==20.3.4' \
-    'setuptools==44.1.1' \
-    'wheel==0.34.2'
-
-"${RUNTIME_ROOT}/bin/python" -c \
-    'import pip, setuptools, wheel; assert pip.__version__ == "20.3.4"; assert setuptools.__version__ == "44.1.1"; assert wheel.__version__ == "0.34.2"; print("[PASS] U11 - Packaging Python 2 agent Unix")'
+PADIT_EXPECTED_WHEEL="$WHEEL_VERSION" \
+    "${RUNTIME_ROOT}/bin/python" -c \
+    'import os, pip, setuptools, wheel; assert pip.__version__ == "20.3.4"; assert setuptools.__version__ == "44.1.1"; assert wheel.__version__ == os.environ["PADIT_EXPECTED_WHEEL"]; print("[PASS] U11 - Packaging Python 2 agent Unix")'
 
 echo ">>> Preparing Unix requirements without unpatched python-ldap..."
 
@@ -116,11 +244,86 @@ with open(destination, 'wb') as handle:
 print('[PASS] Unix requirements normalized; unpatched LDAP excluded')
 PYLDAPREQ
 
+# Preserve the original dependency manifest in system mode.
+AGENT_REQUIREMENTS="${REPO_ROOT}/requirements-agent.txt"
+
+if [ "$OPENSSL_MODE" = isolated ]; then
+    AGENT_REQUIREMENTS="${BUILD_ROOT}/requirements-agent-openssl35.txt"
+
+    python3 - \
+        "${REPO_ROOT}/requirements-agent.txt" \
+        "$AGENT_REQUIREMENTS" <<'PYMODERNREQ'
+from pathlib import Path
+import sys
+
+source, destination = map(Path, sys.argv[1:])
+
+data = source.read_bytes()
+
+replacements = (
+    (b"pycparser==2.19", b"pycparser==2.21"),
+    (b"enum34==1.1.6", b"enum34==1.1.10"),
+)
+
+for old, new in replacements:
+    if data.splitlines().count(old) != 1:
+        raise SystemExit(
+            "[FAIL] Expected exactly one %s requirement"
+            % old.decode("ascii")
+        )
+    data = data.replace(old, new)
+
+destination.write_bytes(data)
+
+print("[PASS] Isolated requirements modernized")
+
+PYMODERNREQ
+
+    echo "=== Isolated dependency overrides ==="
+    grep -E '^(pycparser|enum34)==' "$AGENT_REQUIREMENTS"
+fi
+
+# Build patched cryptography before installing the general requirements.
+# Its declared version will already satisfy subsequent dependency resolution.
+if [ "$OPENSSL_MODE" = isolated ]; then
+    echo ">>> Installing isolated cryptography build prerequisites..."
+
+    "${RUNTIME_ROOT}/bin/python" -m pip install \
+        --no-cache-dir \
+        'pycparser==2.21' \
+        'six==1.16.0' \
+        'enum34==1.1.10' \
+        'ipaddress==1.0.23'
+
+    echo ">>> Building patched cryptography with OpenSSL 3.5.9..."
+
+    env PADIT_OPENSSL_MODE=isolated \
+        PADIT_OPENSSL_PREFIX="$OPENSSL_PREFIX" \
+        CPPFLAGS="$OPENSSL_CPPFLAGS" \
+        LDFLAGS="$OPENSSL_LDFLAGS" \
+        LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" \
+        bash "${REPO_ROOT}/tools/build-agent-unix-crypto-bookworm.sh"
+
+    # Snapshot corrected native modules before other dependency installers.
+    CRYPTO_SITE="${RUNTIME_ROOT}/lib/python2.7/site-packages"
+    CRYPTO_HASHES="${BUILD_ROOT}/cryptography-openssl35.sha256"
+
+    sha256sum \
+        "${CRYPTO_SITE}/cryptography/hazmat/bindings/_openssl.so" \
+        "${CRYPTO_SITE}/cryptography/x509/verification.py" \
+        "${CRYPTO_SITE}/_cffi_backend.so" \
+        > "${CRYPTO_HASHES}" ||
+        die "Cannot snapshot corrected cryptography"
+
+    echo "[PASS] Corrected cryptography SHA256 snapshot created"
+    echo "[PASS] Patched cryptography installed before requirements"
+fi
+
 echo ">>> Installing common and Unix agent dependencies..."
 
 "${RUNTIME_ROOT}/bin/python" -m pip install \
     --no-cache-dir \
-    -r "${REPO_ROOT}/requirements-agent.txt" \
+    -r "${AGENT_REQUIREMENTS}" \
     -r "${UNIX_REQUIREMENTS}"
 
 echo "[PASS] Initial agent Unix dependencies installed"
@@ -500,8 +703,14 @@ bash "${REPO_ROOT}/tools/build-agent-unix-werkzeug-bookworm.sh"
 echo ">>> Applying Requests security backports..."
 bash "${REPO_ROOT}/tools/build-agent-unix-requests-bookworm.sh"
 
-echo ">>> Building patched cffi and cryptography..."
-bash "${REPO_ROOT}/tools/build-agent-unix-crypto-bookworm.sh"
+# Historical rebuild is retained only for system OpenSSL mode.
+# Isolated mode has already built and verified patched cryptography.
+if [ "$OPENSSL_MODE" = system ]; then
+    echo ">>> Building patched cffi and cryptography..."
+    bash "${REPO_ROOT}/tools/build-agent-unix-crypto-bookworm.sh"
+else
+    echo "[PASS] Isolated cryptography already built and verified"
+fi
 
 echo ">>> Building patched ujson for Unix agent..."
 bash "${REPO_ROOT}/tools/build-agent-unix-ujson-bookworm.sh"
@@ -776,3 +985,100 @@ echo "92b477b86552e05875a133b8cfad9a0069d69776009b39504c1a960f950b3321  ${RPYC_D
     die "RPyC security regression failed"
 
 echo "[PASS] W22 secured RPyC 4.1.5 installed"
+
+# W29 - Verify corrected cryptography survived all subsequent installs.
+if [ "$OPENSSL_MODE" = isolated ]; then
+    echo "=== W29 / FINAL CRYPTOGRAPHY INTEGRITY ==="
+
+    CRYPTO_HASHES="${BUILD_ROOT}/cryptography-openssl35.sha256"
+
+    [ -f "${CRYPTO_HASHES}" ] ||
+        die "Missing cryptography integrity snapshot"
+
+    sha256sum -c "${CRYPTO_HASHES}" ||
+        die "Cryptography modules changed after secured installation"
+
+    echo "[PASS] Native cryptography, CFFI and PADIT X509 unchanged"
+
+    env -u LD_LIBRARY_PATH -u PYTHONPATH \
+        PADIT_EXPECTED_RUNTIME="${RUNTIME_ROOT}" \
+        PADIT_EXPECTED_OPENSSL="${OPENSSL_PREFIX}" \
+        "${RUNTIME_ROOT}/bin/python" -B - <<'PYFINALCRYPTO'
+from __future__ import print_function
+
+import os
+import ssl
+import cffi
+import pycparser
+import cryptography
+import pkg_resources
+
+from cryptography import x509
+from cryptography.x509 import verification
+from cryptography.hazmat.backends.openssl.backend import backend
+import cryptography.hazmat.bindings._openssl as native
+
+runtime = os.path.realpath(os.environ["PADIT_EXPECTED_RUNTIME"])
+openssl = os.path.realpath(os.environ["PADIT_EXPECTED_OPENSSL"])
+libdir = openssl + "/lib64/"
+
+expected = {
+    "wheel": "0.37.1",
+    "pycparser": "2.21",
+    "enum34": "1.1.10",
+    "cffi": "1.15.1",
+    "cryptography": "3.3.2",
+}
+
+for name, version in sorted(expected.items()):
+    actual = pkg_resources.get_distribution(name).version
+    print("%s==%s" % (name, actual))
+    assert actual == version, (name, actual)
+
+assert ssl.OPENSSL_VERSION.startswith("OpenSSL 3.5.9 ")
+assert backend.openssl_version_text().startswith("OpenSSL 3.5.9 ")
+
+for module in (cryptography, x509, verification, native, cffi):
+    path = os.path.realpath(module.__file__)
+    assert path.startswith(runtime + "/"), path
+
+required = (
+    "CertificateVerificationContext",
+    "CertificateRevocationListVerificationContext",
+    "InvalidCertificate",
+    "InvalidSigningCertificate",
+    "InvalidCertificateRevocationList",
+)
+
+for name in required:
+    assert hasattr(verification, name), name
+
+loaded = set()
+
+with open("/proc/self/maps") as maps:
+    for line in maps:
+        if "libssl.so" in line or "libcrypto.so" in line:
+            path = line.strip().split()[-1]
+            loaded.add(os.path.realpath(path))
+
+print("=== LOADED OPENSSL LIBRARIES ===")
+
+for path in sorted(loaded):
+    print(path)
+    assert path.startswith(libdir), path
+
+assert len(loaded) == 2, loaded
+
+print("[PASS] Corrected cryptography provenance")
+print("[PASS] OpenSSL 3.5.9 exclusive loading")
+print("[PASS] PADIT X509 API available")
+PYFINALCRYPTO
+
+    echo "=== W29 / FINAL PIP CONSISTENCY ==="
+
+    env -u LD_LIBRARY_PATH -u PYTHONPATH \
+        "${RUNTIME_ROOT}/bin/python" -m pip check ||
+        die "Final Python dependency inconsistency"
+
+    echo "[PASS] W29 final cryptography integrity"
+fi
