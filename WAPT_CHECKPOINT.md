@@ -1428,3 +1428,47 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 4. Consolidate build orchestration with Environment / Runtime / Build.
 5. Reuse the validated crypto architecture for Bookworm server.
 6. Investigate remaining cryptography alerts and Windows compatibility.
+
+## W30 - Autonomous Unix agent build and packaging (2026-11-04)
+
+**Status: PASS - build and extracted package validation.**
+
+- Branch: `release/1.8.3`.
+- Environment/Runtime commit: `f9d3c4f1`.
+- Portable packaging commit: `42b3bdc5`.
+- Debian 12 Bookworm amd64.
+- Python 2.7.18 / isolated OpenSSL 3.5.9.
+- Full fresh runtime reconstruction: PASS.
+- Runtime: `/tmp/padit-w30-fresh-build/runtime` (225 MiB).
+- OpenSSL: `/tmp/padit-w30-fresh-build/openssl`.
+- Runtime build log SHA256:
+  `18cf37621aa7e1337d14cad9d77de5b5ba769c2c03e1bf58daffaed4dd579faf`.
+- Environment / Runtime / Build architecture retained.
+- Sources and bootstrap wheels acquired with pinned SHA256.
+- OpenSSL 3.5.9 bundled in the Debian package.
+- ELF RUNPATH relocated using patchelf during staging.
+- Extracted package loads only bundled OpenSSL: PASS.
+- Native Debian dependencies calculated by dpkg-shlibdeps.
+- No system libssl3 dependency or package self-dependency.
+- Bundled certifi CA bundle loads successfully.
+- Systemd service includes SSL_CERT_FILE and REQUESTS_CA_BUNDLE.
+- Pilot package: `tis-waptagent_1.8.3.7494+unixpilot1_amd64.deb`.
+- Package location:
+  `/tmp/padit-w30-autonomous-products-r2/`.
+- Package SHA256:
+  `346f853d47d3cbe02c023a05a88b9ea32364750bbb8e0e99840b64305c7059d7`.
+- Three protected Debian artifacts preserved.
+
+**Not yet validated**
+
+- Installation on a separate clean Debian 12 machine.
+- Agent startup, registration, service operation and real TLS.
+- Compatibility with internal CA and administrator CA overrides.
+- Complete functional runtime dependency coverage.
+
+**Next**
+
+1. Test installation on clean Debian 12.
+2. Verify agent commands, service and TLS trust.
+3. Consolidate Unix build orchestration and documentation.
+4. Apply the same architecture review to Debian server and Windows agent.
