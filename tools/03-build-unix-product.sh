@@ -17,7 +17,7 @@ die() {
     exit 1
 }
 
-for tool in realpath rsync dpkg-deb python3 mktemp; do
+for tool in realpath rsync dpkg-deb python3 mktemp patchelf; do
     command -v "$tool" >/dev/null 2>&1 ||
         die "Missing tool: $tool"
 done
@@ -70,8 +70,24 @@ esac
 STAGING="$(mktemp -d /tmp/padit-unix-product-stage-XXXXXXXX)"
 trap 'rm -rf -- "$STAGING"' EXIT
 
-PKGROOT="$STAGING/package"
+PKGROOT="$STAGING/debian/tis-waptagent"
 PAYLOAD="$PKGROOT/opt/wapt"
+
+mkdir -p "$STAGING/debian"
+
+cat > "$STAGING/debian/control" <<'EOF'
+Source: padit-unix-agent
+Section: admin
+Priority: optional
+Maintainer: PADIT Community <noreply@example.invalid>
+Standards-Version: 4.6.0
+
+Package: tis-waptagent
+Architecture: amd64
+Depends: ${shlibs:Depends}
+Description: PADIT Unix agent
+ Autonomous Python runtime and PADIT application.
+EOF
 
 mkdir -p \
     "$PAYLOAD" \
@@ -82,6 +98,82 @@ mkdir -p \
 echo ">>> Copying validated autonomous runtime"
 
 cp -a -- "$RUNTIME/." "$PAYLOAD/"
+
+
+echo ">>> Embedding portable OpenSSL 3.5.9"
+
+OPENSSL_PREFIX="${PADIT_UNIX_PRODUCT_OPENSSL_PREFIX:?Missing OpenSSL prefix}"
+OPENSSL_PREFIX="$(realpath -e -- "$OPENSSL_PREFIX")"
+
+LIBSRC="$OPENSSL_PREFIX/lib64"
+LIBDST="$PAYLOAD/lib/padit-openssl"
+
+mkdir -p "$LIBDST"
+
+for name in libssl.so.3 libcrypto.so.3; do
+    [ -f "$LIBSRC/$name" ] || die "Missing $name"
+    cp -a "$LIBSRC/$name" "$LIBDST/$name"
+    cmp "$LIBSRC/$name" "$LIBDST/$name" ||
+        die "OpenSSL library copy mismatch"
+done
+
+python3 - "$PAYLOAD" <<'PYELF'
+import os
+import subprocess
+import sys
+
+root = os.path.realpath(sys.argv[1])
+libdir = os.path.join(root, "lib/padit-openssl")
+
+modules = (
+    "lib/python2.7/lib-dynload/_ssl.so",
+    "lib/python2.7/lib-dynload/_hashlib.so",
+    "lib/python2.7/site-packages/cryptography/hazmat/bindings/_openssl.so",
+)
+
+for relative in modules:
+    module = os.path.join(root, relative)
+
+    if not os.path.isfile(module):
+        raise SystemExit("[FAIL] Missing module: " + relative)
+
+    rpath = "$ORIGIN/" + os.path.relpath(
+        libdir, os.path.dirname(module)
+    )
+
+    subprocess.check_call([
+        "patchelf", "--set-rpath", rpath, module
+    ])
+
+    actual = subprocess.check_output(
+        ["patchelf", "--print-rpath", module],
+        text=True
+    ).strip()
+
+    assert actual == rpath, (relative, actual)
+    print("[PASS] Portable ELF:", relative)
+
+# Allow libssl to find its bundled libcrypto.
+subprocess.check_call([
+    "patchelf", "--set-rpath", "$ORIGIN",
+    os.path.join(libdir, "libssl.so.3")
+])
+
+# Remove the unnecessary OpenSSL path from CFFI.
+subprocess.check_call([
+    "patchelf", "--remove-rpath",
+    os.path.join(
+        root, "lib/python2.7/site-packages/_cffi_backend.so"
+    )
+])
+
+print("[PASS] OpenSSL ELF relocation complete")
+PYELF
+
+cat > "$PKGROOT/DEBIAN/shlibs" <<EOF
+libssl 3 $PACKAGE (= $VERSION)
+libcrypto 3 $PACKAGE (= $VERSION)
+EOF
 
 echo ">>> Adding PADIT application sources"
 
@@ -173,6 +265,34 @@ cp -a \
     "$REPO_ROOT/waptservice/scripts/waptservice.service" \
     "$PKGROOT/usr/lib/systemd/system/waptservice.service"
 
+echo ">>> Configuring portable TLS certificate defaults"
+
+CA_REL="lib/python2.7/site-packages/certifi/cacert.pem"
+[ -s "$PAYLOAD/$CA_REL" ] ||
+    die "Missing bundled certifi CA bundle"
+
+python3 - "$PKGROOT/usr/lib/systemd/system/waptservice.service" <<'PYCA'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+
+anchor = b"Environment=VIRTUAL_ENV=/opt/wapt"
+extra = (
+    b"Environment=SSL_CERT_FILE="
+    b"/opt/wapt/lib/python2.7/site-packages/certifi/cacert.pem\n"
+    b"Environment=REQUESTS_CA_BUNDLE="
+    b"/opt/wapt/lib/python2.7/site-packages/certifi/cacert.pem"
+)
+
+if data.count(anchor) != 1:
+    raise SystemExit("[FAIL] Service environment anchor")
+
+path.write_bytes(data.replace(anchor, anchor + b"\n" + extra, 1))
+print("[PASS] TLS CA defaults in staged service")
+PYCA
+
 echo ">>> Writing Debian package metadata"
 
 cat > "$PKGROOT/DEBIAN/control" <<EOF
@@ -223,7 +343,7 @@ chmod 755 \
 
 echo ">>> Validating staged Python and application imports"
 
-env -u PYTHONHOME -u PYTHONPATH \
+env -u PYTHONHOME -u PYTHONPATH -u LD_LIBRARY_PATH \
     PADIT_STAGE_ROOT="$PAYLOAD" \
     "$PAYLOAD/bin/python" -E -s - <<'PY'
 import os
@@ -246,6 +366,75 @@ assert cryptography.__version__ == '3.3.2'
 print("[PASS] Staged autonomous Python and application imports")
 print("[PASS] OpenSSL:", ssl.OPENSSL_VERSION)
 PY
+
+echo ">>> Calculating Debian native dependencies"
+
+# Detect ELF files by their binary signature, not MIME descriptions.
+mapfile -d '' -t ELFS < <(
+    cd "$STAGING"
+
+    python3 - <<'PYELFSCAN'
+import os
+import sys
+
+root = "debian/tis-waptagent/opt/wapt"
+count = 0
+
+for directory, dirs, files in os.walk(root):
+    dirs.sort()
+
+    for name in sorted(files):
+        path = os.path.join(directory, name)
+
+        if os.path.islink(path):
+            continue
+
+        with open(path, "rb") as stream:
+            magic = stream.read(4)
+
+        if magic == b"\x7fELF":
+            sys.stdout.buffer.write(
+                os.fsencode(path) + b"\x00"
+            )
+            count += 1
+
+if count < 5:
+    raise SystemExit("[FAIL] ELF inventory unexpectedly small")
+PYELFSCAN
+)
+
+[ "${#ELFS[@]}" -gt 5 ] ||
+    die "Native ELF inventory unexpectedly empty"
+
+# Use a Bash array to avoid fragile line continuations.
+SHLIB_ARGS=(
+    -O
+    -xtis-waptagent
+    -Sdebian/tis-waptagent
+    -ldebian/tis-waptagent/opt/wapt/lib/padit-openssl
+)
+
+SHLIB_RESULT="$(
+    cd "$STAGING"
+    dpkg-shlibdeps "${SHLIB_ARGS[@]}" "${ELFS[@]}"
+)" || die "Native dependency calculation failed"
+
+case "$SHLIB_RESULT" in
+    shlibs:Depends=*) ;;
+    *) die "Unexpected dpkg-shlibdeps result" ;;
+esac
+
+NATIVE_DEPS="${SHLIB_RESULT#shlibs:Depends=}"
+
+[ -n "$NATIVE_DEPS" ] ||
+    die "Empty native dependency list"
+
+case ", $NATIVE_DEPS," in
+    *tis-waptagent*|*libssl3*) die "Unexpected native dependency" ;;
+esac
+
+printf 'Depends: %s\n' "$NATIVE_DEPS" >> "$PKGROOT/DEBIAN/control"
+echo "[PASS] Native dependencies: $NATIVE_DEPS"
 
 echo ">>> Building Debian archive"
 

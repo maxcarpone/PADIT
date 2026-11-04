@@ -34,7 +34,7 @@ PACKAGES=(
     git curl tar patch
     pkg-config dpkg
     openssl python3
-    perl binutils rsync
+    perl binutils rsync patchelf dpkg-dev file
     coreutils ca-certificates
     libssl-dev
     libffi-dev
@@ -82,7 +82,7 @@ TOOLS=(
     gcc g++ make git curl tar patch
     pkg-config dpkg-deb openssl python3
     sha256sum awk realpath perl
-    readelf rsync
+    readelf rsync patchelf dpkg-shlibdeps file
 )
 
 for tool in "${TOOLS[@]}"; do
