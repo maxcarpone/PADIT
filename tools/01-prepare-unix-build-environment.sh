@@ -39,6 +39,7 @@ PACKAGES=(
     libssl-dev
     libffi-dev
     libldap2-dev
+    libpq-dev
     libsasl2-dev
     libkrb5-dev
     zlib1g-dev
