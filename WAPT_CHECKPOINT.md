@@ -1472,3 +1472,37 @@ Statut : PASS - Windows x86/VC9 et Unix Debian 12 Bookworm.
 2. Verify agent commands, service and TLS trust.
 3. Consolidate Unix build orchestration and documentation.
 4. Apply the same architecture review to Debian server and Windows agent.
+
+## W31 - Clean Debian 12 Unix agent reproduction (2026-11-04)
+
+**Status: PASS - full Git-to-Debian-package reconstruction.**
+
+Build host: `padit`, independent Debian 12 amd64 VM.
+
+- Git source: `release/1.8.3`, commit `ef79946a`.
+- Source retrieved from GitHub without using local waptworm files.
+- Initial recursive clone exposed inaccessible legacy Enterprise submodule.
+- Community build does not require Enterprise submodules.
+- Environment: PASS.
+- Clean-build gap: missing libpq-dev / pg_config.
+- Environment fix committed: `ef79946a`.
+- Runtime R2: PASS.
+- Python 2.7.18, OpenSSL 3.5.9, cryptography 3.3.2.
+- Runtime size: 225 MiB.
+- Runtime log SHA256:
+  `3efcb113b4919a3c1905991e9129d13fce3fc72bf7b050461fc9ab9a7b65d0c5`.
+- Build: PASS.
+- Native Debian dependencies automatically calculated.
+- Package size: approximately 39 MiB.
+- Package SHA256:
+  `82c4ceccd5aac6990e2ed22dc903e75ca6817c6126c5d2b2d7c5d603df9cb096`.
+- Package build log SHA256:
+  `07c7ddb41254529cf060db71d52077602a7d5a2906a231565eae90e29627badc`.
+- Output: `/tmp/padit-w31-products/tis-waptagent_1.8.3.7494+unixpilot1_amd64.deb`.
+
+**Follow-up**
+
+- Exclude relocatable python.o from dpkg-shlibdeps ELF inventory.
+- Validate package installation on a clean Debian 12 test VM.
+- Validate agent CLI, systemd service, TLS trust and registration.
+- Maintain Environment / Runtime / Build orchestration.
