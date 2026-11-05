@@ -41,6 +41,11 @@ from cryptography.x509.oid import (
     ObjectIdentifier, SignatureAlgorithmOID, _SIG_OIDS_TO_HASH
 )
 
+from cryptography.x509.base import AttributeNotFound
+from cryptography.x509.extensions import (
+    SignedCertificateTimestamps, SubjectInformationAccess,
+)
+
 from cryptography.x509.verification import (
     CertificateVerificationContext, InvalidCertificate,
     InvalidSigningCertificate,InvalidCertificateRevocationList,
@@ -191,4 +196,7 @@ __all__ = [
     "PrecertificateSignedCertificateTimestamps",
     "PrecertPoison",
     "OCSPNonce",
+    "AttributeNotFound",
+    "SubjectInformationAccess",
+    "SignedCertificateTimestamps",
 ]
