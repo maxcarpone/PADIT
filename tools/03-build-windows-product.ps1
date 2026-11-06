@@ -10,6 +10,7 @@ param(
     [string]$LazarusPcp = 'C:\padit-build-lazarus-pcp-auto',
     [string]$SignKey,
     [string]$SignKeyPasswordFile,
+    [string]$BuildBranchSuffix,
     [switch]$Force
 )
 
@@ -296,6 +297,14 @@ if ($LASTEXITCODE -ne 0 -or $BuildNumber -notmatch '^\d+$') {
 }
 
 $BuildBranch = "build/windows-1.8.3-$BuildNumber-auto"
+
+if ($BuildBranchSuffix) {
+    if ($BuildBranchSuffix -cnotmatch '^[a-zA-Z0-9-]+$') {
+        throw "Invalid build branch suffix: $BuildBranchSuffix"
+    }
+
+    $BuildBranch = "$BuildBranch-$BuildBranchSuffix"
+}
 
 Write-Host "Source commit : $SourceCommit"
 Write-Host "Build number  : $BuildNumber"
@@ -946,6 +955,39 @@ foreach ($artifact in $LazarusArtifacts) {
 }
 
 Write-Host "[PASS] Fresh Lazarus artifacts installed: 9/9"
+# W32-H58-Q: Verify embedded Lazarus Authenticode signatures.
+# A signed installer must never embed unsigned Lazarus executables.
+$RequiredSignedExecutables = @(
+    $LazarusArtifacts | Where-Object { $_ -like '*.exe' }
+)
+
+if ($RequiredSignedExecutables.Count -ne 7 -or
+    $RequiredSignedExecutables -notcontains 'waptconsole.exe') {
+    throw 'Unexpected mandatory Lazarus executable inventory'
+}
+
+Write-Host ""
+Write-Host "Validating embedded Lazarus Authenticode signatures..."
+
+foreach ($exeName in $RequiredSignedExecutables) {
+    $exePath = Join-Path $Output $exeName
+    Assert-File $exePath
+
+    $signature = Get-AuthenticodeSignature -LiteralPath $exePath
+
+    if ($signature.Status -eq 'Valid') {
+        Write-Host "[PASS] Authenticode: $exeName"
+    }
+    elseif ($SignKey) {
+        throw "Signed product build refused: $exeName has Authenticode status $($signature.Status)"
+    }
+    else {
+        Write-Warning "Unsigned product build: $exeName has Authenticode status $($signature.Status)"
+    }
+}
+
+Write-Host '[PASS] Lazarus Authenticode build guard completed.'
+
 
 # ----------------------------------------------------------------------
 # Generate canonical version-full

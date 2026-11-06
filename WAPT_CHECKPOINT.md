@@ -1506,3 +1506,215 @@ Build host: `padit`, independent Debian 12 amd64 VM.
 - Validate package installation on a clean Debian 12 test VM.
 - Validate agent CLI, systemd service, TLS trust and registration.
 - Maintain Environment / Runtime / Build orchestration.
+
+---
+
+## W32-H56 — Reprise ALPN OpenSSL 3.5.9
+
+Date : 2026-11-06
+Machine de compilation : VM106
+Machine de test : VM107
+Branche : feature/w32-openssl-3.5.9
+Commit de base : 9e7b57879794377957f8ff36f0faab3e837d51d2
+Version produit : 1.8.3.7687
+
+### Acquis W32
+
+- OpenSSL 3.5.9 Windows x86 construit et validé : 4283 tests PASS.
+- CPython 2.7.18 : extensions _ssl.pyd et _hashlib.pyd reconstruites.
+- Runtime cryptography 3.3.2 adapté à OpenSSL 3.5.9.
+- Installateur Windows reconstruit avec les 9 artefacts Lazarus signés.
+- Signature Authenticode Thouet Software Code Signing validée.
+- Installation et démarrage de la console sur VM107 : PASS.
+- Création du certificat personnel depuis la console : PASS.
+- Console fonctionnelle : PASS.
+- VM104 avec ancien agent : Reachable, confirme le fonctionnement du serveur Bookworm.
+
+### Problèmes identifiés sur VM107
+
+- WAPTService sous NSSM : processus waptpython.exe instable.
+- Plantages natifs répétés : exception 0xC0000005.
+- SQLite : OperationalError database is locked dans les journaux.
+- HTTPS requests 2.27.1 / urllib3 1.26.20 : échec lors de load_default_certs().
+- Erreur SSL : unknown error (_ssl.c:2938).
+- HTTPS natif Python 2.7 / OpenSSL 3.5.9 avec SNI : PASS.
+- HTTPS natif complet vers waptworm : HTTP 200, exit code 0.
+- urllib3 avec contexte SSL explicite : HTTP 200, puis crash 0xC0000005.
+
+### Diagnostic ALPN — H51 à H54
+
+Reproducer minimal sur VM107 :
+
+    import ssl
+    context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+    context.verify_mode = ssl.CERT_NONE
+    context.set_alpn_protocols(['http/1.1'])
+    del context
+
+Résultat avant correction : crash 0xC0000005.
+
+Cause identifiée dans CPython 2.7.18 Modules/_ssl.c,
+fonction _set_alpn_protocols() :
+
+- Ligne 2495 : PyBuffer_Release(&protos)
+- Ligne 2501 : second PyBuffer_Release(&protos)
+- Double libération du même Py_buffer.
+- La suppression du second appel reste à valider par recompilation.
+
+### Correctif H55-F — PASS
+
+Fichier Git modifié :
+
+    tools/02-build-windows-runtime.ps1
+
+- Correctif intégré après vérification SHA256 des sources originales.
+- Suppression du second PyBuffer_Release() dans _set_alpn_protocols().
+- Motif regex corrigé pour accepter la ligne vide entre les instructions.
+- Correctif également appliqué aux sources de travail déjà extraites.
+- git diff --check : PASS.
+- Un seul fichier suivi modifié, NON COMMITÉ.
+
+Source de travail corrigée :
+
+    C:\padit-build-kit\runtime\openssl\work\W32-1911a18b74c44fd1910dcb6a9b566cd7\python-source\Python-2.7.18\Modules\_ssl.c
+
+### Reprise obligatoire — W32-H57
+
+Objectif immédiat :
+
+1. Recompiler uniquement _ssl.c et rééditer les liens de _ssl.pyd.
+2. Utiliser MSVC 2022 x86 et les bibliothèques OpenSSL 3.5.9 déjà construites.
+3. Tester le nouveau module dans un environnement isolé sur VM106.
+4. Rejouer le reproducer ALPN H51 : code retour 0 attendu.
+5. Rejouer HTTPS urllib3 et vérifier l'absence de crash natif.
+6. Investiguer séparément load_default_certs() et le magasin Windows.
+7. Après validation, intégrer le correctif au runtime, reconstruire le setup et retester VM107.
+
+Contraintes :
+
+- NE PAS reconstruire OpenSSL 3.5.9 ni relancer ses 4283 tests.
+- NE PAS reconstruire cryptography ou le produit complet à ce stade.
+- NE PAS modifier le runtime W32 gelé avant validation du module.
+- NE PAS perdre la modification Git non commitée du constructeur 02.
+- Préserver les artefacts signés et les résultats déjà validés.
+- Pas de nettoyage automatique des répertoires de VM106.
+
+État final : W32 GUI PASS ; W32 SERVICE FAIL ; ALPN PATCH APPLIQUÉ MAIS NON ENCORE COMPILÉ.
+
+## W32-H57-AO - Cloture SSL / TLS Windows
+
+Date : 2026-11-06
+Branche : feature/w32-openssl-3.5.9
+Commit de base : 9e7b57879
+
+### 1. Contexte
+
+- Python 2.7.18 x86 conserve son runtime VC9 / MSVCR90.
+- OpenSSL 3.5.9 x86 : build MSVC 2022 deja valide.
+- cryptography 3.3.2 : build existant preserve.
+- Extension _ssl.pyd : compilation MSVC 2022 x86.
+- Aucun rebuild complet OpenSSL/cryptography pendant H57.
+
+### 2. Defauts corriges
+
+H55-F :
+- Suppression d'un PyBuffer_Release redondant dans
+  _set_alpn_protocols().
+
+H57-AD2 :
+- Correction de trois appels PyMem_FREE en PyMem_Free.
+- Un appel dans le destructeur NPN.
+- Un appel dans le destructeur ALPN.
+- Un appel dans le remplacement des protocoles ALPN.
+- Objectif : eviter la liberation d'allocations Python
+  par le CRT MSVC 2022.
+
+### 3. Diagnostic natif
+
+- Crash initial : 0xC0000005.
+- WinDbg CDB x86 : HEAP_CORRUPTION.
+- Pile : _ssl.pyd -> ucrtbase!free -> ntdll!RtlFreeHeap.
+- Cause identifiee : incompatibilite des allocateurs
+  pour les buffers NPN/ALPN.
+- Dump de diagnostic conserve dans H57/crash-dumps.
+
+### 4. Validations
+
+- H57-AD3 : correctifs source PASS.
+- H57-AE : compilation _ssl.pyd PASS.
+- H57-AF : 10/10 tests HTTPS PASS, exit code 0.
+- H57-AH : integration constructeur PASS.
+- H57-AI : validation statique constructeur PASS.
+- H57-AK : certificat serveur inspecte.
+- H57-AL : certificat PEM de test exporte.
+- H57-AM4 : HTTPS CERT_REQUIRED, HTTP 200, PASS.
+- H57-AN : mauvais nom DNS correctement rejete, PASS.
+
+SHA256 source _ssl.c corrige :
+934F53355AAF582C3A5E6C8FB2D46A7997D1CED60A1BB2C18655A249C92063F0
+
+### 5. TLS laboratoire
+
+Serveur : waptworm
+Identite TLS : waptdev.genevoix-signoret-vinci.fr.lan
+Certificat autosigne, explicitement approuve pour le test.
+Verification du nom effectuee avec assert_hostname.
+Aucune modification des magasins de certificats Windows.
+Ne pas generaliser cette configuration au produit.
+
+### 6. Etat et reprise
+
+- Correctifs integres dans tools/02-build-windows-runtime.ps1.
+- WAPT_CHECKPOINT.md conserve comme reference.
+- Deux fichiers Git modifies, aucun commit demande.
+- Anciens binaires et artefacts conserves.
+- Validation globale du runtime encore a effectuer.
+- Python 2.7 / VC9 reste une dependance technique.
+- Prochaine action : reprendre la feuille de route W32
+  sans reconstruire OpenSSL ni cryptography.
+
+Statut : W32-H57-AN PASS / H57 cloture sur perimetre teste.
+## W32-H60 — Clôture OpenSSL 3.5.9 Windows x86 / VM107 (2026-11-06)
+
+Statut : PASS — validation fonctionnelle sur VM107.
+
+### Correctifs intégrés
+
+- H55-F : suppression du double PyBuffer_Release dans CPython _ssl.c.
+- H57-AD2 : remplacement des libérations PyMem_FREE incorrectes par PyMem_Free, pour la compatibilité VC9 / UCRT.
+- H60 : PADIT-COMPAT-PY27-OPENSSL35-003, conversion DER vers PEM pour le chargement des certificats Windows dans Lib/ssl.py.
+- Les correctifs sont intégrés dans tools/02-build-windows-runtime.ps1.
+- Contrôle Authenticode des exécutables Lazarus intégré dans tools/03-build-windows-product.ps1.
+
+### Livrable Windows
+
+- Version : 1.8.3.7687.
+- Runtime : C:\padit-runtime-1.8.3-W32-H60
+- Produit : C:\padit-product-1.8.3-W32-H60
+- Installateur : waptsetup\waptsetup.exe
+- Signature Authenticode : Valid.
+- SHA256 : EDAEC40AA0FB900DE2B7495567697DB7281DF9C69102B414E2F03E1BFEF5CCAC
+
+### Validation VM107
+
+- Installation par-dessus la version précédente : PASS.
+- Chargement des certificats Windows CA/ROOT : PASS.
+- urllib3 et requests avec le correctif DER vers PEM : HTTP 200.
+- Console PADIT : PASS.
+- Edition des profils VM104 et VM107 : PASS.
+- Reachable VM107 : PASS.
+- WAPTService sous NSSM : Running.
+- Processus waptpython.exe : présent.
+- W32-H60-L : aucun crash natif récent détecté ; aucune erreur SSL détectée dans les dernières lignes du journal.
+
+### Dette de compatibilité
+
+Les adaptations Python 2.7 / OpenSSL 3.5.9 doivent rester identifiables et réévaluables lors d'une migration Python 3 / modernisation de la chaîne Windows.
+
+Ne pas supprimer ces correctifs sans tests de régression sur la nouvelle chaîne.
+
+### Reprise
+
+- Reprendre l'inventaire et la remédiation des CVE restantes.
+- Ne pas recommencer les validations H55-H60 acquises.
+- Aucun commit créé à cette étape.

@@ -788,6 +788,75 @@ if ($OpenSsl35) {
     Assert-Sha256 $W32HashC `
         'DE4BD1262A96F03D79C2573389D71A62D25869AA84DF22C106D5719698241763'
 
+    # W32-H55: CPython 2.7.18 ALPN double PyBuffer_Release fix.
+    # Apply after upstream SHA256 validation, before compiling _ssl.pyd.
+    $W32AlpnPattern = '(SSL_CTX_set_alpn_select_cb\(self->ctx, _selectALPN_cb, self\);)\r?\n(?:[ \t]*\r?\n)*[ \t]*PyBuffer_Release\(&protos\);'
+    $W32AlpnMatches = [regex]::Matches(
+        [IO.File]::ReadAllText($W32SslC), $W32AlpnPattern
+    )
+
+    if ($W32AlpnMatches.Count -ne 1) {
+        throw "Expected one ALPN double-release site; found $($W32AlpnMatches.Count)"
+    }
+
+    $W32SslText = [IO.File]::ReadAllText($W32SslC)
+    $W32SslText = [regex]::Replace(
+        $W32SslText, $W32AlpnPattern, '$1'
+    )
+    [IO.File]::WriteAllText(
+        $W32SslC, $W32SslText,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+
+    Write-Host '[PASS] CPython ALPN double-release corrected'
+
+    # W32-H57: CPython SSL allocator ownership fix.
+    # PyMem_Malloc belongs to Python VC9; PyMem_FREE maps to the
+    # MSVC 2022 CRT free() and must not release Python allocations.
+    $W32AllocatorExpected = @{
+        'PyMem_FREE(self->npn_protocols);' = 1
+        'PyMem_FREE(self->alpn_protocols);' = 2
+    }
+
+    foreach ($W32Entry in $W32AllocatorExpected.GetEnumerator()) {
+        $W32Count = ([regex]::Matches(
+            $W32SslText,
+            [regex]::Escape($W32Entry.Key)
+        )).Count
+
+        if ($W32Count -ne $W32Entry.Value) {
+            throw "Unexpected SSL allocator count for $($W32Entry.Key): $W32Count"
+        }
+    }
+
+    $W32SslText = $W32SslText.Replace(
+        'PyMem_FREE(self->npn_protocols);',
+        'PyMem_Free(self->npn_protocols);'
+    ).Replace(
+        'PyMem_FREE(self->alpn_protocols);',
+        'PyMem_Free(self->alpn_protocols);'
+    )
+
+    $W32AllocatorOldCount = ([regex]::Matches(
+        $W32SslText,
+        'PyMem_FREE\(self->(npn|alpn)_protocols\);'
+    )).Count
+
+    $W32AllocatorNewCount = ([regex]::Matches(
+        $W32SslText,
+        'PyMem_Free\(self->(npn|alpn)_protocols\);'
+    )).Count
+
+    if ($W32AllocatorOldCount -ne 0 -or $W32AllocatorNewCount -ne 4) {
+        throw "SSL allocator verification failed: old=$W32AllocatorOldCount new=$W32AllocatorNewCount"
+    }
+
+    [IO.File]::WriteAllText(
+        $W32SslC, $W32SslText,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+
+    Write-Host '[PASS] CPython SSL NPN/ALPN allocator ownership corrected'
     $W32PythonInclude = Join-Path $bootstrapRoot 'include'
     $W32PythonLib = Join-Path $bootstrapLibs 'python27.lib'
     $W32SslLib = Join-Path $W32Source 'libssl.lib'
@@ -2295,6 +2364,58 @@ Write-Step "Embedding CPython 2.7 standard library"
 # package layer assembled above.
 & robocopy $bootstrapLib (Join-Path $Output "Lib") /E /R:0 /W:0 /XD (Join-Path $bootstrapLib "site-packages") | Out-Host
 if ($LASTEXITCODE -gt 7) { throw "robocopy Lib failed with code $LASTEXITCODE" }
+
+# PADIT-COMPAT-PY27-OPENSSL35-003 / W32-H60
+# Python 2.7 Windows CA loader passes concatenated DER to cadata.
+# With the PADIT OpenSSL 3.5.9 extension this fails, while PEM works.
+# Preserve Windows trust filtering and the original DER return value.
+# Retirement: re-evaluate when migrating to a modern Python runtime.
+if ($OpenSsl35) {
+    $W32RuntimeSslPy = Join-Path $Output 'Lib\ssl.py'
+    Assert-File $W32RuntimeSslPy
+
+    $W32SslPyText = [IO.File]::ReadAllText($W32RuntimeSslPy)
+
+    $W32SslPyEdits = @(
+        @(
+            '        certs = bytearray()',
+            "        certs = bytearray()`n        pem_certs = []"
+        ),
+        @(
+            '                        certs.extend(cert)',
+            "                        certs.extend(cert)`n                        pem_certs.append(DER_cert_to_PEM_cert(cert))"
+        ),
+        @(
+            '            self.load_verify_locations(cadata=certs)',
+            "            self.load_verify_locations(cadata=''.join(pem_certs))"
+        )
+    )
+
+    foreach ($W32Edit in $W32SslPyEdits) {
+        $W32Old = $W32Edit[0]
+        $W32New = $W32Edit[1]
+
+        $W32Count = ([regex]::Matches(
+            $W32SslPyText,
+            [regex]::Escape($W32Old)
+        )).Count
+
+        if ($W32Count -ne 1) {
+            throw "Unexpected ssl.py patch occurrence count: $W32Count for $W32Old"
+        }
+
+        $W32SslPyText = $W32SslPyText.Replace($W32Old, $W32New)
+    }
+
+    [IO.File]::WriteAllText(
+        $W32RuntimeSslPy,
+        $W32SslPyText,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+
+    Write-Host '[PASS] Python 2.7 Windows CA DER-to-PEM compatibility integrated'
+}
+
 
 Write-Step "Embedding CPython 2.7 native DLL directory"
 & robocopy $bootstrapDlls (Join-Path $Output "DLLs") /E /R:0 /W:0 | Out-Host
