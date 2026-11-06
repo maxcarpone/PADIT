@@ -217,8 +217,23 @@ Assert-File (Join-Path $Runtime 'python27.dll')
 Assert-File (Join-Path $Runtime 'pythoncom27.dll')
 Assert-File (Join-Path $Runtime 'pythoncomloader27.dll')
 Assert-File (Join-Path $Runtime 'pywintypes27.dll')
-Assert-File (Join-Path $Runtime 'libeay32.dll')
-Assert-File (Join-Path $Runtime 'ssleay32.dll')
+$OpenSsl3Runtime = Test-Path -LiteralPath (Join-Path $Runtime 'libcrypto-3.dll') -PathType Leaf
+
+if ($OpenSsl3Runtime) {
+    foreach ($Name in @('libcrypto-3.dll', 'libssl-3.dll', 'openssl.cnf', 'ossl-modules\legacy.dll', 'DLLs\_ssl.pyd', 'DLLs\_hashlib.pyd')) {
+        Assert-File (Join-Path $Runtime $Name)
+    }
+    foreach ($Name in @('libeay32.dll', 'ssleay32.dll')) {
+        if (Test-Path -LiteralPath (Join-Path $Runtime $Name)) {
+            throw "Mixed OpenSSL runtime: $Name"
+        }
+    }
+    Write-Host '[PASS] OpenSSL 3 packaging inputs'
+}
+else {
+    Assert-File (Join-Path $Runtime 'libeay32.dll')
+    Assert-File (Join-Path $Runtime 'ssleay32.dll')
+}
 Assert-File (Join-Path $Runtime 'openssl.exe')
 Assert-Directory (Join-Path $Runtime 'DLLs')
 Assert-Directory (Join-Path $Runtime 'Lib')

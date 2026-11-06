@@ -55,8 +55,16 @@ Source: "{#wapt_base_dir}revision.txt"; DestDir: "{app}";
 Source: "{#wapt_base_dir}templates\*"; DestDir: "{app}\templates"; Flags: createallsubdirs recursesubdirs skipifsourcedoesntexist
 
 ; for openssl get dll in path
-Source: "{#wapt_base_dir}libeay32.dll" ; DestDir: "{app}"; 
-Source: "{#wapt_base_dir}ssleay32.dll" ; DestDir: "{app}";
+; Select OpenSSL generation from the staged product tree.
+#if FileExists(AddBackslash(SourcePath) + "..\libcrypto-3.dll")
+Source: "{#wapt_base_dir}libcrypto-3.dll"; DestDir: "{app}";
+Source: "{#wapt_base_dir}libssl-3.dll"; DestDir: "{app}";
+Source: "{#wapt_base_dir}openssl.cnf"; DestDir: "{app}";
+Source: "{#wapt_base_dir}ossl-modules\*"; DestDir: "{app}\ossl-modules"; Flags: createallsubdirs recursesubdirs
+#else
+Source: "{#wapt_base_dir}libeay32.dll"; DestDir: "{app}";
+Source: "{#wapt_base_dir}ssleay32.dll"; DestDir: "{app}";
+#endif
 Source: "{#wapt_base_dir}openssl.exe" ; DestDir: "{app}";
 
 ; for local waptservice

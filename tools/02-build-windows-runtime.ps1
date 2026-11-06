@@ -41,7 +41,11 @@ param(
     [string]$UjsonPytestPackages = "",
 
     [Parameter()]
-    [string]$BuildPython = "C:\padit-build-python2\Scripts\python.exe"
+    [string]$BuildPython = "C:\padit-build-python2\Scripts\python.exe",
+
+    [switch]$OpenSsl35,
+
+    [switch]$OpenSslFullTests
 )
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
@@ -522,6 +526,10 @@ print('[PASS] 7/7 ACL checks; loaded DLL: %s' % loaded)
 $BuiltWheels = Join-Path $BuildKit "python\built-wheels"
 $PaditBins   = Join-Path $BuildKit "python\padit-binaries"
 $OpenSslZip  = Join-Path $BuildKit "runtime\openssl\openssl-1.0.2u-i386-win32.zip"
+# W32: controlled OpenSSL 3.5.9 source archives.
+$OpenSsl35Source = Join-Path $BuildKit 'runtime\openssl\sources\openssl-3.5.9.tar.gz'
+$Python27Source = Join-Path $BuildKit 'python\sources\Python-2.7.18.tgz'
+$Cryptography33Source = Join-Path $BuildKit 'python\sources\cryptography-3.3.2.tar.gz'
 
 $Python27Dll = Join-Path $PaditBins "python27.dll"
 $PythonCom   = Join-Path $PaditBins "pywin32-228\pythoncom27.dll"
@@ -549,7 +557,14 @@ Assert-Sha256 $PythonCom   "074F23F9710BBCF1447763829C0E3D16AFA5502EFC6F784077CF
 Assert-Sha256 $PythonComL  "CC5BA5439CFA435FC9BD442F6509EBDF83646DF0756093DFF6777775FD2246E6"
 Ensure-ControlledUjsonWheel
 Assert-Sha256 $ActiveDir   "EDFE01A38139D79A2EAC7B6F409B0495A447536CBB004318811D5CAF5842A556"
-Assert-Sha256 $OpenSslZip  "644FEDF6FC567716EF25F4FC805E2AAAC5BB7D32D01349EAEB62802CD20AE81A"
+if (-not $OpenSsl35) {
+    Assert-Sha256 $OpenSslZip "644FEDF6FC567716EF25F4FC805E2AAAC5BB7D32D01349EAEB62802CD20AE81A"
+}
+if ($OpenSslFullTests -and -not $OpenSsl35) {
+    throw 'OpenSslFullTests requires OpenSsl35'
+}
+
+
 
 $bootstrapRoot = Split-Path (Split-Path $BootstrapPython -Parent) -Parent
 # For C:\Python27\python.exe, Split-Path -Parent once is the actual root.
@@ -590,6 +605,434 @@ if ($pyInfo[0].Trim() -ne "2.7.18" -or $pyInfo[1].Trim() -ne "32") {
     throw "Bootstrap Python must be Python 2.7.18 x86. Got: $($pyInfo -join ' / ')"
 }
 
+if ($OpenSsl35) {
+    if ($Force) {
+        throw 'W32 mode forbids -Force'
+    }
+
+    if (Test-Path -LiteralPath $Output) {
+        throw "W32 output already exists: $Output"
+    }
+    Write-Step 'Validating controlled OpenSSL 3.5.9 sources'
+
+    Assert-Sha256 $OpenSsl35Source `
+        '603F5602E2EEF00D77FBD429D34DCD5822BB301757A1BC9CDB24C670F1EB859A'
+
+    Assert-Sha256 $Python27Source `
+        'DA3080E3B488F648A3D7A4560DDEE895284C3380B11D6DE75EDB986526B9A814'
+
+    Assert-Sha256 $Cryptography33Source `
+        '5A60D3780149E13B7A6FF7AD6526B38846354D11A15E21068E57073E29E19BED'
+
+    $Crypto33PatchDir = Join-Path $RepoRoot 'utils\patch-cryptography-3.3.2'
+
+    Assert-Sha256 (Join-Path $Crypto33PatchDir 'openssl3-compat.patch') `
+        '2D2529DAD4C11757524942FF797937C03573F1DCB12F32AEFC2EE8227F1AF626'
+
+    Assert-Sha256 (Join-Path $Crypto33PatchDir 'CVE-2023-49083.patch') `
+        '3CE50D0C316AC82C00824D45777CD5E23F0AAAD329FA4088DF1A097936C0E162'
+
+    Write-Host '[PASS] Controlled OpenSSL 3.5.9 sources'
+
+
+    Write-Step 'Building OpenSSL 3.5.9 Windows x86'
+
+    $W32VcVars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat'
+    $W32Perl = 'C:\Strawberry\perl\bin\perl.exe'
+    $W32Nasm = 'C:\Program Files\NASM\nasm.exe'
+
+    foreach ($Tool in @($W32VcVars, $W32Perl, $W32Nasm)) {
+        Assert-File $Tool
+    }
+
+    $W32Work = Join-Path $BuildKit (
+        'runtime\openssl\work\W32-' + [Guid]::NewGuid().ToString('N')
+    )
+
+    $W32Source = Join-Path $W32Work 'openssl-3.5.9'
+    $W32Install = Join-Path $W32Work 'install'
+
+    New-Item -ItemType Directory -Path $W32Work -Force | Out-Null
+
+    Write-Host "OpenSSL work directory: $W32Work"
+
+    & tar.exe -xzf $OpenSsl35Source -C $W32Work
+
+    if ($LASTEXITCODE -ne 0) {
+        throw 'OpenSSL 3.5.9 extraction failed'
+    }
+
+    Assert-File (Join-Path $W32Source 'Configure')
+
+    $W32Batch = Join-Path $W32Work 'run-step.cmd'
+
+    function Invoke-W32OpenSslStep {
+        param(
+            [string]$Name,
+            [string]$Command
+        )
+
+        $Log = Join-Path $W32Work ($Name + '.log')
+
+        if (Test-Path -LiteralPath $Log) {
+            throw "Existing OpenSSL log: $Log"
+        }
+
+        $Commands = @(
+            '@echo off'
+            "call `"$W32VcVars`" x86 >nul"
+            'if errorlevel 1 exit /b 1'
+            'set "PATH=C:\Strawberry\perl\bin;C:\Program Files\NASM;%PATH%"'
+            "cd /d `"$W32Source`""
+            "$Command > `"$Log`" 2>&1"
+            'exit /b %ERRORLEVEL%'
+        )
+
+        [IO.File]::WriteAllLines(
+            $W32Batch,
+            $Commands,
+            [Text.Encoding]::ASCII
+        )
+
+        Write-Host "Running OpenSSL step: $Name"
+
+        & cmd.exe /d /c "`"$W32Batch`""
+
+        $ExitCode = $LASTEXITCODE
+
+        if (-not (Test-Path -LiteralPath $Log -PathType Leaf)) {
+            throw "OpenSSL $Name log missing"
+        }
+
+        Get-Content -LiteralPath $Log -Tail 12
+
+        if ($ExitCode -ne 0) {
+            throw "OpenSSL $Name failed: exit $ExitCode; log: $Log"
+        }
+
+        Write-Host "[PASS] OpenSSL $Name"
+    }
+
+    Invoke-W32OpenSslStep 'configure' (
+        'perl.exe Configure VC-WIN32 no-makedepend ' +
+        '--prefix="' + $W32Install + '" ' +
+        '--openssldir="' + $W32Install + '\ssl"'
+    )
+
+    foreach ($Name in @('configdata.pm', 'makefile')) {
+        Assert-File (Join-Path $W32Source $Name)
+    }
+
+    Invoke-W32OpenSslStep 'build' 'nmake /nologo'
+
+    foreach ($Relative in @(
+        'libcrypto-3.dll',
+        'libssl-3.dll',
+        'providers\legacy.dll',
+        'apps\openssl.exe'
+    )) {
+        $Artifact = Join-Path $W32Source $Relative
+        Assert-File $Artifact
+
+        $Info = Get-Item -LiteralPath $Artifact
+
+        if ($Info.Length -eq 0) {
+            throw "Empty OpenSSL artifact: $Relative"
+        }
+
+        Write-Host "[PASS] OpenSSL artifact: $Relative"
+        Write-Host "SHA256: $((Get-FileHash $Artifact -Algorithm SHA256).Hash)"
+    }
+
+    if ($OpenSslFullTests) {
+        Invoke-W32OpenSslStep 'tests' 'nmake /nologo test'
+
+        $TestLog = Join-Path $W32Work 'tests.log'
+        $TestText = [IO.File]::ReadAllText($TestLog)
+
+        if ($TestText -notmatch 'All tests successful\.' -or
+            $TestText -notmatch 'Result:\s*PASS') {
+            throw 'OpenSSL native test summary does not indicate PASS'
+        }
+
+        Write-Host '[PASS] OpenSSL complete native test suite'
+    }
+
+    Write-Host '[PASS] OpenSSL 3.5.9 Windows x86 native build'
+
+    # W32: temporary guard until CPython modules and packaging are integrated.
+    # -----------------------------------------------------------------------
+    # W32 / Rebuild CPython 2.7.18 SSL extensions against OpenSSL 3.5.9
+    # -----------------------------------------------------------------------
+
+    Write-Step 'Building CPython 2.7.18 SSL extensions'
+
+    $W32PythonSourceRoot = Join-Path $W32Work 'python-source'
+    $W32PythonSource = Join-Path $W32PythonSourceRoot 'Python-2.7.18'
+    $W32PythonBuild = Join-Path $W32Work 'python-extensions'
+
+    New-Item -ItemType Directory -Path $W32PythonSourceRoot | Out-Null
+    New-Item -ItemType Directory -Path $W32PythonBuild | Out-Null
+
+    & tar.exe -xzf $Python27Source -C $W32PythonSourceRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw 'CPython 2.7.18 source extraction failed'
+    }
+
+    $W32SslC = Join-Path $W32PythonSource 'Modules\_ssl.c'
+    $W32HashC = Join-Path $W32PythonSource 'Modules\_hashopenssl.c'
+
+    Assert-Sha256 $W32SslC `
+        'CB7C7F78309FB2EC95A794282F893D92C1A8D27AC16E348126B6CA790A00D22E'
+
+    Assert-Sha256 $W32HashC `
+        'DE4BD1262A96F03D79C2573389D71A62D25869AA84DF22C106D5719698241763'
+
+    $W32PythonInclude = Join-Path $bootstrapRoot 'include'
+    $W32PythonLib = Join-Path $bootstrapLibs 'python27.lib'
+    $W32SslLib = Join-Path $W32Source 'libssl.lib'
+    $W32CryptoLib = Join-Path $W32Source 'libcrypto.lib'
+    $W32OpenSslInclude = Join-Path $W32Source 'include'
+
+    Assert-Dir $W32PythonInclude
+    Assert-Dir $W32OpenSslInclude
+
+    foreach ($File in @($W32PythonLib, $W32SslLib, $W32CryptoLib)) {
+        Assert-File $File
+    }
+
+    $W32SslObj = Join-Path $W32PythonBuild '_ssl.obj'
+    $W32HashObj = Join-Path $W32PythonBuild '_hashlib.obj'
+    $W32SslPyd = Join-Path $W32PythonBuild '_ssl.pyd'
+    $W32HashPyd = Join-Path $W32PythonBuild '_hashlib.pyd'
+
+    Invoke-W32OpenSslStep 'python-ssl-compile' (
+        'cl.exe /nologo /c /MD /W3 ' +
+        '/I"' + $W32PythonInclude + '" ' +
+        '/I"' + $W32OpenSslInclude + '" ' +
+        '/Fo"' + $W32SslObj + '" ' +
+        '"' + $W32SslC + '"'
+    )
+
+    Assert-File $W32SslObj
+
+    Invoke-W32OpenSslStep 'python-hashlib-compile' (
+        'cl.exe /nologo /c /MD /W3 ' +
+        '/I"' + $W32PythonInclude + '" ' +
+        '/I"' + $W32OpenSslInclude + '" ' +
+        '/Fo"' + $W32HashObj + '" ' +
+        '"' + $W32HashC + '"'
+    )
+
+    Assert-File $W32HashObj
+
+    $W32LinkLibs = (
+        '"' + $W32PythonLib + '" ' +
+        '"' + $W32SslLib + '" ' +
+        '"' + $W32CryptoLib + '" ' +
+        'ws2_32.lib crypt32.lib advapi32.lib user32.lib gdi32.lib'
+    )
+
+    Invoke-W32OpenSslStep 'python-ssl-link' (
+        'link.exe /NOLOGO /DLL /INCREMENTAL:NO ' +
+        '/OUT:"' + $W32SslPyd + '" ' +
+        '/EXPORT:init_ssl ' +
+        '"' + $W32SslObj + '" ' +
+        $W32LinkLibs
+    )
+
+    Invoke-W32OpenSslStep 'python-hashlib-link' (
+        'link.exe /NOLOGO /DLL /INCREMENTAL:NO ' +
+        '/OUT:"' + $W32HashPyd + '" ' +
+        '/EXPORT:init_hashlib ' +
+        '"' + $W32HashObj + '" ' +
+        $W32LinkLibs
+    )
+
+    foreach ($File in @($W32SslPyd, $W32HashPyd)) {
+        Assert-File $File
+        if ((Get-Item -LiteralPath $File).Length -eq 0) {
+            throw "Empty Python SSL extension: $File"
+        }
+
+        Write-Host "[PASS] Rebuilt Python extension: $File"
+        Write-Host "SHA256: $((Get-FileHash $File -Algorithm SHA256).Hash)"
+    }
+
+    Write-Host '[PASS] CPython 2.7.18 SSL extensions built with MSVC 2022 x86'
+
+    # W32: temporary guard until cryptography and runtime staging are integrated.
+    # W32 / Isolated cryptography 3.3.2 build
+    Write-Step 'Building patched cryptography 3.3.2 for Windows x86'
+
+    $W32CryptoRoot = Join-Path $W32Work 'cryptography-build'
+    $W32CryptoSite = Join-Path $W32CryptoRoot 'build-site'
+    $W32CryptoDist = Join-Path $W32CryptoRoot 'dist'
+    $W32CryptoSource = Join-Path $W32CryptoRoot 'cryptography-3.3.2'
+
+    foreach ($Dir in @($W32CryptoRoot, $W32CryptoSite, $W32CryptoDist)) {
+        New-Item -ItemType Directory -Path $Dir | Out-Null
+    }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $W32CryptoWheels = @(
+        'setuptools-44.1.1-py2.py3-none-any.whl',
+        'wheel-0.37.1-py2.py3-none-any.whl',
+        'cffi-1.15.1-cp27-cp27m-win32.whl',
+        'pycparser-2.19-py2.py3-none-any.whl',
+        'six-1.16.0-py2.py3-none-any.whl'
+    )
+
+    foreach ($Name in $W32CryptoWheels) {
+        $Archive = Join-Path $BuiltWheels $Name
+        Assert-File $Archive
+
+        if ($Name -eq 'wheel-0.37.1-py2.py3-none-any.whl') {
+            Assert-Sha256 $Archive `
+                '03517DF9FD3339B0BE83A6AB9AA49A7D4DACC6B82A820D8F1AB5C3FA862A86CC'
+        }
+
+        [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $W32CryptoSite)
+        Write-Host "[PASS] Staged $Name"
+    }
+
+    & tar.exe -xzf $Cryptography33Source -C $W32CryptoRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Cryptography source extraction failed'
+    }
+
+    Assert-File (Join-Path $W32CryptoSource 'setup.py')
+
+    foreach ($Name in @('openssl3-compat.patch', 'CVE-2023-49083.patch')) {
+        $Patch = Join-Path $Crypto33PatchDir $Name
+        Assert-File $Patch
+
+        Push-Location $W32CryptoSource
+        try {
+            & git.exe apply --check $Patch
+            if ($LASTEXITCODE -ne 0) {
+                throw "Cryptography patch check failed: $Name"
+            }
+
+            & git.exe apply $Patch
+            if ($LASTEXITCODE -ne 0) {
+                throw "Cryptography patch application failed: $Name"
+            }
+        }
+        finally {
+            Pop-Location
+        }
+
+        Write-Host "[PASS] Applied $Name"
+    }
+
+    $W32CryptoCheck = Join-Path $W32CryptoRoot 'check-dependencies.py'
+
+    $W32CryptoCheckCode = @(
+        'import os'
+        'import pkg_resources'
+        'site = os.path.normcase(os.path.abspath(os.environ["PADIT_BUILD_SITE"]))'
+        'expected = {"setuptools": "44.1.1", "wheel": "0.37.1", "cffi": "1.15.1", "pycparser": "2.19", "six": "1.16.0"}'
+        'for name, version in sorted(expected.items()):'
+        '    dist = pkg_resources.get_distribution(name)'
+        '    assert dist.version == version, (name, dist.version)'
+        '    assert os.path.normcase(os.path.abspath(dist.location)) == site, (name, dist.location)'
+        '    __import__(name)'
+        '    print("[PASS] %s==%s" % (name, version))'
+    )
+
+    [IO.File]::WriteAllLines(
+        $W32CryptoCheck,
+        $W32CryptoCheckCode,
+        [Text.Encoding]::ASCII
+    )
+
+    $W32CryptoCmd = Join-Path $W32CryptoRoot 'build.cmd'
+    $W32CryptoLog = Join-Path $W32CryptoRoot 'build.log'
+
+    $W32CryptoCommands = @(
+        '@echo off'
+        'setlocal'
+        "call `"$W32VcVars`" x86 >nul"
+        'if errorlevel 1 exit /b 10'
+        "set `"PYTHONPATH=$W32CryptoSite`""
+        "set `"PADIT_BUILD_SITE=$W32CryptoSite`""
+        'set "PYTHONNOUSERSITE=1"'
+        'set "PIP_NO_INDEX=1"'
+        'set "DISTUTILS_USE_SDK=1"'
+        'set "MSSdk=1"'
+        "set `"INCLUDE=$W32Source\include;%INCLUDE%`""
+        "set `"LIB=$W32Source;%LIB%`""
+        "set `"PATH=$W32Source;%PATH%`""
+        "cd /d `"$W32CryptoSource`""
+        "`"$BootstrapPython`" -s `"$W32CryptoCheck`" > `"$W32CryptoLog`" 2>&1"
+        'if errorlevel 1 exit /b 20'
+        "echo === BUILD_EXT === >> `"$W32CryptoLog`""
+        "`"$BootstrapPython`" -s setup.py build_ext --inplace --force >> `"$W32CryptoLog`" 2>&1"
+        'if errorlevel 1 exit /b 30'
+        "echo === BDIST_WHEEL === >> `"$W32CryptoLog`""
+        "`"$BootstrapPython`" -s setup.py bdist_wheel --dist-dir `"$W32CryptoDist`" >> `"$W32CryptoLog`" 2>&1"
+        'if errorlevel 1 exit /b 40'
+        "echo === BUILD SUCCESS === >> `"$W32CryptoLog`""
+        'exit /b 0'
+    )
+
+    [IO.File]::WriteAllLines(
+        $W32CryptoCmd,
+        $W32CryptoCommands,
+        [Text.Encoding]::ASCII
+    )
+
+    & cmd.exe /d /c "`"$W32CryptoCmd`""
+    $W32CryptoExit = $LASTEXITCODE
+
+    if (Test-Path -LiteralPath $W32CryptoLog) {
+        Get-Content -LiteralPath $W32CryptoLog -Tail 20
+    }
+
+    if ($W32CryptoExit -ne 0) {
+        throw "Cryptography W32 build failed: exit $W32CryptoExit; log: $W32CryptoLog"
+    }
+
+    $W32CryptoWheelsBuilt = @(
+        Get-ChildItem -LiteralPath $W32CryptoDist -Filter '*.whl' -File
+    )
+
+    if ($W32CryptoWheelsBuilt.Count -ne 1 -or
+        $W32CryptoWheelsBuilt[0].Name -ne 'cryptography-3.3.2-cp27-cp27m-win32.whl') {
+        throw 'Unexpected cryptography wheel output'
+    }
+
+    $W32CryptoWheel = $W32CryptoWheelsBuilt[0].FullName
+    $W32Zip = [IO.Compression.ZipFile]::OpenRead($W32CryptoWheel)
+
+    try {
+        $W32Entries = @($W32Zip.Entries | ForEach-Object { $_.FullName })
+
+        foreach ($Required in @(
+            'cryptography/hazmat/bindings/_openssl.pyd',
+            'cryptography/hazmat/bindings/_padding.pyd'
+        )) {
+            if ($W32Entries -notcontains $Required) {
+                throw "Cryptography wheel missing: $Required"
+            }
+        }
+    }
+    finally {
+        $W32Zip.Dispose()
+    }
+
+    Write-Host "[PASS] Cryptography wheel: $W32CryptoWheel"
+    Write-Host "SHA256: $((Get-FileHash $W32CryptoWheel -Algorithm SHA256).Hash)"
+
+    # Temporary W32 guard remains in place until staging and runtime tests.
+    Write-Host '[PASS] W32 native components built; proceeding to runtime assembly'
+}
+
+if ($OpenSsl35 -and $Force) {
+    throw 'W32 mode does not permit -Force during integration'
+}
 if (Test-Path -LiteralPath $Output) {
     if (-not $Force) {
         throw "Output already exists: $Output. Use -Force to replace it."
@@ -645,6 +1088,20 @@ Invoke-Checked $RuntimePython (@(
     "--find-links=$BuiltWheels"
 ) + $WindowsPackages)
 
+if ($OpenSsl35) {
+    Write-Step 'Installing rebuilt W32 cryptography 3.3.2'
+
+    Assert-File $W32CryptoWheel
+
+    Invoke-Checked $RuntimePython @(
+        '-m', 'pip', 'install',
+        '--no-cache-dir', '--no-index', '--no-deps',
+        '--force-reinstall',
+        $W32CryptoWheel
+    )
+
+    Write-Host '[PASS] W32 cryptography wheel installed'
+}
 Build-ControlledPyasn1Wheel
 Build-ControlledPywin32Native
 
@@ -1918,7 +2375,61 @@ foreach ($name in $WaptCore) {
 # External WAPT OpenSSL baseline
 # ---------------------------------------------------------------------------
 
-Write-Step "Adding controlled external WAPT OpenSSL baseline"
+if ($OpenSsl35) {
+    Write-Step 'Assembling OpenSSL 3.5.9 Windows x86 runtime'
+
+    $W32RuntimeDlls = Join-Path $Output 'DLLs'
+    $W32ModuleDir = Join-Path $Output 'ossl-modules'
+
+    Assert-Dir $W32RuntimeDlls
+    New-Item -ItemType Directory -Path $W32ModuleDir | Out-Null
+
+    $W32Copies = @(
+        @($W32SslPyd, (Join-Path $W32RuntimeDlls '_ssl.pyd')),
+        @($W32HashPyd, (Join-Path $W32RuntimeDlls '_hashlib.pyd')),
+        @((Join-Path $W32Source 'libcrypto-3.dll'), (Join-Path $Output 'libcrypto-3.dll')),
+        @((Join-Path $W32Source 'libssl-3.dll'), (Join-Path $Output 'libssl-3.dll')),
+        @((Join-Path $W32Source 'libcrypto-3.dll'), (Join-Path $W32RuntimeDlls 'libcrypto-3.dll')),
+        @((Join-Path $W32Source 'libssl-3.dll'), (Join-Path $W32RuntimeDlls 'libssl-3.dll')),
+        @((Join-Path $W32Source 'providers\legacy.dll'), (Join-Path $W32ModuleDir 'legacy.dll')),
+        @((Join-Path $W32Source 'apps\openssl.exe'), (Join-Path $Output 'openssl.exe')),
+        @((Join-Path $W32Source 'apps\openssl.cnf'), (Join-Path $Output 'openssl.cnf'))
+    )
+
+    foreach ($Pair in $W32Copies) {
+        $SourceFile = $Pair[0]
+        $DestinationFile = $Pair[1]
+
+        Assert-File $SourceFile
+
+        if ((Get-Item -LiteralPath $SourceFile).Length -eq 0) {
+            throw "Empty W32 source artifact: $SourceFile"
+        }
+
+        Copy-Item -LiteralPath $SourceFile `
+            -Destination $DestinationFile -Force
+
+        Assert-File $DestinationFile
+
+        $SourceHash = (Get-FileHash $SourceFile -Algorithm SHA256).Hash
+        $TargetHash = (Get-FileHash $DestinationFile -Algorithm SHA256).Hash
+
+        if ($SourceHash -ne $TargetHash) {
+            throw "W32 runtime copy mismatch: $DestinationFile"
+        }
+
+        Write-Host "[PASS] W32 runtime artifact: $DestinationFile"
+    }
+
+    foreach ($OldDll in @('libeay32.dll', 'ssleay32.dll')) {
+        if (Test-Path -LiteralPath (Join-Path $Output $OldDll)) {
+            throw "Unexpected legacy OpenSSL DLL in W32 root: $OldDll"
+        }
+    }
+
+    Write-Host '[PASS] OpenSSL 3.5.9 runtime artifacts assembled'
+}
+else {Write-Step "Adding controlled external WAPT OpenSSL baseline"
 
 $sslTemp = Join-Path ([IO.Path]::GetTempPath()) ("wapt-openssl-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $sslTemp | Out-Null
@@ -1941,6 +2452,9 @@ finally {
     Remove-Item -LiteralPath $sslTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+
+
+}
 
 # ---------------------------------------------------------------------------
 # W22 - RPyC 4.1.5 / CVE-2024-27758.
@@ -2182,6 +2696,181 @@ finally {
 
 Write-Host '[PASS] W28 pyOpenSSL CVE-2026-27448 security backport'
 
+# W32-BH8-F3 autonomous acceptance
+if ($OpenSsl35) {
+    Write-Step 'Validating autonomous OpenSSL 3.5.9 Windows x86 runtime'
+
+    $W32AcceptanceFile = Join-Path $W32Work 'acceptance.py'
+
+    $W32AcceptanceLines = @(
+        'from __future__ import print_function'
+        'import ctypes, datetime, os, socket, ssl, sys, tempfile, threading'
+        'import _ssl, _hashlib'
+        'import cryptography'
+        'from cryptography import x509'
+        'from cryptography.hazmat.bindings import _openssl'
+        'from cryptography.hazmat.backends.openssl.backend import backend'
+        'from cryptography.hazmat.primitives import hashes, serialization'
+        'from cryptography.hazmat.primitives.asymmetric import rsa, padding'
+        'from cryptography.x509.oid import NameOID'
+        'import cryptography.x509.verification'
+        ''
+        'root = os.path.normcase(os.path.abspath(sys.prefix))'
+        'site = os.path.join(root, "Lib", "site-packages")'
+        'assert sys.version.startswith("2.7.18")'
+        'assert sys.maxsize == 2147483647'
+        'for entry in sys.path:'
+        '    assert "w28-pyopenssl" not in entry.lower(), entry'
+        ''
+        'def check_location(module, folder):'
+        '    actual = os.path.normcase(os.path.abspath(module.__file__))'
+        '    expected = os.path.normcase(os.path.abspath(folder))'
+        '    assert actual.startswith(expected + os.sep), (actual, expected)'
+        '    print("[PASS] Module:", actual)'
+        ''
+        'check_location(_ssl, os.path.join(root, "DLLs"))'
+        'check_location(_hashlib, os.path.join(root, "DLLs"))'
+        'check_location(_openssl, os.path.join(site, "cryptography"))'
+        'assert cryptography.__version__ == "3.3.2"'
+        'assert ssl.OPENSSL_VERSION.startswith("OpenSSL 3.5.9 ")'
+        'assert backend.openssl_version_text().startswith("OpenSSL 3.5.9 ")'
+        'print("[PASS] OpenSSL 3.5.9 Python and cryptography backends")'
+        ''
+        'kernel = ctypes.windll.kernel32'
+        'for dll in ("libcrypto-3.dll", "libssl-3.dll"):'
+        '    handle = kernel.GetModuleHandleA(dll)'
+        '    assert handle, dll'
+        '    buffer = ctypes.create_string_buffer(2048)'
+        '    assert kernel.GetModuleFileNameA(handle, buffer, len(buffer))'
+        '    actual = os.path.normcase(os.path.abspath(buffer.value))'
+        '    assert actual.startswith(root + os.sep), (dll, actual)'
+        '    print("[PASS] Runtime DLL:", actual)'
+        ''
+        'key = rsa.generate_private_key(65537, 2048, backend)'
+        'message = b"PADIT-W32-ACCEPTANCE"'
+        'signature = key.sign(message, padding.PKCS1v15(), hashes.SHA256())'
+        'key.public_key().verify(signature, message, padding.PKCS1v15(), hashes.SHA256())'
+        'print("[PASS] RSA SHA256 signature and verification")'
+        ''
+        'name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, u"localhost")])'
+        'now = datetime.datetime.utcnow()'
+        'cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)'
+        '        .public_key(key.public_key()).serial_number(x509.random_serial_number())'
+        '        .not_valid_before(now - datetime.timedelta(days=1))'
+        '        .not_valid_after(now + datetime.timedelta(days=1))'
+        '        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)'
+        '        .sign(key, hashes.SHA256(), backend))'
+        'pem = cert.public_bytes(serialization.Encoding.PEM)'
+        'loaded = x509.load_pem_x509_certificate(pem, backend)'
+        'assert loaded.fingerprint(hashes.SHA256()) == cert.fingerprint(hashes.SHA256())'
+        'print("[PASS] X509 certificate and fingerprint")'
+        ''
+        'folder = tempfile.mkdtemp(prefix="padit-w32-")'
+        'try:'
+        '    certfile = os.path.join(folder, "cert.pem")'
+        '    keyfile = os.path.join(folder, "key.pem")'
+        '    with open(certfile, "wb") as f:'
+        '        f.write(pem)'
+        '    with open(keyfile, "wb") as f:'
+        '        f.write(key.private_bytes(serialization.Encoding.PEM,'
+        '            serialization.PrivateFormat.TraditionalOpenSSL,'
+        '            serialization.NoEncryption()))'
+        '    server = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)'
+        '    server.load_cert_chain(certfile, keyfile)'
+        '    client = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)'
+        '    client.verify_mode = ssl.CERT_REQUIRED'
+        '    client.load_verify_locations(cafile=certfile)'
+        '    listener = socket.socket()'
+        '    listener.settimeout(10)'
+        '    listener.bind(("127.0.0.1", 0))'
+        '    listener.listen(1)'
+        '    port = listener.getsockname()[1]'
+        '    result = {}'
+        '    def serve():'
+        '        try:'
+        '            conn, addr = listener.accept()'
+        '            conn.settimeout(10)'
+        '            tls = server.wrap_socket(conn, server_side=True)'
+        '            try:'
+        '                assert tls.recv(1024) == b"PADIT-CLIENT"'
+        '                tls.sendall(b"PADIT-SERVER")'
+        '                result["server"] = "PASS"'
+        '            finally:'
+        '                tls.close()'
+        '        except Exception as exc:'
+        '            result["server"] = repr(exc)'
+        '        finally:'
+        '            listener.close()'
+        '    thread = threading.Thread(target=serve)'
+        '    thread.daemon = True'
+        '    thread.start()'
+        '    conn = socket.create_connection(("127.0.0.1", port), 10)'
+        '    conn.settimeout(10)'
+        '    try:'
+        '        tls = client.wrap_socket(conn)'
+        '    except:'
+        '        conn.close()'
+        '        raise'
+        '    try:'
+        '        tls.sendall(b"PADIT-CLIENT")'
+        '        assert tls.recv(1024) == b"PADIT-SERVER"'
+        '        assert tls.getpeercert()'
+        '    finally:'
+        '        tls.close()'
+        '    thread.join(10)'
+        '    assert not thread.is_alive()'
+        '    assert result.get("server") == "PASS", result'
+        '    print("[PASS] TLS 1.2 verified loopback")'
+        'finally:'
+        '    for filename in ("cert.pem", "key.pem"):'
+        '        item = os.path.join(folder, filename)'
+        '        if os.path.exists(item):'
+        '            os.remove(item)'
+        '    os.rmdir(folder)'
+        ''
+        'print("=== W32 OPENSSL 3.5.9 AUTONOMOUS ACCEPTANCE PASS ===")'
+    )
+
+    [IO.File]::WriteAllLines(
+        $W32AcceptanceFile,
+        $W32AcceptanceLines,
+        [Text.Encoding]::ASCII
+    )
+
+    $W32OldPath = $env:PATH
+    $W32OldConf = $env:OPENSSL_CONF
+    $W32OldModules = $env:OPENSSL_MODULES
+    $W32OldPythonPath = $env:PYTHONPATH
+
+    try {
+        $env:PATH = "$Output;$Output\DLLs;$W32OldPath"
+        $env:OPENSSL_CONF = Join-Path $Output 'openssl.cnf'
+        $env:OPENSSL_MODULES = Join-Path $Output 'ossl-modules'
+        Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+
+        Invoke-Checked (Join-Path $Output 'waptpython.exe') @(
+            '-E', '-s', $W32AcceptanceFile
+        )
+
+        Invoke-Checked (Join-Path $Output 'openssl.exe') @(
+            'version', '-a'
+        )
+    }
+    finally {
+        $env:PATH = $W32OldPath
+        $env:OPENSSL_CONF = $W32OldConf
+        $env:OPENSSL_MODULES = $W32OldModules
+
+        if ($null -eq $W32OldPythonPath) {
+            Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:PYTHONPATH = $W32OldPythonPath
+        }
+    }
+
+    Write-Host '[PASS] W32 autonomous runtime acceptance'
+}
 Write-Step "SUCCESS"
 Write-Host "Autonomous PADIT 1.8.3 runtime assembled at:"
 Write-Host "  $Output"

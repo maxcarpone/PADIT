@@ -3023,7 +3023,7 @@ function CreateSelfSignedCert(keyfilename,
         codesigning:Boolean
     ):Utf8String;
 var
-  opensslbin,opensslcfg,opensslcfg_fn,destpem,destcrt,destp12 : Utf8String;
+  opensslbin,opensslcfg,opensslcfg_fn,destpem,destcrt,destp12,opensslmodules,previousmodules,previousconf : Utf8String;
   params : ISuperObject;
   returnCode:integer;
 begin
@@ -3061,9 +3061,16 @@ begin
   opensslbin :=  AppendPathDelim(wapt_base_dir)+'openssl.exe';
   opensslcfg :=  pyformat(Utf8String(UTF8Decode(FileToString(AppendPathDelim(wapt_base_dir) + 'templates\openssl_template.cfg'))),params);
   opensslcfg_fn := AppendPathDelim(destdir)+'openssl.cfg';
+  previousconf := SysUtils.GetEnvironmentVariable('OPENSSL_CONF');
+  previousmodules := SysUtils.GetEnvironmentVariable('OPENSSL_MODULES');
+  opensslmodules := AppendPathDelim(wapt_base_dir)+'ossl-modules';
   StringToFile(opensslcfg_fn,opensslcfg);
   try
     SetEnvironmentVariable('OPENSSL_CONF', PChar(opensslcfg_fn));
+
+    // OpenSSL 3: locate bundled providers when available.
+    if FileExists(AppendPathDelim(opensslmodules)+'legacy.dll') then
+      SetEnvironmentVariable('OPENSSL_MODULES', PChar(opensslmodules));
 
     // Create private key  if not already exist
     if not FileExists(destpem) then
@@ -3085,7 +3092,22 @@ begin
         raise Exception.Create('Unable to create p12 file for signtool');
 
   finally
-    SysUtils.DeleteFile(opensslcfg_fn);
+    begin
+      if previousconf = '' then
+        SetEnvironmentVariable('OPENSSL_CONF', nil)
+      else
+        SetEnvironmentVariable('OPENSSL_CONF', PChar(previousconf));
+
+      if FileExists(AppendPathDelim(opensslmodules)+'legacy.dll') then
+      begin
+        if previousmodules = '' then
+          SetEnvironmentVariable('OPENSSL_MODULES', nil)
+        else
+          SetEnvironmentVariable('OPENSSL_MODULES', PChar(previousmodules));
+      end;
+
+      SysUtils.DeleteFile(opensslcfg_fn);
+    end;
   end;
 end;
 
