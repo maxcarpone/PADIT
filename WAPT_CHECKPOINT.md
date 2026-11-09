@@ -1955,3 +1955,46 @@ Base Git : release/1.8.3 / cef21e39
 - Installation et tests fonctionnels : NON EFFECTUES.
 - Agent Unix de nouveau GELE.
 - Conserver les preuves H73 pour la qualification Dependabot.
+
+## W32-H74 — Cloture Dependabot cryptography
+
+Date : 2026-11-09
+Branche : release/1.8.3
+Base : 337863c6
+
+### Resultat GitHub
+
+- 11 alertes cryptography traitees.
+- 0 alerte Dependabot ouverte apres verification via gh api.
+- Dismissed / fix_started :
+  #23, #24, #29, #30, #34, #39, #40, #63, #75, #173.
+- Dismissed / not_used :
+  #68 (CVE-2026-34073).
+
+### Justifications techniques
+
+- OpenSSL 3.5.9 utilise dans les constructions PADIT.
+- Windows VM107 : agent 1.8.3.7694 installe et teste.
+- Unix Bookworm H73 : runtime et paquet Debian valides.
+- CVE-2023-23931 : regression update_into PASS.
+- CVE-2023-50782 : comportement RSA PASS.
+- CVE-2026-26007 : SECT guards PASS.
+- CVE-2023-49083 : PKCS7 DER/PEM PASS Windows et Unix.
+- CVE-2026-34073 : API modernes de verification absentes
+  des runtimes Windows et Unix ; audit sources PASS.
+
+### Reserves
+
+- La cloture Dependabot est administrative et documentee.
+- cryptography==3.3.2 demeure dans les manifests.
+- Les correctifs internes ne sont pas reconnus
+  automatiquement par l'analyse de versions Dependabot.
+- Agent Unix : pas de validation fonctionnelle apres installation.
+- Audit general des chemins de verification TLS non effectue.
+- Agent Unix H73 gele apres validation du packaging.
+
+### Suite PADIT
+
+- Reprendre la modernisation FPC/Lazarus avant release 1.8.3.
+- Conserver OpenSSL 3.5.9 comme reference.
+- Migration Windows x64 et Python 3 ulterieures.
