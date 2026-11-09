@@ -632,6 +632,11 @@ if ($OpenSsl35) {
     Assert-Sha256 (Join-Path $Crypto33PatchDir 'CVE-2023-49083.patch') `
         '3CE50D0C316AC82C00824D45777CD5E23F0AAAD329FA4088DF1A097936C0E162'
 
+    Assert-Sha256 (Join-Path $Crypto33PatchDir 'CVE-2023-23931.patch') `
+        'A9D0DDA2DA3A3419E786E549C63E2C6D89B1E61CB0196AAA27FD9670AAA8DBF6'
+    Assert-Sha256 (Join-Path $Crypto33PatchDir 'CVE-2026-26007-sect-guard.patch') `
+        '7099CBE06506D7B92696F786608D251DEF15BE92C8BE03A40DC72477DF07F079'
+
     Write-Host '[PASS] Controlled OpenSSL 3.5.9 sources'
 
 
@@ -973,7 +978,7 @@ if ($OpenSsl35) {
 
     Assert-File (Join-Path $W32CryptoSource 'setup.py')
 
-    foreach ($Name in @('openssl3-compat.patch', 'CVE-2023-49083.patch')) {
+    foreach ($Name in @('openssl3-compat.patch', 'CVE-2023-49083.patch', 'CVE-2023-23931.patch', 'CVE-2026-26007-sect-guard.patch')) {
         $Patch = Join-Path $Crypto33PatchDir $Name
         Assert-File $Patch
 
