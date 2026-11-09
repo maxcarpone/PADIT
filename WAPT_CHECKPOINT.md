@@ -1861,3 +1861,51 @@ Reference Git : release/1.8.3 / d920e58b
 - Maintenir les 11 alertes Dependabot ouvertes jusqu'a
   justification suffisante pour les agents distribues.
 - Agent Unix : chantier de validation toujours gele.
+
+## W32-H71-V — Validation produit Windows 1.8.3.7694
+
+Date : 2026-11-09
+Reference Git initiale : release/1.8.3 / 45d6f0c5
+
+### Construction VM106
+
+- Runtime H70 avec wheel cryptography H66 corrigee.
+- Constructeur : tools/03-build-windows-product.ps1.
+- Build produit signe : PASS.
+- Version : 1.8.3.7694.
+- Installateur : C:\padit-product-1.8.3-W32-H71\waptsetup\waptsetup.exe
+- SHA256 installateur :
+  B924F4048CF0E3981A2CCEC70D7846E0CD2EB70B9B5ED8030D2A5C9E31DFFD8C
+- Signature Authenticode installateur : Valid.
+- Signature Authenticode waptconsole.exe : Valid.
+- SHA256 waptconsole.exe :
+  31BCBB55361F11722AFC03D4A50EC7481F97A0C193D8570743D3020E6E3A31FB
+- Garde-fou Authenticode H58-Q confirme dans le constructeur.
+
+### Installation VM107
+
+- Mise a niveau 1.8.3.7687 vers 1.8.3.7694 : PASS.
+- SHA256 de l'installateur transfere : PASS.
+- Authenticode sur VM107 : Valid.
+- WAPTService : Running / Automatic.
+- wapt-get.exe : 1.8.3.7694.
+
+### Validation cryptographique VM107
+
+- Python 2.7.18 x86 : PASS.
+- OpenSSL 3.5.9 SSL et backend : PASS.
+- cryptography 3.3.2 et extension native : PASS.
+- Compatibilite X509 PADIT : PASS.
+- CVE-2026-26007 SECT public key / ECDH : PASS.
+- ECDH P-256 : PASS.
+- CVE-2023-23931 buffer immutable / writable : PASS.
+- CVE-2023-50782 RSA implicit rejection : PASS.
+- Code retour des tests : 0.
+
+### Limites
+
+- Tests fonctionnels metier complets non effectues.
+- Agent Unix toujours gele.
+- 11 alertes Dependabot toujours ouvertes :
+  qualification finale selon couverture effective des cibles.
+- H60, H66 et H70 preserves.
