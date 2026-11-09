@@ -1909,3 +1909,49 @@ Reference Git initiale : release/1.8.3 / 45d6f0c5
 - 11 alertes Dependabot toujours ouvertes :
   qualification finale selon couverture effective des cibles.
 - H60, H66 et H70 preserves.
+
+## W32-H73 — Agent Unix Bookworm OpenSSL 3.5.9
+
+Date : 2026-11-09
+Base Git : release/1.8.3 / cef21e39
+
+### Runtime H73
+
+- Runtime : /tmp/padit-h73-agent-runtime
+- Build : /tmp/padit-h73-agent-build
+- OpenSSL reutilise : /tmp/padit-h65-openssl-3.5.9
+- Python 2.7.18 : PASS
+- OpenSSL 3.5.9 exclusif : PASS
+- cryptography 3.3.2 corrigee : PASS
+- Integrite modules natifs : PASS
+- RPyC security : 2/2 PASS
+- Cohérence pip : PASS
+- Build H73-F : exit 0
+
+### Tests cryptographiques H73-G
+
+- CVE-2026-26007 SECT public key / ECDH : PASS
+- ECDH P-256 : PASS
+- CVE-2023-23931 update_into : PASS
+- CVE-2023-50782 RSA implicit rejection : PASS
+- Code retour : 0
+
+### Packaging Debian
+
+- Constructeur : tools/03-build-unix-product.sh
+- Correction : RPATH portable de bin/python2.7
+- Paquet : tis-waptagent_1.8.3.7494+unixpilot1_amd64.deb
+- Repertoire : /tmp/padit-h73-agent-products-r
+- SHA256 :
+  d87c463e84ca6bb27a58892335162c641945e9ea189ce7ef400ab795ddeb7b3f
+- OpenSSL 3.5.9 prive embarque : PASS
+- Relocalisation de quatre ELF : PASS
+- Audit H73-T : exit 0
+- Aucun paquet installe sur le serveur.
+
+### Decision
+
+- Construction et packaging Unix : VALIDES.
+- Installation et tests fonctionnels : NON EFFECTUES.
+- Agent Unix de nouveau GELE.
+- Conserver les preuves H73 pour la qualification Dependabot.
