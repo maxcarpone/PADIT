@@ -1766,3 +1766,55 @@ Date : 2026-11-09
 - Ne pas fermer les alertes sans preuves adaptees a leurs cibles.
 - Aucun rebuild supplementaire du serveur prevu pour ces deux correctifs.
 
+
+## W32-H68-E — Qualification cryptography / OpenSSL
+
+Date : 2026-11-09
+Branche : release/1.8.3
+Commit de reference : 50047dcc
+
+### W32-H67 — Alertes cryptography
+
+- #23 / CVE-2023-23931 : correctif update_into valide sur
+  Bookworm serveur et Windows x86.
+- #39 / CVE-2023-50782 : implicit rejection RSA PKCS#1 v1.5
+  valide fonctionnellement sur Bookworm H67-D et Windows H67-E,
+  avec OpenSSL 3.5.9. Aucun audit temporel exhaustif.
+- #63 / CVE-2026-26007 : protection SECT/ECDH validee
+  sur Bookworm serveur et Windows x86.
+- #68 / CVE-2026-34073 : verification DNS moderne absente.
+  Le module cryptography.x509.verification est une implementation
+  PADIT sans PolicyBuilder ni ServerVerifier.
+  waptcrypto.py utilise egalement pyOpenSSL X509StoreContext.
+  Non-applicabilite probable aux chemins examines ;
+  audit global des validations TLS non effectue.
+- #173 / CVE-2023-49083 : backport existant ;
+  preuves de validation a consolider.
+
+### W32-H68 — Alertes OpenSSL embarque
+
+Alertes : #24, #29, #30, #34, #40, #75.
+
+- Les avis concernent OpenSSL embarque dans les wheels
+  cryptography officielles.
+- PADIT utilise des builds cryptography specifiques,
+  lies a OpenSSL 3.5.9.
+- H68-B : liaisons natives Bookworm verifiees.
+- H68-C : executable et bibliotheques OpenSSL 3.5.9 PASS.
+- Prefixe : /tmp/padit-h65-openssl-3.5.9
+- Bibliotheques : lib64/libssl.so.3 et lib64/libcrypto.so.3.
+- Liaisons Python : _ssl.so, _hashlib.so et _openssl.so PASS.
+- Windows H66 : wheel x86 construite et validee avec
+  OpenSSL 3.5.9 ; SHA256 documente dans H66-Y.
+
+### Limites et decisions
+
+- Les 11 alertes Dependabot restent ouvertes.
+- Elles concernent requirements-agent.txt.
+- Les preuves H65/H66 ne prouvent pas le deploiement
+  de ces versions dans tous les agents distribues.
+- Agent Unix : validation du nouveau runtime non effectuee.
+- Windows : integration de la wheel H66 au produit non validee.
+- Ne pas cloturer les alertes sans couverture suffisante.
+- Aucun rebuild OpenSSL ou cryptography requis pour
+  les controles H67/H68 deja valides.
