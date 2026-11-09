@@ -1818,3 +1818,46 @@ Alertes : #24, #29, #30, #34, #40, #75.
 - Ne pas cloturer les alertes sans couverture suffisante.
 - Aucun rebuild OpenSSL ou cryptography requis pour
   les controles H67/H68 deja valides.
+
+## W32-H70-R — Integration Windows cryptography H66
+
+Date : 2026-11-09
+Reference Git : release/1.8.3 / d920e58b
+
+### H69 — Audit constructeur Windows
+
+- tools/02-build-windows-runtime.ps1 inspecte sur VM106.
+- Les quatre patchs cryptography 3.3.2 sont appliques.
+- La wheel x86 reconstruite est installee avec --force-reinstall.
+- Les controles natifs et OpenSSL 3.5.9 sont integres.
+- Aucun changement du constructeur necessaire pour cette integration.
+- Aucun rebuild OpenSSL realise pendant H69/H70.
+
+### H70 — Validation runtime Windows
+
+- Source : C:\padit-runtime-1.8.3-W32-H60
+- Copie isolee : C:\padit-runtime-1.8.3-W32-H70
+- Wheel H66 installee dans H70 avec verification SHA256.
+- SHA256 : 8E07C0D74EDC7A7A8D84BA01E8B92419B93D22DA1ACB1A32AC3EA6D389E7B8CB
+- H70-M : Python 2.7 / OpenSSL 3.5.9 PASS.
+- H70-N : installation wheel H66 PASS.
+- H70-O : extension native et X509 PADIT PASS.
+- H70-P : SECT, ECDH P-256, update_into et RSA PASS.
+- H70-Q : imports cryptography, X509, waptcrypto, common PASS.
+- Runtime H60 original preserve.
+- Produit complet et installateur signe non revalides avec H70.
+
+### Nettoyage VM106
+
+- 39 anciens environnements de validation/jalons supprimes
+  apres controles et confirmation utilisateur.
+- Espace libre : 8.03 Go au debut, 14.22 Go apres nettoyage.
+- Worktrees Git, sources, constructeurs et references recentes preserves.
+
+### Suite
+
+- Integrer le runtime corrige dans un nouveau build produit Windows.
+- Valider les executables et signatures Authenticode.
+- Maintenir les 11 alertes Dependabot ouvertes jusqu'a
+  justification suffisante pour les agents distribues.
+- Agent Unix : chantier de validation toujours gele.
