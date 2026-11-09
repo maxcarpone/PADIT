@@ -1718,3 +1718,51 @@ Ne pas supprimer ces correctifs sans tests de régression sur la nouvelle chaîn
 - Reprendre l'inventaire et la remédiation des CVE restantes.
 - Ne pas recommencer les validations H55-H60 acquises.
 - Aucun commit créé à cette étape.
+
+## W32-H66-Y — OpenSSL 3.5.9 / cryptography 3.3.2
+
+Date : 2026-11-09
+
+### Debian Bookworm — Serveur
+
+- OpenSSL 3.5.9 LTS construit et valide, installation isolee.
+- Prefixe : /tmp/padit-h65-openssl-3.5.9
+- Runtime : /tmp/padit-h65-server-runtime
+- Python 2.7.18 et cryptography 3.3.2 lies a OpenSSL 3.5.9.
+- Verification native : _ssl.so, _hashlib.so, _openssl.so PASS.
+- Build serveur : code retour 0, tests constructeur PASS.
+- CVE-2023-23931 : PASS.
+- CVE-2026-26007 : garde SECT et ECDH PASS.
+- Runtime historique et OpenSSL systeme Debian preserves.
+
+### Windows x86 — VM106
+
+- MSVC 2022 x86, Python 2.7.18, OpenSSL 3.5.9.
+- Build wheel cryptography 3.3.2 : PASS.
+- Wheel : C:\\padit-h66-cryptography-wheel\\dist\\cryptography-3.3.2-cp27-cp27m-win32.whl
+- SHA256 : 8E07C0D74EDC7A7A8D84BA01E8B92419B93D22DA1ACB1A32AC3EA6D389E7B8CB
+- Installation isolee et extension native : PASS.
+- CVE-2023-23931 : PASS.
+- CVE-2026-26007 : garde SECT et ECDH PASS.
+- ECDH P-256 : PASS.
+- Runtime H60 original et executables signes preserves.
+
+### Git
+
+- Branche : release/1.8.3
+- Commit 509442da : integration des backports cryptography.
+- Commit 295f9545 : constructeur serveur OpenSSL 3.5.9 isole.
+- Les deux commits sont publies sur GitHub.
+
+### Securite — Travaux restants
+
+- 11 alertes Dependabot cryptography encore ouvertes.
+- #23 et #63 : correctifs valides sur Bookworm serveur et Windows x86.
+- #173 : backport existant, validation serveur acquise.
+- #39 et #68 : justification technique a finaliser.
+- #24, #29, #30, #34, #40, #75 : qualification OpenSSL a documenter.
+- Les alertes concernent requirements-agent.txt.
+- Agent Unix et deploiement Windows complet non valides avec ce nouveau lot.
+- Ne pas fermer les alertes sans preuves adaptees a leurs cibles.
+- Aucun rebuild supplementaire du serveur prevu pour ces deux correctifs.
+
