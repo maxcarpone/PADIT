@@ -1998,3 +1998,60 @@ Base : 337863c6
 - Reprendre la modernisation FPC/Lazarus avant release 1.8.3.
 - Conserver OpenSSL 3.5.9 comme reference.
 - Migration Windows x64 et Python 3 ulterieures.
+
+## W33 — Modernisation Lazarus / FPC — Validation de compilation
+
+Date : 2026-11-10
+Branche : feature/w33-lazarus-modernization
+Commit PADIT : 4dc0207dd
+
+### Objectif
+
+Valider PADIT Community avec Lazarus 4.8 / FPC 3.2.2,
+en conservant Lazarus 1.8.2 / FPC 3.0.4 comme référence historique.
+
+### Corrections
+
+- Compatibilité Lazarus des sous-modules Community.
+- BGRacontrols : remplacement de CompareMethods, commit 5eacc700.
+- WaptSelf : remplacement de GetDefaultLang par GetWaptSelfLanguage.
+- Commit PADIT : 4dc0207dd.
+- Compilation WaptSelf avec les deux chaînes : PASS.
+
+### Build A — Historique
+
+- Version : 1.8.3.7701.
+- Lazarus 1.8.2 / FPC 3.0.4.
+- Installateur signé : PASS.
+- Taille : 27094944 octets.
+- SHA256 : BBC99DFF39D53CBF681474CE4A676850395CDE840F420EBE27F4061B1792410C.
+
+### Build B — Actualisé
+
+- Version : 1.8.3.7703.
+- Lazarus 4.8 / FPC 3.2.2.
+- Installateur signé : PASS.
+- Authenticode : PASS.
+- Taille : 28036544 octets.
+- SHA256 : ABA61C8289B2D8CDC67B2CD5E8755153D32B5E89234F058CD1A03C4415FC8B31.
+- Écart A/B : +941600 octets (+3,48 %).
+- Comparaison indicative : révisions Git différentes.
+
+### Ressources WaptSelf
+
+- 14 PNG présents : PASS.
+- 14 références LPI : PASS.
+- 14 ressources RCDATA embarquées : PASS.
+- Compilation forcée N223 : PASS, 0 message PNG.
+- Origine exacte des messages initiaux non définitivement établie.
+
+### Décision
+
+- Compilation Lazarus 4.8 / FPC 3.2.2 : VALIDÉE.
+- Build B 7703 : référence technique conservée.
+- Tests fonctionnels B 7703 sur VM107/VM104 : NON EFFECTUÉS.
+- Release 1.8.3 : NON ENCORE VALIDÉE.
+- OpenSSL 3.5.9 : référence cryptographique.
+- Migration Windows x64 et Python 3 : ultérieure.
+- Modifications Git préexistantes à préserver :
+  submodules/pltis_lazarus-exception-logger et packagefiles.xml.
