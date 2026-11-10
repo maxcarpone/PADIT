@@ -472,6 +472,23 @@ foreach ($submodule in $CommunitySubmodules) {
 
 Write-Host "[PASS] Community submodule gitlinks verified: 16/16"
 
+# A matching gitlink is not sufficient: the index and working tree
+# must also contain the expected checked-out files.
+foreach ($submodule in $CommunitySubmodules) {
+    $submodulePath = Join-Path $Worktree $submodule
+    $changes = @(git -C $submodulePath status --porcelain --untracked-files=normal)
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect submodule status: $submodule"
+    }
+
+    if ($changes.Count -ne 0) {
+        throw "Community submodule is not clean: $submodule"
+    }
+}
+
+Write-Host "[PASS] Community submodule working trees clean: 16/16"
+
 # ----------------------------------------------------------------------
 # Prepare isolated Lazarus primary config path
 # ----------------------------------------------------------------------
@@ -534,13 +551,33 @@ Write-Host "Registering Lazarus packages..."
 
 $LazbuildExe = Join-Path $Lazarus 'lazbuild.exe'
 
+# Select FPC shipped with the requested Lazarus installation.
+$FpcInstallations = @(Get-ChildItem (Join-Path $Lazarus 'fpc') -Directory)
+
+if ($FpcInstallations.Count -ne 1) {
+    throw "Expected exactly one FPC installation under $Lazarus"
+}
+
+$FpcCompiler = Join-Path $FpcInstallations[0].FullName 'bin\i386-win32\fpc.exe'
+
+Assert-File $FpcCompiler
+
+$FpcVersion = (& $FpcCompiler -iV).Trim()
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to determine FPC version"
+}
+
+Write-Host "Selected FPC: $FpcVersion"
+Write-Host "Compiler    : $FpcCompiler"
+
 foreach ($package in $LazarusPackages) {
     $packagePath = Join-Path $Worktree $package
 
     & $LazbuildExe `
         "--primary-config-path=$LazarusPcp" `
         "--lazarusdir=$Lazarus" `
-        "--compiler=ppc386" `
+        "--compiler=$FpcCompiler" `
         '--add-package-link' `
         "$packagePath"
 
@@ -550,6 +587,26 @@ foreach ($package in $LazarusPackages) {
 }
 
 Write-Host "[PASS] Lazarus packages registered: 17/17"
+
+# Verify that lazbuild will reuse the expected FPC version.
+$PcpEnvironment = Join-Path $LazarusPcp 'environmentoptions.xml'
+Assert-File $PcpEnvironment
+
+[xml]$PcpXml = Get-Content -LiteralPath $PcpEnvironment
+$CompilerNode = $PcpXml.SelectSingleNode('//CompilerFilename')
+
+if ($null -eq $CompilerNode) {
+    throw "FPC compiler configuration missing from PCP: $PcpEnvironment"
+}
+
+$ConfiguredCompiler = $CompilerNode.GetAttribute('Value')
+$ExpectedCompilerSegment = "fpc\$FpcVersion\bin\i386-win32"
+
+if (-not $ConfiguredCompiler.Contains($ExpectedCompilerSegment)) {
+    throw "PCP FPC version mismatch. Expected: $FpcVersion; Configured: $ConfiguredCompiler"
+}
+
+Write-Host "[PASS] PCP compiler version: FPC $FpcVersion"
 
 # ----------------------------------------------------------------------
 # Lazarus Community build targets
@@ -612,6 +669,7 @@ if ($SignKey) {
 
 foreach ($project in $LazarusProjects) {
     $projectPath = Join-Path $Worktree $project
+    $ProjectTimer = [Diagnostics.Stopwatch]::StartNew()
 
     & $BuildPython $LazbuildPy `
         '-l' $LazbuildExe `
@@ -620,7 +678,11 @@ foreach ($project in $LazarusProjects) {
         @LazarusSignArgs `
         $projectPath
 
-    if ($LASTEXITCODE -ne 0) {
+    $BuildExitCode = $LASTEXITCODE
+    $ProjectTimer.Stop()
+    Write-Host ("[TIMING] {0} : {1:N2} seconds" -f $project, $ProjectTimer.Elapsed.TotalSeconds)
+
+    if ($BuildExitCode -ne 0) {
         throw "Lazarus build failed: $project"
     }
 }
