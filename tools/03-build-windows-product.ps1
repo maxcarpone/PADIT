@@ -588,7 +588,8 @@ foreach ($package in $LazarusPackages) {
 
 Write-Host "[PASS] Lazarus packages registered: 17/17"
 
-# Verify that lazbuild will reuse the expected FPC version.
+# Pin the selected compiler explicitly: older Lazarus versions may
+# fail to resolve Lazarusdir macros and fall back to FPC from PATH.
 $PcpEnvironment = Join-Path $LazarusPcp 'environmentoptions.xml'
 Assert-File $PcpEnvironment
 
@@ -599,14 +600,17 @@ if ($null -eq $CompilerNode) {
     throw "FPC compiler configuration missing from PCP: $PcpEnvironment"
 }
 
-$ConfiguredCompiler = $CompilerNode.GetAttribute('Value')
-$ExpectedCompilerSegment = "fpc\$FpcVersion\bin\i386-win32"
+$CompilerNode.SetAttribute('Value', $FpcCompiler)
+$PcpXml.Save($PcpEnvironment)
 
-if (-not $ConfiguredCompiler.Contains($ExpectedCompilerSegment)) {
-    throw "PCP FPC version mismatch. Expected: $FpcVersion; Configured: $ConfiguredCompiler"
+[xml]$PcpVerify = Get-Content -LiteralPath $PcpEnvironment
+$ActualCompiler = $PcpVerify.SelectSingleNode('//CompilerFilename').GetAttribute('Value')
+
+if ($ActualCompiler -ine $FpcCompiler) {
+    throw "PCP compiler mismatch: $ActualCompiler"
 }
 
-Write-Host "[PASS] PCP compiler version: FPC $FpcVersion"
+Write-Host "[PASS] PCP compiler pinned: $ActualCompiler"
 
 # ----------------------------------------------------------------------
 # Lazarus Community build targets
