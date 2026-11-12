@@ -2055,3 +2055,106 @@ en conservant Lazarus 1.8.2 / FPC 3.0.4 comme référence historique.
 - Migration Windows x64 et Python 3 : ultérieure.
 - Modifications Git préexistantes à préserver :
   submodules/pltis_lazarus-exception-logger et packagefiles.xml.
+
+## W33-N263/N264 - SOGrid Lazarus 4.8
+
+Date : 2026-11-12
+Branche : feature/w33-lazarus-modernization
+HEAD PADIT : c28936d44
+Commit SOGrid : 64cb5e3
+Version validee : 1.8.3.7705
+
+### Contexte
+
+- Windows x86.
+- Lazarus 4.8 / FPC 3.2.2.
+- VM106 : construction.
+- VM107 : tests Windows 11.
+- Build B 1.8.3.7703 : compilation et installation PASS.
+- Build B : validation fonctionnelle console FAIL.
+- Popup "Division by zero" lors des premieres interactions.
+
+### Investigations W33-N263
+
+- GDB configure sur VM107 avec symboles externes.
+- SIGFPE observes dans laztracer.pas:58.
+- Message : Invisible menu item:  (-).
+- Pile : TSOGrid.FillMenu -> TMenuItem.Handle ->
+  TWin32WSMenuItem.AttachMenu.
+- Breakpoint FPC_HANDLEERROR non atteint lors de la popup.
+- GridHostsChange atteint apres validation de la popup.
+- Analyse statique SOGrid / VirtualTreeView effectuee.
+- ChangeDelay=50 : notification OnChange differee.
+- Reproductions : premier clic host, premier retour Inventory,
+  premiers clics droits sur plusieurs grilles.
+- Les erreurs ne se reproduisaient pas lors des interactions
+  suivantes.
+
+### Cause probable
+
+- TSOGrid.DoEnter appelle FillMenu.
+- FillMenu construit les menus lors du premier focus.
+- AddItem accedait a AMI.Handle immediatement.
+- FMenuFilled est positionne a True dans finally.
+- Ce mecanisme correspond aux exceptions et au comportement
+  non repetitif observes.
+- Causalite fortement soutenue par comparaison Build B/C.
+
+### Correctif W33-N264
+
+Sous-module : submodules/pltis_sogrid
+Commit : 64cb5e3
+
+- Remplacement des champs HMENU par TMenuItem.
+- AddItem retourne TMenuItem au lieu de HMENU.
+- Suppression de l'acces anticipe AMI.Handle.
+- Comparaisons HMUndo/HMRevert adaptees a nil.
+- 12 lignes modifiees.
+- Correctif publie sur le fork pltis_sogrid.
+- Gitlink PADIT actualise : c28936d44.
+
+### Build C
+
+- Version : PADIT Community 1.8.3.7705.
+- Lazarus 4.8 / FPC 3.2.2 x86.
+- Compilation complete : PASS.
+- Signature Authenticode : PASS.
+- Installateur valide : PASS.
+- Taille : 28036408 octets.
+- SHA256 :
+  29FF98BE4DE665CEA55FBC02BB335A85DE84453B02577839ADD2E57DE3C21546.
+
+### Validation VM107
+
+- Installation et lancement : PASS.
+- Premier clic host : PASS.
+- Premier clic droit Inventory : PASS.
+- Premier clic droit Depot prive : PASS.
+- Premier clic droit troisieme onglet : PASS.
+- Retour sur Inventory : PASS.
+- Deuxieme utilisation menus : PASS.
+- Total : 6/6 PASS.
+
+### Verification GDB Build C
+
+- Executable 1.8.3.7705 et symboles correspondants valides.
+- SHA256 executable :
+  4177BD4E303CB6752E14B888C4EBDE8602A4DECC03D0012D4EB377AA218ABFF5.
+- SHA256 symboles :
+  6B73CB938415654B246C16C1C6FAD0448A69A37D7BA81C0C0BF685318393BD1F.
+- Exception Invisible menu item non observee dans le
+  scenario teste.
+- Aucun SIGFPE menu observe pendant ce controle.
+- Avertissement Windows nlansp_c.dll distinct.
+
+### Decision
+
+- Correctif SOGrid : VALIDE fonctionnellement sur VM107.
+- Build C 7705 : nouvelle reference Windows x86 Lazarus 4.8.
+- Validation generale du produit : encore necessaire.
+- Release 1.8.3 : NON ENCORE VALIDEE.
+- OpenSSL 3.5.9 : conserver.
+- Ne pas reconstruire OpenSSL/cryptography.
+- Preserver les modifications preexistantes :
+  pltis_lazarus-exception-logger et packagefiles.xml.
+- Windows x64 et Python 3 : chantiers ulterieurs.
