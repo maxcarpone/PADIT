@@ -120,11 +120,11 @@ done
     die "Runtime destination already exists: $RUNTIME_ROOT"
 
 # PADIT server OpenSSL selection.
-OPENSSL_MODE="${PADIT_OPENSSL_MODE:-system}"
+OPENSSL_MODE="${PADIT_OPENSSL_MODE:-isolated}"
 
 case "$OPENSSL_MODE" in
     system)
-        echo "[INFO] Historical system OpenSSL mode"
+        die "OpenSSL system mode disabled for PADIT RC1"
         ;;
     isolated)
         OPENSSL_PREFIX="${PADIT_OPENSSL_PREFIX:?Missing PADIT_OPENSSL_PREFIX}"
@@ -158,6 +158,7 @@ case "$OPENSSL_MODE" in
             *) die "Unexpected OpenSSL version: $OPENSSL_VERSION" ;;
         esac
 
+        command -v patchelf >/dev/null 2>&1 || die "patchelf required for portable OpenSSL"
         echo "[PASS] Isolated OpenSSL 3.5.9 verified"
         ;;
     *)
@@ -3269,6 +3270,67 @@ INVENTORY="${RUNTIME_ROOT}/WAPT-runtime-inventory.txt"
 echo
 echo ">>> Runtime inventory:"
 cat "${INVENTORY}"
+
+###############################################################################
+# RC1 - Embed private OpenSSL and validate native loading
+###############################################################################
+
+echo
+echo ">>> Finalizing portable OpenSSL 3.5.9 runtime"
+
+[ "$OPENSSL_MODE" = isolated ] ||
+    die "PADIT RC1 requires isolated OpenSSL"
+
+PRIVATE_SSL="${RUNTIME_ROOT}/lib/padit-openssl"
+SSL_MODULE="${RUNTIME_ROOT}/lib/python2.7/lib-dynload/_ssl.so"
+HASH_MODULE="${RUNTIME_ROOT}/lib/python2.7/lib-dynload/_hashlib.so"
+CRYPTO_MODULE="${RUNTIME_ROOT}/lib/python2.7/site-packages/cryptography/hazmat/bindings/_openssl.so"
+
+for module in "$SSL_MODULE" "$HASH_MODULE" "$CRYPTO_MODULE"; do
+    [ -f "$module" ] || die "Missing native module: $module"
+done
+
+[ ! -e "$PRIVATE_SSL" ] ||
+    die "Private OpenSSL destination already exists: $PRIVATE_SSL"
+
+mkdir -p "$PRIVATE_SSL"
+
+cp -a "$OPENSSL_PREFIX/lib64/libssl.so.3" "$PRIVATE_SSL/"
+cp -a "$OPENSSL_PREFIX/lib64/libcrypto.so.3" "$PRIVATE_SSL/"
+
+patchelf --set-rpath '$ORIGIN/../../padit-openssl' "$SSL_MODULE"
+patchelf --set-rpath '$ORIGIN/../../padit-openssl' "$HASH_MODULE"
+patchelf --set-rpath '$ORIGIN/../../../../../padit-openssl' "$CRYPTO_MODULE"
+
+env -u LD_LIBRARY_PATH -u LD_PRELOAD \
+    PADIT_PRIVATE_SSL="$PRIVATE_SSL" \
+    "$PYTHON" - <<'PADIT_SSL_VERIFY'
+import os
+import ssl
+import cryptography
+from cryptography.hazmat.backends.openssl.backend import backend
+
+prefix = os.path.realpath(os.environ["PADIT_PRIVATE_SSL"])
+assert ssl.OPENSSL_VERSION.startswith("OpenSSL 3.5.9")
+assert backend.openssl_version_text().startswith("OpenSSL 3.5.9")
+
+maps = open("/proc/self/maps").read()
+
+for library in ("libssl.so.3", "libcrypto.so.3"):
+    paths = set()
+    for line in maps.splitlines():
+        parts = line.split()
+        if parts and parts[-1].endswith("/" + library):
+            paths.add(os.path.realpath(parts[-1]))
+
+    assert paths == set([os.path.join(prefix, library)]), \
+        "Unexpected %s locations: %r" % (library, paths)
+
+print("PASS : embedded OpenSSL 3.5.9 loaded")
+print("PASS : cryptography %s" % cryptography.__version__)
+PADIT_SSL_VERIFY
+
+echo "[PASS] Portable OpenSSL runtime finalized"
 
 ###############################################################################
 # 40. Final status
