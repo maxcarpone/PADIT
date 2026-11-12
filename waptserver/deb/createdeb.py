@@ -195,6 +195,7 @@ class Version(object):
 parser = argparse.ArgumentParser(u'Build a WaptServer Debian package.')
 parser.add_argument('-l', '--loglevel', help='Change log level (error, warning, info, debug...)')
 parser.add_argument('-r', '--revision',default=dev_revision(), help='revision to append to package version')
+parser.add_argument('--runtime-dir', help='Explicit prebuilt Python runtime directory')
 options = parser.parse_args()
 
 logger = logging.getLogger()
@@ -238,6 +239,71 @@ if options.revision:
     full_version = wapt_version + '-' + options.revision
 else:
     full_version = wapt_version
+
+# PADIT RC1: validate the portable OpenSSL runtime before cleanup.
+if not options.runtime_dir:
+    parser.error("PADIT RC1 requires --runtime-dir")
+
+rc1_runtime = os.path.realpath(options.runtime_dir)
+rc1_python = os.path.join(rc1_runtime, 'bin', 'python')
+rc1_ssl_dir = os.path.join(rc1_runtime, 'lib', 'padit-openssl')
+
+for library in ('libssl.so.3', 'libcrypto.so.3'):
+    if not os.path.isfile(os.path.join(rc1_ssl_dir, library)):
+        parser.error("Missing private OpenSSL library: " + library)
+
+if not os.path.isfile(rc1_python):
+    parser.error("Missing RC1 runtime Python")
+
+if os.path.exists(os.path.join(rc1_runtime, 'conf', 'waptserver.ini')):
+    parser.error("Runtime contains forbidden waptserver.ini")
+
+rc1_modules = (
+    ('lib/python2.7/lib-dynload/_ssl.so',
+     '$ORIGIN/../../padit-openssl'),
+    ('lib/python2.7/lib-dynload/_hashlib.so',
+     '$ORIGIN/../../padit-openssl'),
+    ('lib/python2.7/site-packages/cryptography/hazmat/bindings/_openssl.so',
+     '$ORIGIN/../../../../../padit-openssl'),
+)
+
+for relative_path, expected_rpath in rc1_modules:
+    module = os.path.join(rc1_runtime, relative_path)
+    if not os.path.isfile(module):
+        parser.error("Missing native module: " + relative_path)
+    actual_rpath = subprocess.check_output(
+        ['patchelf', '--print-rpath', module]
+    ).strip()
+    if actual_rpath != expected_rpath:
+        parser.error("Invalid RUNPATH: " + relative_path)
+
+probe = """
+import os
+import ssl
+from cryptography.hazmat.backends.openssl.backend import backend
+
+assert ssl.OPENSSL_VERSION.startswith('OpenSSL 3.5.9')
+assert backend.openssl_version_text().startswith('OpenSSL 3.5.9')
+
+prefix = os.path.realpath(os.environ['PADIT_PRIVATE_SSL'])
+maps = open('/proc/self/maps').read()
+
+for name in ('libssl.so.3', 'libcrypto.so.3'):
+    paths = set()
+    for line in maps.splitlines():
+        parts = line.split()
+        if parts and parts[-1].endswith('/' + name):
+            paths.add(os.path.realpath(parts[-1]))
+    assert paths == set([os.path.join(prefix, name)]), (name, paths)
+"""
+
+probe_env = os.environ.copy()
+probe_env.pop('LD_LIBRARY_PATH', None)
+probe_env.pop('LD_PRELOAD', None)
+probe_env['PADIT_PRIVATE_SSL'] = rc1_ssl_dir
+
+subprocess.check_call([rc1_python, '-c', probe], env=probe_env)
+eprint('[PASS] RC1 private OpenSSL 3.5.9 preflight')
 
 for filename in glob.glob('tis-waptserver*.deb'):
     eprint('Removing %s' % filename)
@@ -283,6 +349,7 @@ if debian_version not in runtime_map:
 runtime_name, runtime_builder = runtime_map[debian_version]
 
 runtime_dir = os.path.abspath(
+    options.runtime_dir if options.runtime_dir else
     os.path.join(wapt_source_dir, 'build', runtime_name)
 )
 
