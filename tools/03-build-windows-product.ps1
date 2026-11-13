@@ -797,6 +797,42 @@ Copy-Item -Path (Join-Path $Runtime '*') `
           -Destination $Output `
           -Recurse -Force
 
+# Synchronize keyfinder with the current product sources.
+# The autonomous runtime may contain an older keyfinder.py/pyc.
+Write-Host "Installing Git-controlled keyfinder..."
+
+$KeyfinderSource = Join-Path $Worktree 'keyfinder.py'
+$KeyfinderTarget = Join-Path $Output 'keyfinder.py'
+$KeyfinderPyc = Join-Path $Output 'keyfinder.pyc'
+
+Assert-File $KeyfinderSource
+
+Copy-Item -LiteralPath $KeyfinderSource `
+    -Destination $KeyfinderTarget -Force
+
+# Never ship the cached bytecode of an older keyfinder.
+if (Test-Path -LiteralPath $KeyfinderPyc) {
+    Remove-Item -LiteralPath $KeyfinderPyc -Force
+}
+
+& $BuildPython -c `
+    'import py_compile,sys; py_compile.compile(sys.argv[1],cfile=sys.argv[2],doraise=True)' `
+    $KeyfinderTarget $KeyfinderPyc
+
+if ($LASTEXITCODE -ne 0) {
+    throw "keyfinder.py bytecode compilation failed."
+}
+
+Assert-File $KeyfinderPyc
+
+$SourceHash = (Get-FileHash -LiteralPath $KeyfinderSource -Algorithm SHA256).Hash
+$TargetHash = (Get-FileHash -LiteralPath $KeyfinderTarget -Algorithm SHA256).Hash
+
+if ($SourceHash -ne $TargetHash) {
+    throw "keyfinder.py source mismatch after product assembly."
+}
+
+Write-Host "[PASS] Git-controlled keyfinder.py and Python 2.7 bytecode installed."
 # Controlled external binaries.
 Write-Host "Installing controlled external binaries..."
 

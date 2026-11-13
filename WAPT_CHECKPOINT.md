@@ -2158,3 +2158,111 @@ Commit : 64cb5e3
 - Preserver les modifications preexistantes :
   pltis_lazarus-exception-logger et packagefiles.xml.
 - Windows x64 et Python 3 : chantiers ulterieurs.
+
+
+## W33-N275 - Cloture RC2 - 2026-11-13
+
+### ETAT GENERAL
+- Projet : PADIT Community 1.8.3
+- Branche : release/1.8.3
+- Release HEAD : d58cb63f2360727257e1d99d8d17d75c3c82b2bd
+- SOGrid : e65c40fef4b78a43722c2b3daf40501021a7b58c
+- Build Windows RC2 : 1.8.3.7717
+- Validation VM107 : 3/3 PASS
+- Prochaine reprise : lundi 2026-11-16
+
+### WINDOWS RC2 - BUILD ET SIGNATURE
+- Constructeur : tools/03-build-windows-product.ps1
+- Source : C:\git\padit-release-183
+- Runtime : C:\padit-runtime-1.8.3
+- Python build : C:\padit-build-python2\Scripts\python.exe
+- Lazarus : C:\lazarus-4.8
+- FPC : 3.2.2 x86
+- Worktree : C:\padit-build-worktree-rc2
+- PCP : C:\padit-build-lazarus-pcp-rc2
+- Produit : C:\padit-product-rc2
+- Setup : C:\padit-product-rc2\waptsetup\waptsetup.exe
+- Version : 1.8.3.7717
+- Taille : 28037752 octets
+- SHA256 : 380E3BDE8210555D9665C915CE31D3CB1A155A2F066E4F38DE42DB311D1ED85C
+- Compilation Inno Setup : PASS
+- Signature Authenticode : PASS
+- Validation finale du constructeur : PASS
+- RC1 1.8.3.7716 conservee.
+
+### CORRECTION SOGRID - PASS
+- Regression observee depuis WAPT 1.8.2.7402.
+- WAPT officiel 1.8.2.7393 affichait les colonnes en francais.
+- Cause probable confirmee par la correction fonctionnelle :
+  propriete Text heritee en String au lieu de TCaption.
+- Restauration de Text: TCaption et des accesseurs GetTitle/SetTitle.
+- SOGrid compile sous Lazarus 4.8 / FPC 3.2.2 : PASS.
+- Commit SOGrid : e65c40f
+- Branche distante : feature/padit-translatable-captions
+- Depot : https://github.com/maxcarpone/pltis_sogrid
+- Commit d'integration Release : d58cb63f
+- Validation visuelle VM107 : PASS.
+- En-tetes francais : Joignable, Machine, Systeme d'exploitation, etc.
+
+### CORRECTION WINDOWS 11 - PASS
+- Correctif keyfinder.py integre par le constructeur.
+- Validation VM107 : Windows 11 Pro 25H2 (26200.9974).
+- La console n'affiche plus Windows 10 Pro pour VM107.
+- Resultat : PASS.
+
+### ACTIONS DISTANTES - PASS
+- Cause initiale des actions grisees : certificat personnel de la console.
+- Certificat restaure, sans modification des controles de securite.
+- Actions distantes reactives : PASS.
+- Compilation d'agent depuis la console : PASS.
+- Validation sur RC2 : PASS.
+
+### ETAT GIT A PRESERVER
+- Release HEAD : d58cb63f.
+- SOGrid e65c40f : commite et publie.
+- tools/03-build-windows-product.ps1 :
+  modification locale de 36 lignes liee a keyfinder.py,
+  encore NON COMMITEE.
+- Ne pas perdre cette modification.
+- Verifier et commiter proprement apres validation.
+- Ne pas supprimer les environnements RC1/RC2 sans decision explicite.
+- Ne pas reconstruire Python/OpenSSL inutilement.
+
+### ESPACE DISQUE VM106
+- Cinq anciens worktrees W33 A/B/C supprimes proprement avec Git.
+- Sauvegardes des differences : C:\padit-w33-worktrees-backup
+- Espace disponible apres nettoyage : 7,96 Go,
+  mesure AVANT la nouvelle compilation RC2.
+- Rationalisation future des builds :
+  Environment / Runtime / Build.
+- Eviter la proliferation des copies de worktrees et produits.
+
+### REPRISE LUNDI 2026-11-16 - PRIORITE INNO SETUP
+- Moderniser Inno Setup vers 7.1.1 x64.
+- Installateur deja telecharge par l'utilisateur.
+- Identifier sa localisation exacte sur VM106.
+- Installer/tester de maniere isolee, conserver l'ancienne version.
+- Verifier compatibilite des fichiers wapt.iss,
+  common.iss et services.iss.
+- Verifier les changements de comportement Inno Setup 7.
+- Preserver les controles des signatures Authenticode.
+- Construire un nouvel installateur de test dans un
+  emplacement controle, sans ecraser RC2.
+- Valider signature, installation, desinstallation et
+  fonctions Community.
+- Traiter ulterieurement les avertissements de traduction
+  allemande et les variables Inno Setup inutilisees.
+
+### POINTS DE VIGILANCE
+- Ne pas modifier les runtimes Python/OpenSSL valides.
+- Ne pas perdre les modifications locales des worktrees actifs.
+- Les anciennes erreurs TLS Socket.IO et de confiance des depots
+  ne sont pas declarees definitivement resolues.
+- Ne pas confondre certificat personnel de console,
+  certificat TLS serveur et certificats de signature des paquets.
+- Poursuivre les validations PASS/FAIL, une etape a la fois.
+
+### PHRASE DE REPRISE
+Reprise PADIT W33-N275, lundi 16 novembre 2026.
+RC2 1.8.3.7717 validee sur VM107 : 3/3 PASS.
+Reprendre le chantier Inno Setup 7.1.1 x64 depuis ce checkpoint.
