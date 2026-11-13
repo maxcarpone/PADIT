@@ -3215,63 +3215,6 @@ echo ">>> Validating PADIT server dependency modernization"
 "${REPO_ROOT}/tools/test-server-dependencies.sh" "${PYTHON}"
 
 ###############################################################################
-# 39. Generate runtime inventory
-###############################################################################
-
-echo
-echo "============================================================"
-echo " Runtime inventory"
-echo "============================================================"
-
-INVENTORY="${RUNTIME_ROOT}/WAPT-runtime-inventory.txt"
-
-{
-    echo "===== PADIT PYTHON 2 RUNTIME ====="
-    echo
-    echo "Build date:"
-    date -u
-    echo
-    echo "Repository:"
-    git -C "${REPO_ROOT}" rev-parse --show-toplevel
-    echo
-    echo "Git commit:"
-    git -C "${REPO_ROOT}" rev-parse HEAD
-    echo
-    echo "Git branch:"
-    git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD
-    echo
-    echo "===== SYSTEM ====="
-    cat /etc/debian_version
-    uname -a
-    echo
-    echo "===== COMPILER ====="
-    gcc --version | head -n 1
-    echo
-    echo "===== PYTHON ====="
-    "${PYTHON}" --version
-    "${PYTHON}" -c "import sys; print sys.prefix"
-    echo
-    echo "===== OPENSSL ====="
-    "${PYTHON}" -c "import ssl; print ssl.OPENSSL_VERSION"
-    echo
-    echo "===== PIP ====="
-    "${PIP}" --version
-    echo
-    echo "===== PACKAGES ====="
-    "${PIP}" freeze
-    echo
-    echo "===== SIZE ====="
-    du -sh "${RUNTIME_ROOT}"
-    echo
-    echo "===== PYTHON BINARY SHA256 ====="
-    sha256sum "${PYTHON}"
-} > "${INVENTORY}"
-
-echo
-echo ">>> Runtime inventory:"
-cat "${INVENTORY}"
-
-###############################################################################
 # RC1 - Embed private OpenSSL and validate native loading
 ###############################################################################
 
@@ -3331,6 +3274,63 @@ print("PASS : cryptography %s" % cryptography.__version__)
 PADIT_SSL_VERIFY
 
 echo "[PASS] Portable OpenSSL runtime finalized"
+
+###############################################################################
+# 39. Generate runtime inventory
+###############################################################################
+
+echo
+echo "============================================================"
+echo " Runtime inventory"
+echo "============================================================"
+
+INVENTORY="${RUNTIME_ROOT}/WAPT-runtime-inventory.txt"
+
+{
+    echo "===== PADIT PYTHON 2 RUNTIME ====="
+    echo
+    echo "Build date:"
+    date -u
+    echo
+    echo "Repository:"
+    git -C "${REPO_ROOT}" rev-parse --show-toplevel
+    echo
+    echo "Git commit:"
+    git -C "${REPO_ROOT}" rev-parse HEAD
+    echo
+    echo "Git branch:"
+    git -C "${REPO_ROOT}" rev-parse --abbrev-ref HEAD
+    echo
+    echo "===== SYSTEM ====="
+    cat /etc/debian_version
+    uname -a
+    echo
+    echo "===== COMPILER ====="
+    gcc --version | head -n 1
+    echo
+    echo "===== PYTHON ====="
+    "${PYTHON}" --version
+    "${PYTHON}" -c "import sys; print sys.prefix"
+    echo
+    echo "===== OPENSSL ====="
+    "${PYTHON}" -c "import ssl; print ssl.OPENSSL_VERSION"
+    echo
+    echo "===== PIP ====="
+    "${PIP}" --version
+    echo
+    echo "===== PACKAGES ====="
+    "${PIP}" freeze
+    echo
+    echo "===== SIZE ====="
+    du -sh "${RUNTIME_ROOT}"
+    echo
+    echo "===== PYTHON BINARY SHA256 ====="
+    sha256sum "${PYTHON}"
+} > "${INVENTORY}"
+
+echo
+echo ">>> Runtime inventory:"
+cat "${INVENTORY}"
 
 ###############################################################################
 # 40. Final status
