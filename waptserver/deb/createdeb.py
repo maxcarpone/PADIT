@@ -498,7 +498,7 @@ eprint('Time before dpkg-build : %f\n' % (time.time()-start_time))
 if WAPTEDITION=='enterprise':
     package_filename = 'tis-waptserver-enterprise-%s.deb' % full_version
 else:
-    package_filename = 'tis-waptserver-%s.deb' % full_version
+    package_filename = 'padit-waptserver-%s.deb' % full_version
 eprint(subprocess.check_output(['dpkg-deb','--build','builddir',package_filename]))
 shutil.rmtree("builddir")
 eprint('Time after dpkg-build : %f\n' % (time.time()-start_time))
