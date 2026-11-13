@@ -564,6 +564,19 @@ Assert-File $FpcCompiler
 
 $FpcVersion = (& $FpcCompiler -iV).Trim()
 
+if ($FpcVersion -ne '3.2.2') {
+    throw "Unsupported FPC version: $FpcVersion. Required: 3.2.2 x86."
+}
+
+$LazarusVersionOutput = & $LazbuildExe --version 2>&1
+$LazarusVersionText = ($LazarusVersionOutput | Out-String).Trim()
+
+if ($LASTEXITCODE -ne 0 -or $LazarusVersionText -notmatch '\b4\.8(?:\.\d+)?\b') {
+    throw "Unsupported Lazarus version: $LazarusVersionText. Required: Lazarus 4.8."
+}
+
+Write-Host "[PASS] Lazarus 4.8 / FPC 3.2.2 x86 validated."
+
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to determine FPC version"
 }

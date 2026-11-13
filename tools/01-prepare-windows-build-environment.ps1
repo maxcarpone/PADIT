@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$BuildKit = 'C:\padit-build-kit',
     [string]$PythonRoot = 'C:\Python27',
@@ -65,12 +65,12 @@ $BuildGitPythonWheel = Join-Path $BuiltWheels 'GitPython-2.1.15-py2.py3-none-any
 $BuildGitdb2Wheel = Join-Path $BuiltWheels 'gitdb2-2.0.6-py2.py3-none-any.whl'
 $BuildSmmap2Wheel = Join-Path $BuiltWheels 'smmap2-3.0.1-py2-none-any.whl'
 $BuildSmmapWheel = Join-Path $BuiltWheels 'smmap-3.0.5-py2.py3-none-any.whl'
-$LazarusInstaller = Join-Path $BuildKit 'lazarus\lazarus-1.8.2-fpc-3.0.4-win32.exe'
+$LazarusInstaller = Join-Path $BuildKit 'lazarus\lazarus-4.8-fpc-3.2.2-win32.exe'
 
 $PythonExe = Join-Path $PythonRoot 'python.exe'
 $BuildPythonExe = Join-Path $BuildPythonRoot 'Scripts\python.exe'
 $LazbuildExe = Join-Path $LazarusRoot 'lazbuild.exe'
-$FpcExe = Join-Path $LazarusRoot 'fpc\3.0.4\bin\i386-win32\fpc.exe'
+$FpcExe = Join-Path $LazarusRoot 'fpc\3.2.2\bin\i386-win32\fpc.exe'
 
 Write-Step 'Validating controlled bootstrap inputs'
 
@@ -96,7 +96,7 @@ Assert-FileHash $BuildSmmapWheel `
     '7BFCF367828031DC893530A29CB35EB8C8F2D7C8F2D0989354D75D24C8573714'
 
 Assert-FileHash $LazarusInstaller `
-    'B91517C673453F5AA355FFB3952E040433A8CDBBC5239BE72C869B60131B4166'
+    '81DA36A9AEAFEE55EAE29AAA636CCDB009F2BCEEE3215A87EC99F6F3F81B709E'
 
 Write-Step 'Checking Git 2.55.0.windows.5'
 
@@ -293,7 +293,7 @@ if ($VcBanner -notmatch '32-bit C/C\+\+ Optimizing Compiler Version 15\.00\.3072
 
 Write-Host '[PASS] Microsoft VC9 15.00.30729.01 x86'
 
-Write-Step 'Checking Lazarus 1.8.2 / FPC 3.0.4'
+Write-Step 'Checking Lazarus 4.8 / FPC 3.2.2'
 
 $LazarusOk = $false
 
@@ -303,14 +303,14 @@ if ((Test-Path -LiteralPath $LazbuildExe -PathType Leaf) -and
     $LazarusVersion = (& $LazbuildExe --version).Trim()
     $FpcVersion = (& $FpcExe -iV).Trim()
 
-    if (($LazarusVersion -eq '1.8.2') -and
-        ($FpcVersion -eq '3.0.4')) {
+    if (($LazarusVersion -eq '4.8') -and
+        ($FpcVersion -eq '3.2.2')) {
         $LazarusOk = $true
     }
 }
 
 if (-not $LazarusOk) {
-    Write-Host 'Installing controlled Lazarus 1.8.2 / FPC 3.0.4...'
+    Write-Host 'Installing controlled Lazarus 4.8 / FPC 3.2.2...'
 
     Invoke-CheckedProcess `
         $LazarusInstaller `
@@ -324,16 +324,16 @@ if (-not $LazarusOk) {
 $LazarusVersion = (& $LazbuildExe --version).Trim()
 $FpcVersion = (& $FpcExe -iV).Trim()
 
-if ($LazarusVersion -ne '1.8.2') {
+if ($LazarusVersion -ne '4.8') {
     throw "Unexpected Lazarus version: $LazarusVersion"
 }
 
-if ($FpcVersion -ne '3.0.4') {
+if ($FpcVersion -ne '3.2.2') {
     throw "Unexpected FPC version: $FpcVersion"
 }
 
-Write-Host '[PASS] Lazarus 1.8.2'
-Write-Host '[PASS] FPC 3.0.4'
+Write-Host '[PASS] Lazarus 4.8'
+Write-Host '[PASS] FPC 3.2.2'
 
 Write-Step 'Windows build environment ready'
 
@@ -344,8 +344,8 @@ Write-Host 'Git:             2.55.0.windows.5'
 Write-Host 'Python:          2.7.18 x86'
 Write-Host 'virtualenv:      15.1.0'
 Write-Host "Build Python:     $BuildPythonRoot"
-Write-Host 'Lazarus:         1.8.2'
-Write-Host 'FPC:             3.0.4'
+Write-Host 'Lazarus:         4.8'
+Write-Host 'FPC:             3.2.2'
 Write-Host 'VCForPython27:   9.0 (VC9 x86, 15.00.30729.01)'
 Write-Host 'Global Inno:     not required'
 
