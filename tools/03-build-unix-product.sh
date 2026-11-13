@@ -170,6 +170,19 @@ subprocess.check_call([
 print("[PASS] OpenSSL ELF relocation complete")
 PYELF
 
+# Relocate the Python interpreter itself, not only its extensions.
+# Never retain the build-time OpenSSL prefix in the Debian package.
+PYTHON_ELF="$PAYLOAD/bin/python2.7"
+[ -f "$PYTHON_ELF" ] || die "Missing Python ELF executable"
+
+patchelf --set-rpath '$ORIGIN/../lib/padit-openssl' "$PYTHON_ELF"
+
+PYTHON_RPATH="$(patchelf --print-rpath "$PYTHON_ELF")"
+[ "$PYTHON_RPATH" = '$ORIGIN/../lib/padit-openssl' ] ||
+    die "Unexpected Python ELF RPATH: $PYTHON_RPATH"
+
+echo "[PASS] Portable Python interpreter RPATH"
+
 cat > "$PKGROOT/DEBIAN/shlibs" <<EOF
 libssl 3 $PACKAGE (= $VERSION)
 libcrypto 3 $PACKAGE (= $VERSION)

@@ -155,9 +155,45 @@ def isValidWinProdID(sProdID):
 
 
 def WinVersion():
-    windows = registry_readstring(HKEY_LOCAL_MACHINE,r'SOFTWARE\Microsoft\Windows NT\CurrentVersion','ProductName','')
+    """Return the Windows product name and client display version."""
+    regpath = r'SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    windows = registry_readstring(HKEY_LOCAL_MACHINE, regpath, 'ProductName', '')
     if windows:
+        installation_type = registry_readstring(
+            HKEY_LOCAL_MACHINE, regpath, 'InstallationType', '')
+        if installation_type == 'Client':
+            build = registry_readstring(
+                HKEY_LOCAL_MACHINE, regpath, 'CurrentBuild', '')
+            try:
+                build_number = int(build)
+            except (TypeError, ValueError):
+                build_number = 0
+
+            if build_number >= 22000 and 'Windows 10' in windows:
+                windows = windows.replace('Windows 10', 'Windows 11', 1)
+
+            if 'Windows 10' in windows or 'Windows 11' in windows:
+                display_version = registry_readstring(
+                    HKEY_LOCAL_MACHINE, regpath, 'DisplayVersion', '')
+                if display_version:
+                    windows = windows + ' ' + display_version
+
+        build = registry_readstring(
+            HKEY_LOCAL_MACHINE, regpath, 'CurrentBuild', '')
+        ubr = registry_readstring(
+            HKEY_LOCAL_MACHINE, regpath, 'UBR', None)
+
+        if build:
+            build_text = str(build)
+            try:
+                if ubr is not None and str(ubr) != '':
+                    build_text += '.' + str(int(ubr))
+            except (TypeError, ValueError):
+                pass
+            windows += ' (' + build_text + ')'
+
         return windows
+
     if IsWinNT4():
         return 'Microsoft Windows NT'
 #b24chrs = (string.digits + string.ascii_uppercase)[:24]

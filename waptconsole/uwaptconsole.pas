@@ -1,4 +1,4 @@
-unit uwaptconsole;
+﻿unit uwaptconsole;
 
 {$mode objfpc}{$H+}
 {$modeswitch ADVANCEDRECORDS}
@@ -3185,7 +3185,9 @@ begin
       cbEnableWAPTWUAFeatures.Checked :=
         inifile.ReadBool('global', 'waptwua_enabled', EnableWaptWUAFeatures);
       {$else}
-      cbEnableWAPTWUAFeatures.Visible :=False;
+      cbEnableWAPTWUAFeatures.Visible := True;
+       cbEnableWAPTWUAFeatures.Checked := False;
+       cbEnableWAPTWUAFeatures.Enabled := False;
       {$endif}
 
       cbDebugWindow.Checked:= inifile.ReadBool('global','advanced_mode',AdvancedMode);
@@ -6119,10 +6121,9 @@ begin
   ActTriggerHostsShutdown.Visible := False;
 
   SetSOGridVisible(GridHosts,'audit_status',False);
-  SetSOGridVisible(GridHosts,'waptwua.status',False);
+  SetSOGridVisible(GridHosts,'waptwua_status.status',False);
 
   SetSOGridEnabled(GridHosts,'audit_status',False);
-  SetSOGridEnabled(GridHosts,'waptwua.status',False);
 
   SetSOGridVisible(GridHostsForPackage,'last_audit_status',False);
   SetSOGridVisible(GridHostsForPackage,'last_audit_status',False);

@@ -17,11 +17,11 @@ set -e
 
 PYTHON_VERSION="2.7.18"
 
-BUILD_ROOT="/tmp/wapt-python2-build"
+BUILD_ROOT="${PADIT_SERVER_BUILD_ROOT:-/tmp/wapt-python2-build}"
 PYTHON_SRC="${BUILD_ROOT}/Python-${PYTHON_VERSION}"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RUNTIME_ROOT="${REPO_ROOT}/build/python2-runtime-server-bookworm"
+RUNTIME_ROOT="${PADIT_SERVER_RUNTIME_ROOT:-${REPO_ROOT}/build/python2-runtime-server-bookworm}"
 
 PIP_VERSION="20.3.4"
 SETUPTOOLS_VERSION="44.1.1"
@@ -86,6 +86,141 @@ echo ">>> Build output:"
 echo "    ${RUNTIME_ROOT}"
 
 ###############################################################################
+# Protect the existing server runtime before any build operation.
+case "$RUNTIME_ROOT" in
+    /*) ;;
+    *) die "Absolute runtime path required: $RUNTIME_ROOT" ;;
+esac
+
+case "$BUILD_ROOT" in
+    /*) ;;
+    *) die "Absolute build path required: $BUILD_ROOT" ;;
+esac
+
+PROTECTED_RUNTIME="${REPO_ROOT}/build/python2-runtime-server-bookworm"
+
+for candidate in "$RUNTIME_ROOT" "$BUILD_ROOT"; do
+    candidate="$(realpath -m -- "$candidate")"
+    protected="$(realpath -m -- "$PROTECTED_RUNTIME")"
+
+    case "$candidate/" in
+        "$protected/"*|"$REPO_ROOT/"|"/")
+            die "Protected destination: $candidate" ;;
+    esac
+    case "$protected/" in
+        "$candidate/"*)
+            die "Destination contains protected runtime: $candidate" ;;
+    esac
+done
+
+[ "$(realpath -m -- "$RUNTIME_ROOT")" != "$(realpath -m -- "$BUILD_ROOT")" ] ||
+    die "Runtime and build paths must differ"
+
+[ ! -e "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] ||
+    die "Runtime destination already exists: $RUNTIME_ROOT"
+
+# PADIT server OpenSSL selection.
+OPENSSL_MODE="${PADIT_OPENSSL_MODE:-isolated}"
+
+case "$OPENSSL_MODE" in
+    system)
+        die "OpenSSL system mode disabled for PADIT RC1"
+        ;;
+    isolated)
+        OPENSSL_PREFIX="${PADIT_OPENSSL_PREFIX:?Missing PADIT_OPENSSL_PREFIX}"
+
+        case "$OPENSSL_PREFIX" in
+            /*) ;;
+            *) die "Absolute OpenSSL prefix required" ;;
+        esac
+
+        OPENSSL_PREFIX="$(realpath -e -- "$OPENSSL_PREFIX")"
+
+        [ -f "$OPENSSL_PREFIX/include/openssl/ssl.h" ] ||
+            die "OpenSSL headers missing"
+
+        [ -f "$OPENSSL_PREFIX/lib64/libcrypto.so.3" ] ||
+            die "libcrypto.so.3 missing"
+
+        [ -f "$OPENSSL_PREFIX/lib64/libssl.so.3" ] ||
+            die "libssl.so.3 missing"
+
+        [ -x "$OPENSSL_PREFIX/bin/openssl" ] ||
+            die "OpenSSL executable missing"
+
+        OPENSSL_VERSION="$(
+            env LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" \
+                "$OPENSSL_PREFIX/bin/openssl" version
+        )"
+
+        case "$OPENSSL_VERSION" in
+            "OpenSSL 3.5.9 "*) ;;
+            *) die "Unexpected OpenSSL version: $OPENSSL_VERSION" ;;
+        esac
+
+        command -v patchelf >/dev/null 2>&1 || die "patchelf required for portable OpenSSL"
+        echo "[PASS] Isolated OpenSSL 3.5.9 verified"
+        ;;
+    *)
+        die "Unsupported OpenSSL mode: $OPENSSL_MODE"
+        ;;
+esac
+
+# Reject overlapping runtime and build destinations.
+runtime_path="$(realpath -m -- "$RUNTIME_ROOT")"
+build_path="$(realpath -m -- "$BUILD_ROOT")"
+
+case "$runtime_path/" in
+    "$build_path/"*) die "Runtime nested inside build directory" ;;
+esac
+case "$build_path/" in
+    "$runtime_path/"*) die "Build directory nested inside runtime" ;;
+esac
+
+if [ "${PADIT_OPENSSL_MODE:-system}" = isolated ]; then
+    [ ! -e "$BUILD_ROOT" ] && [ ! -L "$BUILD_ROOT" ] ||
+        die "Build destination already exists: $BUILD_ROOT"
+fi
+
+# W32-H65-B: protect repository, installed runtimes and OpenSSL.
+canonical_repo="$(realpath -e -- "$REPO_ROOT")"
+canonical_server="$(realpath -m -- "$PROTECTED_RUNTIME")"
+canonical_wapt="$(realpath -m -- /opt/wapt)"
+
+overlaps() {
+    case "$1/" in
+        "$2/"*) return 0 ;;
+    esac
+    case "$2/" in
+        "$1/"*) return 0 ;;
+    esac
+    return 1
+}
+
+for destination in "$RUNTIME_ROOT" "$BUILD_ROOT"; do
+    resolved="$(realpath -m -- "$destination")"
+
+    for protected in \
+        "$canonical_repo" \
+        "$canonical_server" \
+        "$canonical_wapt"
+    do
+        if overlaps "$resolved" "$protected"; then
+            die "Unsafe build destination: $resolved"
+        fi
+    done
+done
+
+if [ "$OPENSSL_MODE" = isolated ]; then
+    for destination in "$RUNTIME_ROOT" "$BUILD_ROOT"; do
+        resolved="$(realpath -m -- "$destination")"
+
+        if overlaps "$resolved" "$OPENSSL_PREFIX"; then
+            die "Build destination overlaps OpenSSL: $resolved"
+        fi
+    done
+fi
+
 # 2. Build dependencies
 ###############################################################################
 
@@ -166,10 +301,33 @@ make distclean >/dev/null 2>&1 || true
 echo
 echo ">>> Configuring CPython..."
 
-./configure \
-    --prefix="${RUNTIME_ROOT}" \
-    --enable-unicode=ucs4 \
-    --with-ensurepip=no
+if [ "$OPENSSL_MODE" = isolated ]; then
+    PYTHON_OPENSSL_PATCH="${REPO_ROOT}/utils/patch-python2-2.7.18/openssl3-version-detection.patch"
+
+    echo "9890f51257d966062bdf57422f97cf2a792cd17472dc8e216bcbcc288d3a9be5  $PYTHON_OPENSSL_PATCH" |
+        sha256sum -c - || die "Python OpenSSL patch checksum mismatch"
+
+    patch --dry-run --fuzz=0 -p1 < "$PYTHON_OPENSSL_PATCH" ||
+        die "Python OpenSSL patch dry-run failed"
+    patch --fuzz=0 -p1 < "$PYTHON_OPENSSL_PATCH" ||
+        die "Python OpenSSL patch failed"
+
+    OPENSSL_CPPFLAGS="-I$OPENSSL_PREFIX/include"
+    OPENSSL_LDFLAGS="-L$OPENSSL_PREFIX/lib64 -Wl,-rpath,$OPENSSL_PREFIX/lib64"
+
+    env CPPFLAGS="$OPENSSL_CPPFLAGS" \
+        LDFLAGS="$OPENSSL_LDFLAGS" \
+        LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" \
+        ./configure \
+            --prefix="${RUNTIME_ROOT}" \
+            --enable-unicode=ucs4 \
+            --with-ensurepip=no
+else
+    ./configure \
+        --prefix="${RUNTIME_ROOT}" \
+        --enable-unicode=ucs4 \
+        --with-ensurepip=no
+fi
 
 ###############################################################################
 # 6. Compile
@@ -178,7 +336,14 @@ echo ">>> Configuring CPython..."
 echo
 echo ">>> Compiling CPython..."
 
-make -j"$(nproc)"
+if [ "$OPENSSL_MODE" = isolated ]; then
+    env CPPFLAGS="$OPENSSL_CPPFLAGS" \
+        LDFLAGS="$OPENSSL_LDFLAGS" \
+        LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" \
+        make -j"$(nproc)"
+else
+    make -j"$(nproc)"
+fi
 
 ###############################################################################
 # 7. Install runtime
@@ -188,9 +353,21 @@ echo
 echo ">>> Installing runtime into:"
 echo "    ${RUNTIME_ROOT}"
 
-rm -rf "${RUNTIME_ROOT}"
+[ ! -e "${RUNTIME_ROOT}" ] && [ ! -L "${RUNTIME_ROOT}" ] || die "Runtime destination already exists: ${RUNTIME_ROOT}"
 
-make install
+if [ "$OPENSSL_MODE" = isolated ]; then
+    env LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" make install
+
+    env -u LD_LIBRARY_PATH -u PYTHONPATH \
+        "${RUNTIME_ROOT}/bin/python" -B - <<'PYCHECKSSL'
+import ssl
+import _hashlib
+assert ssl.OPENSSL_VERSION.startswith("OpenSSL 3.5.9 "), ssl.OPENSSL_VERSION
+print("[PASS] Python SSL:", ssl.OPENSSL_VERSION)
+PYCHECKSSL
+else
+    make install
+fi
 
 ###############################################################################
 # 8. Install Python 2 compatible packaging stack
@@ -376,12 +553,18 @@ CRYPTOGRAPHY_PATCH_OPENSSL3_SHA256="2d2529dad4c11757524942ff797937c03573f1dcb12f
 
 CRYPTOGRAPHY_PATCH_CVE_2023_49083="${REPO_ROOT}/utils/patch-cryptography-3.3.2/CVE-2023-49083.patch"
 CRYPTOGRAPHY_PATCH_CVE_2023_49083_SHA256="3ce50d0c316ac82c00824d45777cd5e23f0aaad329fa4088df1a097936c0e162"
+CRYPTOGRAPHY_PATCH_CVE_2023_23931="${REPO_ROOT}/utils/patch-cryptography-3.3.2/CVE-2023-23931.patch"
+CRYPTOGRAPHY_PATCH_CVE_2023_23931_SHA256="a9d0dda2da3a3419e786e549c63e2c6d89b1e61cb0196aaa27fd9670aaa8dbf6"
+CRYPTOGRAPHY_PATCH_CVE_2026_26007="${REPO_ROOT}/utils/patch-cryptography-3.3.2/CVE-2026-26007-sect-guard.patch"
+CRYPTOGRAPHY_PATCH_CVE_2026_26007_SHA256="7099cbe06506d7b92696f786608d251def15be92c8be03a40dc72477df07f079"
 
 CRYPTOGRAPHY_SDIST_SHA256="5a60d3780149e13b7a6ff7ad6526b38846354d11a15e21068e57073e29e19bed"
 
 for CRYPTOGRAPHY_PATCH in \
     "${CRYPTOGRAPHY_PATCH_OPENSSL3}" \
-    "${CRYPTOGRAPHY_PATCH_CVE_2023_49083}"
+    "${CRYPTOGRAPHY_PATCH_CVE_2023_49083}" \
+    "${CRYPTOGRAPHY_PATCH_CVE_2023_23931}" \
+    "${CRYPTOGRAPHY_PATCH_CVE_2026_26007}"
 do
     [ -f "${CRYPTOGRAPHY_PATCH}" ] \
         || die "cryptography patch not found: ${CRYPTOGRAPHY_PATCH}"
@@ -400,6 +583,8 @@ ACTUAL_CRYPTOGRAPHY_PATCH_SHA256="$(
 
 [ "${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}" = "${CRYPTOGRAPHY_PATCH_CVE_2023_49083_SHA256}" ] \
     || die "Unexpected SHA256 for cryptography CVE-2023-49083 patch: ${ACTUAL_CRYPTOGRAPHY_PATCH_SHA256}"
+echo "${CRYPTOGRAPHY_PATCH_CVE_2023_23931_SHA256}  ${CRYPTOGRAPHY_PATCH_CVE_2023_23931}" | sha256sum -c - || die "Invalid CVE-2023-23931.patch SHA256"
+echo "${CRYPTOGRAPHY_PATCH_CVE_2026_26007_SHA256}  ${CRYPTOGRAPHY_PATCH_CVE_2026_26007}" | sha256sum -c - || die "Invalid CVE-2026-26007-sect-guard.patch SHA256"
 
 rm -rf "${CRYPTOGRAPHY_BUILD_DIR}"
 mkdir -p "${CRYPTOGRAPHY_BUILD_DIR}"
@@ -434,7 +619,9 @@ CRYPTOGRAPHY_SRC_DIR="${CRYPTOGRAPHY_BUILD_DIR}/cryptography-${CRYPTOGRAPHY_VERS
 
     for CRYPTOGRAPHY_PATCH in \
         "${CRYPTOGRAPHY_PATCH_OPENSSL3}" \
-        "${CRYPTOGRAPHY_PATCH_CVE_2023_49083}"
+        "${CRYPTOGRAPHY_PATCH_CVE_2023_49083}" \
+        "${CRYPTOGRAPHY_PATCH_CVE_2023_23931}" \
+        "${CRYPTOGRAPHY_PATCH_CVE_2026_26007}"
     do
         patch --dry-run -p1 < "${CRYPTOGRAPHY_PATCH}" >/dev/null
         patch -p1 < "${CRYPTOGRAPHY_PATCH}"
@@ -447,11 +634,23 @@ echo ">>> cryptography CVE-2023-49083 backport applied."
 CRYPTOGRAPHY_WHEELHOUSE="${CRYPTOGRAPHY_BUILD_DIR}/wheelhouse"
 mkdir -p "${CRYPTOGRAPHY_WHEELHOUSE}"
 
-run "${PIP}" wheel \
-    --no-deps \
-    --no-cache-dir \
-    --wheel-dir "${CRYPTOGRAPHY_WHEELHOUSE}" \
-    "${CRYPTOGRAPHY_SRC_DIR}"
+if [ "$OPENSSL_MODE" = isolated ]; then
+    run env \
+        CPPFLAGS="-I$OPENSSL_PREFIX/include" \
+        LDFLAGS="-L$OPENSSL_PREFIX/lib64 -Wl,-rpath,$OPENSSL_PREFIX/lib64" \
+        LD_LIBRARY_PATH="$OPENSSL_PREFIX/lib64" \
+        "${PIP}" wheel \
+            --no-deps \
+            --no-cache-dir \
+            --wheel-dir "${CRYPTOGRAPHY_WHEELHOUSE}" \
+            "${CRYPTOGRAPHY_SRC_DIR}"
+else
+    run "${PIP}" wheel \
+        --no-deps \
+        --no-cache-dir \
+        --wheel-dir "${CRYPTOGRAPHY_WHEELHOUSE}" \
+        "${CRYPTOGRAPHY_SRC_DIR}"
+fi
 
 run "${PIP}" install \
     --force-reinstall \
@@ -460,7 +659,8 @@ run "${PIP}" install \
     --find-links "${CRYPTOGRAPHY_WHEELHOUSE}" \
     "cryptography==${CRYPTOGRAPHY_VERSION}"
 
-"${PYTHON}" - <<'PYCRYPTOGRAPHY'
+env PADIT_OPENSSL_MODE="$OPENSSL_MODE" \
+    "${PYTHON}" - <<'PYCRYPTOGRAPHY'
 import datetime
 
 import cryptography
@@ -478,6 +678,15 @@ if cryptography.__version__ != expected_version:
         "Unexpected cryptography version: %s (expected %s)"
         % (cryptography.__version__, expected_version)
     )
+
+import os
+
+if os.environ.get("PADIT_OPENSSL_MODE") == "isolated":
+    actual = backend.openssl_version_text()
+    if not actual.startswith("OpenSSL 3.5.9 "):
+        raise SystemExit(
+            "Unexpected cryptography OpenSSL version: %s" % actual
+        )
 
 if backend.openssl_version_number() < 0x30000000:
     raise SystemExit(
@@ -3004,6 +3213,67 @@ echo
 echo ">>> Validating PADIT server dependency modernization"
 
 "${REPO_ROOT}/tools/test-server-dependencies.sh" "${PYTHON}"
+
+###############################################################################
+# RC1 - Embed private OpenSSL and validate native loading
+###############################################################################
+
+echo
+echo ">>> Finalizing portable OpenSSL 3.5.9 runtime"
+
+[ "$OPENSSL_MODE" = isolated ] ||
+    die "PADIT RC1 requires isolated OpenSSL"
+
+PRIVATE_SSL="${RUNTIME_ROOT}/lib/padit-openssl"
+SSL_MODULE="${RUNTIME_ROOT}/lib/python2.7/lib-dynload/_ssl.so"
+HASH_MODULE="${RUNTIME_ROOT}/lib/python2.7/lib-dynload/_hashlib.so"
+CRYPTO_MODULE="${RUNTIME_ROOT}/lib/python2.7/site-packages/cryptography/hazmat/bindings/_openssl.so"
+
+for module in "$SSL_MODULE" "$HASH_MODULE" "$CRYPTO_MODULE"; do
+    [ -f "$module" ] || die "Missing native module: $module"
+done
+
+[ ! -e "$PRIVATE_SSL" ] ||
+    die "Private OpenSSL destination already exists: $PRIVATE_SSL"
+
+mkdir -p "$PRIVATE_SSL"
+
+cp -a "$OPENSSL_PREFIX/lib64/libssl.so.3" "$PRIVATE_SSL/"
+cp -a "$OPENSSL_PREFIX/lib64/libcrypto.so.3" "$PRIVATE_SSL/"
+
+patchelf --set-rpath '$ORIGIN/../../padit-openssl' "$SSL_MODULE"
+patchelf --set-rpath '$ORIGIN/../../padit-openssl' "$HASH_MODULE"
+patchelf --set-rpath '$ORIGIN/../../../../../padit-openssl' "$CRYPTO_MODULE"
+
+env -u LD_LIBRARY_PATH -u LD_PRELOAD \
+    PADIT_PRIVATE_SSL="$PRIVATE_SSL" \
+    "$PYTHON" - <<'PADIT_SSL_VERIFY'
+import os
+import ssl
+import cryptography
+from cryptography.hazmat.backends.openssl.backend import backend
+
+prefix = os.path.realpath(os.environ["PADIT_PRIVATE_SSL"])
+assert ssl.OPENSSL_VERSION.startswith("OpenSSL 3.5.9")
+assert backend.openssl_version_text().startswith("OpenSSL 3.5.9")
+
+maps = open("/proc/self/maps").read()
+
+for library in ("libssl.so.3", "libcrypto.so.3"):
+    paths = set()
+    for line in maps.splitlines():
+        parts = line.split()
+        if parts and parts[-1].endswith("/" + library):
+            paths.add(os.path.realpath(parts[-1]))
+
+    assert paths == set([os.path.join(prefix, library)]), \
+        "Unexpected %s locations: %r" % (library, paths)
+
+print("PASS : embedded OpenSSL 3.5.9 loaded")
+print("PASS : cryptography %s" % cryptography.__version__)
+PADIT_SSL_VERIFY
+
+echo "[PASS] Portable OpenSSL runtime finalized"
 
 ###############################################################################
 # 39. Generate runtime inventory

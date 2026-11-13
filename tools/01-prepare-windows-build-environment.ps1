@@ -3,7 +3,8 @@ param(
     [string]$BuildKit = 'C:\padit-build-kit',
     [string]$PythonRoot = 'C:\Python27',
     [string]$BuildPythonRoot = 'C:\padit-build-python2',
-    [string]$LazarusRoot = 'C:\lazarus'
+    [string]$LazarusRoot = 'C:\lazarus',
+    [switch]$OpenSsl35Toolchain
 )
 
 Set-StrictMode -Version 2.0
@@ -347,3 +348,97 @@ Write-Host 'Lazarus:         1.8.2'
 Write-Host 'FPC:             3.0.4'
 Write-Host 'VCForPython27:   9.0 (VC9 x86, 15.00.30729.01)'
 Write-Host 'Global Inno:     not required'
+
+
+# ---------------------------------------------------------------------------
+# W32 / Optional OpenSSL 3.5.9 Windows x86 build toolchain
+# ---------------------------------------------------------------------------
+
+if ($OpenSsl35Toolchain) {
+    Write-Step 'Checking OpenSSL 3.5.9 build toolchain'
+
+    $VcVars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat'
+    $Perl = 'C:\Strawberry\perl\bin\perl.exe'
+    $Nasm = 'C:\Program Files\NASM\nasm.exe'
+
+    foreach ($Tool in @($VcVars, $Perl, $Nasm)) {
+        if (-not (Test-Path -LiteralPath $Tool -PathType Leaf)) {
+            throw "Missing OpenSSL build prerequisite: $Tool"
+        }
+    }
+
+    $VcTestDir = Join-Path $env:TEMP (
+        'padit-w32-msvc-' + [Guid]::NewGuid().ToString('N')
+    )
+
+    New-Item -ItemType Directory -Path $VcTestDir | Out-Null
+
+    try {
+        $VcSource = Join-Path $VcTestDir 'check.c'
+        $VcObject = Join-Path $VcTestDir 'check.obj'
+        $VcBatch = Join-Path $VcTestDir 'check.cmd'
+        $VcLog = Join-Path $VcTestDir 'check.log'
+
+        [IO.File]::WriteAllText(
+            $VcSource,
+            'int padit_w32_check(void) { return 0; }',
+            [Text.Encoding]::ASCII
+        )
+
+        $Commands = @(
+            '@echo off'
+            "call `"$VcVars`" x86 >nul"
+            'if errorlevel 1 exit /b 1'
+            "cl.exe /nologo /Bv /c /Fo`"$VcObject`" `"$VcSource`" > `"$VcLog`" 2>&1"
+            'exit /b %ERRORLEVEL%'
+        )
+
+        [IO.File]::WriteAllLines(
+            $VcBatch,
+            $Commands,
+            [Text.Encoding]::ASCII
+        )
+
+        & cmd.exe /d /c "`"$VcBatch`""
+        $VcExit = $LASTEXITCODE
+
+        if (-not (Test-Path -LiteralPath $VcLog)) {
+            throw 'MSVC compilation log missing'
+        }
+
+        $VcText = Get-Content -LiteralPath $VcLog -Raw
+
+        if ($VcExit -ne 0) {
+            throw "MSVC x86 compilation failed: $VcText"
+        }
+
+        if (-not (Test-Path -LiteralPath $VcObject)) {
+            throw 'MSVC x86 object file missing'
+        }
+
+        if ($VcText -notmatch '19\.44\.35229') {
+            throw "Unexpected MSVC version: $VcText"
+        }
+
+        Write-Host '[PASS] MSVC 2022 19.44 x86 compilation'
+    }
+    finally {
+        Remove-Item -LiteralPath $VcTestDir `
+            -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    & $Perl -v | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Strawberry Perl check failed'
+    }
+
+    Write-Host '[PASS] Strawberry Perl'
+
+    & $Nasm -v
+    if ($LASTEXITCODE -ne 0) {
+        throw 'NASM check failed'
+    }
+
+    Write-Host '[PASS] NASM'
+    Write-Host '[PASS] OpenSSL 3.5.9 build toolchain'
+}

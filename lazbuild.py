@@ -135,7 +135,7 @@ def get_version():
             return str(Version(line.split('=')[1].strip().replace('"', '').replace("'", ''),3))
 
 def run(*args, **kwargs):
-    return subprocess.check_output(*args, shell=True, **kwargs)
+    return subprocess.check_call(*args, shell=True, **kwargs)
 
 def set_lpi_options(lpi_fn,waptedition,waptversion,buildnr=None):
     """Change the product name and product version of lazarus lpi project"""

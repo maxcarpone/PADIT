@@ -1506,3 +1506,655 @@ Build host: `padit`, independent Debian 12 amd64 VM.
 - Validate package installation on a clean Debian 12 test VM.
 - Validate agent CLI, systemd service, TLS trust and registration.
 - Maintain Environment / Runtime / Build orchestration.
+
+---
+
+## W32-H56 — Reprise ALPN OpenSSL 3.5.9
+
+Date : 2026-11-06
+Machine de compilation : VM106
+Machine de test : VM107
+Branche : feature/w32-openssl-3.5.9
+Commit de base : 9e7b57879794377957f8ff36f0faab3e837d51d2
+Version produit : 1.8.3.7687
+
+### Acquis W32
+
+- OpenSSL 3.5.9 Windows x86 construit et validé : 4283 tests PASS.
+- CPython 2.7.18 : extensions _ssl.pyd et _hashlib.pyd reconstruites.
+- Runtime cryptography 3.3.2 adapté à OpenSSL 3.5.9.
+- Installateur Windows reconstruit avec les 9 artefacts Lazarus signés.
+- Signature Authenticode Thouet Software Code Signing validée.
+- Installation et démarrage de la console sur VM107 : PASS.
+- Création du certificat personnel depuis la console : PASS.
+- Console fonctionnelle : PASS.
+- VM104 avec ancien agent : Reachable, confirme le fonctionnement du serveur Bookworm.
+
+### Problèmes identifiés sur VM107
+
+- WAPTService sous NSSM : processus waptpython.exe instable.
+- Plantages natifs répétés : exception 0xC0000005.
+- SQLite : OperationalError database is locked dans les journaux.
+- HTTPS requests 2.27.1 / urllib3 1.26.20 : échec lors de load_default_certs().
+- Erreur SSL : unknown error (_ssl.c:2938).
+- HTTPS natif Python 2.7 / OpenSSL 3.5.9 avec SNI : PASS.
+- HTTPS natif complet vers waptworm : HTTP 200, exit code 0.
+- urllib3 avec contexte SSL explicite : HTTP 200, puis crash 0xC0000005.
+
+### Diagnostic ALPN — H51 à H54
+
+Reproducer minimal sur VM107 :
+
+    import ssl
+    context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+    context.verify_mode = ssl.CERT_NONE
+    context.set_alpn_protocols(['http/1.1'])
+    del context
+
+Résultat avant correction : crash 0xC0000005.
+
+Cause identifiée dans CPython 2.7.18 Modules/_ssl.c,
+fonction _set_alpn_protocols() :
+
+- Ligne 2495 : PyBuffer_Release(&protos)
+- Ligne 2501 : second PyBuffer_Release(&protos)
+- Double libération du même Py_buffer.
+- La suppression du second appel reste à valider par recompilation.
+
+### Correctif H55-F — PASS
+
+Fichier Git modifié :
+
+    tools/02-build-windows-runtime.ps1
+
+- Correctif intégré après vérification SHA256 des sources originales.
+- Suppression du second PyBuffer_Release() dans _set_alpn_protocols().
+- Motif regex corrigé pour accepter la ligne vide entre les instructions.
+- Correctif également appliqué aux sources de travail déjà extraites.
+- git diff --check : PASS.
+- Un seul fichier suivi modifié, NON COMMITÉ.
+
+Source de travail corrigée :
+
+    C:\padit-build-kit\runtime\openssl\work\W32-1911a18b74c44fd1910dcb6a9b566cd7\python-source\Python-2.7.18\Modules\_ssl.c
+
+### Reprise obligatoire — W32-H57
+
+Objectif immédiat :
+
+1. Recompiler uniquement _ssl.c et rééditer les liens de _ssl.pyd.
+2. Utiliser MSVC 2022 x86 et les bibliothèques OpenSSL 3.5.9 déjà construites.
+3. Tester le nouveau module dans un environnement isolé sur VM106.
+4. Rejouer le reproducer ALPN H51 : code retour 0 attendu.
+5. Rejouer HTTPS urllib3 et vérifier l'absence de crash natif.
+6. Investiguer séparément load_default_certs() et le magasin Windows.
+7. Après validation, intégrer le correctif au runtime, reconstruire le setup et retester VM107.
+
+Contraintes :
+
+- NE PAS reconstruire OpenSSL 3.5.9 ni relancer ses 4283 tests.
+- NE PAS reconstruire cryptography ou le produit complet à ce stade.
+- NE PAS modifier le runtime W32 gelé avant validation du module.
+- NE PAS perdre la modification Git non commitée du constructeur 02.
+- Préserver les artefacts signés et les résultats déjà validés.
+- Pas de nettoyage automatique des répertoires de VM106.
+
+État final : W32 GUI PASS ; W32 SERVICE FAIL ; ALPN PATCH APPLIQUÉ MAIS NON ENCORE COMPILÉ.
+
+## W32-H57-AO - Cloture SSL / TLS Windows
+
+Date : 2026-11-06
+Branche : feature/w32-openssl-3.5.9
+Commit de base : 9e7b57879
+
+### 1. Contexte
+
+- Python 2.7.18 x86 conserve son runtime VC9 / MSVCR90.
+- OpenSSL 3.5.9 x86 : build MSVC 2022 deja valide.
+- cryptography 3.3.2 : build existant preserve.
+- Extension _ssl.pyd : compilation MSVC 2022 x86.
+- Aucun rebuild complet OpenSSL/cryptography pendant H57.
+
+### 2. Defauts corriges
+
+H55-F :
+- Suppression d'un PyBuffer_Release redondant dans
+  _set_alpn_protocols().
+
+H57-AD2 :
+- Correction de trois appels PyMem_FREE en PyMem_Free.
+- Un appel dans le destructeur NPN.
+- Un appel dans le destructeur ALPN.
+- Un appel dans le remplacement des protocoles ALPN.
+- Objectif : eviter la liberation d'allocations Python
+  par le CRT MSVC 2022.
+
+### 3. Diagnostic natif
+
+- Crash initial : 0xC0000005.
+- WinDbg CDB x86 : HEAP_CORRUPTION.
+- Pile : _ssl.pyd -> ucrtbase!free -> ntdll!RtlFreeHeap.
+- Cause identifiee : incompatibilite des allocateurs
+  pour les buffers NPN/ALPN.
+- Dump de diagnostic conserve dans H57/crash-dumps.
+
+### 4. Validations
+
+- H57-AD3 : correctifs source PASS.
+- H57-AE : compilation _ssl.pyd PASS.
+- H57-AF : 10/10 tests HTTPS PASS, exit code 0.
+- H57-AH : integration constructeur PASS.
+- H57-AI : validation statique constructeur PASS.
+- H57-AK : certificat serveur inspecte.
+- H57-AL : certificat PEM de test exporte.
+- H57-AM4 : HTTPS CERT_REQUIRED, HTTP 200, PASS.
+- H57-AN : mauvais nom DNS correctement rejete, PASS.
+
+SHA256 source _ssl.c corrige :
+934F53355AAF582C3A5E6C8FB2D46A7997D1CED60A1BB2C18655A249C92063F0
+
+### 5. TLS laboratoire
+
+Serveur : waptworm
+Identite TLS : waptdev.genevoix-signoret-vinci.fr.lan
+Certificat autosigne, explicitement approuve pour le test.
+Verification du nom effectuee avec assert_hostname.
+Aucune modification des magasins de certificats Windows.
+Ne pas generaliser cette configuration au produit.
+
+### 6. Etat et reprise
+
+- Correctifs integres dans tools/02-build-windows-runtime.ps1.
+- WAPT_CHECKPOINT.md conserve comme reference.
+- Deux fichiers Git modifies, aucun commit demande.
+- Anciens binaires et artefacts conserves.
+- Validation globale du runtime encore a effectuer.
+- Python 2.7 / VC9 reste une dependance technique.
+- Prochaine action : reprendre la feuille de route W32
+  sans reconstruire OpenSSL ni cryptography.
+
+Statut : W32-H57-AN PASS / H57 cloture sur perimetre teste.
+## W32-H60 — Clôture OpenSSL 3.5.9 Windows x86 / VM107 (2026-11-06)
+
+Statut : PASS — validation fonctionnelle sur VM107.
+
+### Correctifs intégrés
+
+- H55-F : suppression du double PyBuffer_Release dans CPython _ssl.c.
+- H57-AD2 : remplacement des libérations PyMem_FREE incorrectes par PyMem_Free, pour la compatibilité VC9 / UCRT.
+- H60 : PADIT-COMPAT-PY27-OPENSSL35-003, conversion DER vers PEM pour le chargement des certificats Windows dans Lib/ssl.py.
+- Les correctifs sont intégrés dans tools/02-build-windows-runtime.ps1.
+- Contrôle Authenticode des exécutables Lazarus intégré dans tools/03-build-windows-product.ps1.
+
+### Livrable Windows
+
+- Version : 1.8.3.7687.
+- Runtime : C:\padit-runtime-1.8.3-W32-H60
+- Produit : C:\padit-product-1.8.3-W32-H60
+- Installateur : waptsetup\waptsetup.exe
+- Signature Authenticode : Valid.
+- SHA256 : EDAEC40AA0FB900DE2B7495567697DB7281DF9C69102B414E2F03E1BFEF5CCAC
+
+### Validation VM107
+
+- Installation par-dessus la version précédente : PASS.
+- Chargement des certificats Windows CA/ROOT : PASS.
+- urllib3 et requests avec le correctif DER vers PEM : HTTP 200.
+- Console PADIT : PASS.
+- Edition des profils VM104 et VM107 : PASS.
+- Reachable VM107 : PASS.
+- WAPTService sous NSSM : Running.
+- Processus waptpython.exe : présent.
+- W32-H60-L : aucun crash natif récent détecté ; aucune erreur SSL détectée dans les dernières lignes du journal.
+
+### Dette de compatibilité
+
+Les adaptations Python 2.7 / OpenSSL 3.5.9 doivent rester identifiables et réévaluables lors d'une migration Python 3 / modernisation de la chaîne Windows.
+
+Ne pas supprimer ces correctifs sans tests de régression sur la nouvelle chaîne.
+
+### Reprise
+
+- Reprendre l'inventaire et la remédiation des CVE restantes.
+- Ne pas recommencer les validations H55-H60 acquises.
+- Aucun commit créé à cette étape.
+
+## W32-H66-Y — OpenSSL 3.5.9 / cryptography 3.3.2
+
+Date : 2026-11-09
+
+### Debian Bookworm — Serveur
+
+- OpenSSL 3.5.9 LTS construit et valide, installation isolee.
+- Prefixe : /tmp/padit-h65-openssl-3.5.9
+- Runtime : /tmp/padit-h65-server-runtime
+- Python 2.7.18 et cryptography 3.3.2 lies a OpenSSL 3.5.9.
+- Verification native : _ssl.so, _hashlib.so, _openssl.so PASS.
+- Build serveur : code retour 0, tests constructeur PASS.
+- CVE-2023-23931 : PASS.
+- CVE-2026-26007 : garde SECT et ECDH PASS.
+- Runtime historique et OpenSSL systeme Debian preserves.
+
+### Windows x86 — VM106
+
+- MSVC 2022 x86, Python 2.7.18, OpenSSL 3.5.9.
+- Build wheel cryptography 3.3.2 : PASS.
+- Wheel : C:\\padit-h66-cryptography-wheel\\dist\\cryptography-3.3.2-cp27-cp27m-win32.whl
+- SHA256 : 8E07C0D74EDC7A7A8D84BA01E8B92419B93D22DA1ACB1A32AC3EA6D389E7B8CB
+- Installation isolee et extension native : PASS.
+- CVE-2023-23931 : PASS.
+- CVE-2026-26007 : garde SECT et ECDH PASS.
+- ECDH P-256 : PASS.
+- Runtime H60 original et executables signes preserves.
+
+### Git
+
+- Branche : release/1.8.3
+- Commit 509442da : integration des backports cryptography.
+- Commit 295f9545 : constructeur serveur OpenSSL 3.5.9 isole.
+- Les deux commits sont publies sur GitHub.
+
+### Securite — Travaux restants
+
+- 11 alertes Dependabot cryptography encore ouvertes.
+- #23 et #63 : correctifs valides sur Bookworm serveur et Windows x86.
+- #173 : backport existant, validation serveur acquise.
+- #39 et #68 : justification technique a finaliser.
+- #24, #29, #30, #34, #40, #75 : qualification OpenSSL a documenter.
+- Les alertes concernent requirements-agent.txt.
+- Agent Unix et deploiement Windows complet non valides avec ce nouveau lot.
+- Ne pas fermer les alertes sans preuves adaptees a leurs cibles.
+- Aucun rebuild supplementaire du serveur prevu pour ces deux correctifs.
+
+
+## W32-H68-E — Qualification cryptography / OpenSSL
+
+Date : 2026-11-09
+Branche : release/1.8.3
+Commit de reference : 50047dcc
+
+### W32-H67 — Alertes cryptography
+
+- #23 / CVE-2023-23931 : correctif update_into valide sur
+  Bookworm serveur et Windows x86.
+- #39 / CVE-2023-50782 : implicit rejection RSA PKCS#1 v1.5
+  valide fonctionnellement sur Bookworm H67-D et Windows H67-E,
+  avec OpenSSL 3.5.9. Aucun audit temporel exhaustif.
+- #63 / CVE-2026-26007 : protection SECT/ECDH validee
+  sur Bookworm serveur et Windows x86.
+- #68 / CVE-2026-34073 : verification DNS moderne absente.
+  Le module cryptography.x509.verification est une implementation
+  PADIT sans PolicyBuilder ni ServerVerifier.
+  waptcrypto.py utilise egalement pyOpenSSL X509StoreContext.
+  Non-applicabilite probable aux chemins examines ;
+  audit global des validations TLS non effectue.
+- #173 / CVE-2023-49083 : backport existant ;
+  preuves de validation a consolider.
+
+### W32-H68 — Alertes OpenSSL embarque
+
+Alertes : #24, #29, #30, #34, #40, #75.
+
+- Les avis concernent OpenSSL embarque dans les wheels
+  cryptography officielles.
+- PADIT utilise des builds cryptography specifiques,
+  lies a OpenSSL 3.5.9.
+- H68-B : liaisons natives Bookworm verifiees.
+- H68-C : executable et bibliotheques OpenSSL 3.5.9 PASS.
+- Prefixe : /tmp/padit-h65-openssl-3.5.9
+- Bibliotheques : lib64/libssl.so.3 et lib64/libcrypto.so.3.
+- Liaisons Python : _ssl.so, _hashlib.so et _openssl.so PASS.
+- Windows H66 : wheel x86 construite et validee avec
+  OpenSSL 3.5.9 ; SHA256 documente dans H66-Y.
+
+### Limites et decisions
+
+- Les 11 alertes Dependabot restent ouvertes.
+- Elles concernent requirements-agent.txt.
+- Les preuves H65/H66 ne prouvent pas le deploiement
+  de ces versions dans tous les agents distribues.
+- Agent Unix : validation du nouveau runtime non effectuee.
+- Windows : integration de la wheel H66 au produit non validee.
+- Ne pas cloturer les alertes sans couverture suffisante.
+- Aucun rebuild OpenSSL ou cryptography requis pour
+  les controles H67/H68 deja valides.
+
+## W32-H70-R — Integration Windows cryptography H66
+
+Date : 2026-11-09
+Reference Git : release/1.8.3 / d920e58b
+
+### H69 — Audit constructeur Windows
+
+- tools/02-build-windows-runtime.ps1 inspecte sur VM106.
+- Les quatre patchs cryptography 3.3.2 sont appliques.
+- La wheel x86 reconstruite est installee avec --force-reinstall.
+- Les controles natifs et OpenSSL 3.5.9 sont integres.
+- Aucun changement du constructeur necessaire pour cette integration.
+- Aucun rebuild OpenSSL realise pendant H69/H70.
+
+### H70 — Validation runtime Windows
+
+- Source : C:\padit-runtime-1.8.3-W32-H60
+- Copie isolee : C:\padit-runtime-1.8.3-W32-H70
+- Wheel H66 installee dans H70 avec verification SHA256.
+- SHA256 : 8E07C0D74EDC7A7A8D84BA01E8B92419B93D22DA1ACB1A32AC3EA6D389E7B8CB
+- H70-M : Python 2.7 / OpenSSL 3.5.9 PASS.
+- H70-N : installation wheel H66 PASS.
+- H70-O : extension native et X509 PADIT PASS.
+- H70-P : SECT, ECDH P-256, update_into et RSA PASS.
+- H70-Q : imports cryptography, X509, waptcrypto, common PASS.
+- Runtime H60 original preserve.
+- Produit complet et installateur signe non revalides avec H70.
+
+### Nettoyage VM106
+
+- 39 anciens environnements de validation/jalons supprimes
+  apres controles et confirmation utilisateur.
+- Espace libre : 8.03 Go au debut, 14.22 Go apres nettoyage.
+- Worktrees Git, sources, constructeurs et references recentes preserves.
+
+### Suite
+
+- Integrer le runtime corrige dans un nouveau build produit Windows.
+- Valider les executables et signatures Authenticode.
+- Maintenir les 11 alertes Dependabot ouvertes jusqu'a
+  justification suffisante pour les agents distribues.
+- Agent Unix : chantier de validation toujours gele.
+
+## W32-H71-V — Validation produit Windows 1.8.3.7694
+
+Date : 2026-11-09
+Reference Git initiale : release/1.8.3 / 45d6f0c5
+
+### Construction VM106
+
+- Runtime H70 avec wheel cryptography H66 corrigee.
+- Constructeur : tools/03-build-windows-product.ps1.
+- Build produit signe : PASS.
+- Version : 1.8.3.7694.
+- Installateur : C:\padit-product-1.8.3-W32-H71\waptsetup\waptsetup.exe
+- SHA256 installateur :
+  B924F4048CF0E3981A2CCEC70D7846E0CD2EB70B9B5ED8030D2A5C9E31DFFD8C
+- Signature Authenticode installateur : Valid.
+- Signature Authenticode waptconsole.exe : Valid.
+- SHA256 waptconsole.exe :
+  31BCBB55361F11722AFC03D4A50EC7481F97A0C193D8570743D3020E6E3A31FB
+- Garde-fou Authenticode H58-Q confirme dans le constructeur.
+
+### Installation VM107
+
+- Mise a niveau 1.8.3.7687 vers 1.8.3.7694 : PASS.
+- SHA256 de l'installateur transfere : PASS.
+- Authenticode sur VM107 : Valid.
+- WAPTService : Running / Automatic.
+- wapt-get.exe : 1.8.3.7694.
+
+### Validation cryptographique VM107
+
+- Python 2.7.18 x86 : PASS.
+- OpenSSL 3.5.9 SSL et backend : PASS.
+- cryptography 3.3.2 et extension native : PASS.
+- Compatibilite X509 PADIT : PASS.
+- CVE-2026-26007 SECT public key / ECDH : PASS.
+- ECDH P-256 : PASS.
+- CVE-2023-23931 buffer immutable / writable : PASS.
+- CVE-2023-50782 RSA implicit rejection : PASS.
+- Code retour des tests : 0.
+
+### Limites
+
+- Tests fonctionnels metier complets non effectues.
+- Agent Unix toujours gele.
+- 11 alertes Dependabot toujours ouvertes :
+  qualification finale selon couverture effective des cibles.
+- H60, H66 et H70 preserves.
+
+## W32-H73 — Agent Unix Bookworm OpenSSL 3.5.9
+
+Date : 2026-11-09
+Base Git : release/1.8.3 / cef21e39
+
+### Runtime H73
+
+- Runtime : /tmp/padit-h73-agent-runtime
+- Build : /tmp/padit-h73-agent-build
+- OpenSSL reutilise : /tmp/padit-h65-openssl-3.5.9
+- Python 2.7.18 : PASS
+- OpenSSL 3.5.9 exclusif : PASS
+- cryptography 3.3.2 corrigee : PASS
+- Integrite modules natifs : PASS
+- RPyC security : 2/2 PASS
+- Cohérence pip : PASS
+- Build H73-F : exit 0
+
+### Tests cryptographiques H73-G
+
+- CVE-2026-26007 SECT public key / ECDH : PASS
+- ECDH P-256 : PASS
+- CVE-2023-23931 update_into : PASS
+- CVE-2023-50782 RSA implicit rejection : PASS
+- Code retour : 0
+
+### Packaging Debian
+
+- Constructeur : tools/03-build-unix-product.sh
+- Correction : RPATH portable de bin/python2.7
+- Paquet : tis-waptagent_1.8.3.7494+unixpilot1_amd64.deb
+- Repertoire : /tmp/padit-h73-agent-products-r
+- SHA256 :
+  d87c463e84ca6bb27a58892335162c641945e9ea189ce7ef400ab795ddeb7b3f
+- OpenSSL 3.5.9 prive embarque : PASS
+- Relocalisation de quatre ELF : PASS
+- Audit H73-T : exit 0
+- Aucun paquet installe sur le serveur.
+
+### Decision
+
+- Construction et packaging Unix : VALIDES.
+- Installation et tests fonctionnels : NON EFFECTUES.
+- Agent Unix de nouveau GELE.
+- Conserver les preuves H73 pour la qualification Dependabot.
+
+## W32-H74 — Cloture Dependabot cryptography
+
+Date : 2026-11-09
+Branche : release/1.8.3
+Base : 337863c6
+
+### Resultat GitHub
+
+- 11 alertes cryptography traitees.
+- 0 alerte Dependabot ouverte apres verification via gh api.
+- Dismissed / fix_started :
+  #23, #24, #29, #30, #34, #39, #40, #63, #75, #173.
+- Dismissed / not_used :
+  #68 (CVE-2026-34073).
+
+### Justifications techniques
+
+- OpenSSL 3.5.9 utilise dans les constructions PADIT.
+- Windows VM107 : agent 1.8.3.7694 installe et teste.
+- Unix Bookworm H73 : runtime et paquet Debian valides.
+- CVE-2023-23931 : regression update_into PASS.
+- CVE-2023-50782 : comportement RSA PASS.
+- CVE-2026-26007 : SECT guards PASS.
+- CVE-2023-49083 : PKCS7 DER/PEM PASS Windows et Unix.
+- CVE-2026-34073 : API modernes de verification absentes
+  des runtimes Windows et Unix ; audit sources PASS.
+
+### Reserves
+
+- La cloture Dependabot est administrative et documentee.
+- cryptography==3.3.2 demeure dans les manifests.
+- Les correctifs internes ne sont pas reconnus
+  automatiquement par l'analyse de versions Dependabot.
+- Agent Unix : pas de validation fonctionnelle apres installation.
+- Audit general des chemins de verification TLS non effectue.
+- Agent Unix H73 gele apres validation du packaging.
+
+### Suite PADIT
+
+- Reprendre la modernisation FPC/Lazarus avant release 1.8.3.
+- Conserver OpenSSL 3.5.9 comme reference.
+- Migration Windows x64 et Python 3 ulterieures.
+
+## W33 — Modernisation Lazarus / FPC — Validation de compilation
+
+Date : 2026-11-10
+Branche : feature/w33-lazarus-modernization
+Commit PADIT : 4dc0207dd
+
+### Objectif
+
+Valider PADIT Community avec Lazarus 4.8 / FPC 3.2.2,
+en conservant Lazarus 1.8.2 / FPC 3.0.4 comme référence historique.
+
+### Corrections
+
+- Compatibilité Lazarus des sous-modules Community.
+- BGRacontrols : remplacement de CompareMethods, commit 5eacc700.
+- WaptSelf : remplacement de GetDefaultLang par GetWaptSelfLanguage.
+- Commit PADIT : 4dc0207dd.
+- Compilation WaptSelf avec les deux chaînes : PASS.
+
+### Build A — Historique
+
+- Version : 1.8.3.7701.
+- Lazarus 1.8.2 / FPC 3.0.4.
+- Installateur signé : PASS.
+- Taille : 27094944 octets.
+- SHA256 : BBC99DFF39D53CBF681474CE4A676850395CDE840F420EBE27F4061B1792410C.
+
+### Build B — Actualisé
+
+- Version : 1.8.3.7703.
+- Lazarus 4.8 / FPC 3.2.2.
+- Installateur signé : PASS.
+- Authenticode : PASS.
+- Taille : 28036544 octets.
+- SHA256 : ABA61C8289B2D8CDC67B2CD5E8755153D32B5E89234F058CD1A03C4415FC8B31.
+- Écart A/B : +941600 octets (+3,48 %).
+- Comparaison indicative : révisions Git différentes.
+
+### Ressources WaptSelf
+
+- 14 PNG présents : PASS.
+- 14 références LPI : PASS.
+- 14 ressources RCDATA embarquées : PASS.
+- Compilation forcée N223 : PASS, 0 message PNG.
+- Origine exacte des messages initiaux non définitivement établie.
+
+### Décision
+
+- Compilation Lazarus 4.8 / FPC 3.2.2 : VALIDÉE.
+- Build B 7703 : référence technique conservée.
+- Tests fonctionnels B 7703 sur VM107/VM104 : NON EFFECTUÉS.
+- Release 1.8.3 : NON ENCORE VALIDÉE.
+- OpenSSL 3.5.9 : référence cryptographique.
+- Migration Windows x64 et Python 3 : ultérieure.
+- Modifications Git préexistantes à préserver :
+  submodules/pltis_lazarus-exception-logger et packagefiles.xml.
+
+## W33-N263/N264 - SOGrid Lazarus 4.8
+
+Date : 2026-11-12
+Branche : feature/w33-lazarus-modernization
+HEAD PADIT : c28936d44
+Commit SOGrid : 64cb5e3
+Version validee : 1.8.3.7705
+
+### Contexte
+
+- Windows x86.
+- Lazarus 4.8 / FPC 3.2.2.
+- VM106 : construction.
+- VM107 : tests Windows 11.
+- Build B 1.8.3.7703 : compilation et installation PASS.
+- Build B : validation fonctionnelle console FAIL.
+- Popup "Division by zero" lors des premieres interactions.
+
+### Investigations W33-N263
+
+- GDB configure sur VM107 avec symboles externes.
+- SIGFPE observes dans laztracer.pas:58.
+- Message : Invisible menu item:  (-).
+- Pile : TSOGrid.FillMenu -> TMenuItem.Handle ->
+  TWin32WSMenuItem.AttachMenu.
+- Breakpoint FPC_HANDLEERROR non atteint lors de la popup.
+- GridHostsChange atteint apres validation de la popup.
+- Analyse statique SOGrid / VirtualTreeView effectuee.
+- ChangeDelay=50 : notification OnChange differee.
+- Reproductions : premier clic host, premier retour Inventory,
+  premiers clics droits sur plusieurs grilles.
+- Les erreurs ne se reproduisaient pas lors des interactions
+  suivantes.
+
+### Cause probable
+
+- TSOGrid.DoEnter appelle FillMenu.
+- FillMenu construit les menus lors du premier focus.
+- AddItem accedait a AMI.Handle immediatement.
+- FMenuFilled est positionne a True dans finally.
+- Ce mecanisme correspond aux exceptions et au comportement
+  non repetitif observes.
+- Causalite fortement soutenue par comparaison Build B/C.
+
+### Correctif W33-N264
+
+Sous-module : submodules/pltis_sogrid
+Commit : 64cb5e3
+
+- Remplacement des champs HMENU par TMenuItem.
+- AddItem retourne TMenuItem au lieu de HMENU.
+- Suppression de l'acces anticipe AMI.Handle.
+- Comparaisons HMUndo/HMRevert adaptees a nil.
+- 12 lignes modifiees.
+- Correctif publie sur le fork pltis_sogrid.
+- Gitlink PADIT actualise : c28936d44.
+
+### Build C
+
+- Version : PADIT Community 1.8.3.7705.
+- Lazarus 4.8 / FPC 3.2.2 x86.
+- Compilation complete : PASS.
+- Signature Authenticode : PASS.
+- Installateur valide : PASS.
+- Taille : 28036408 octets.
+- SHA256 :
+  29FF98BE4DE665CEA55FBC02BB335A85DE84453B02577839ADD2E57DE3C21546.
+
+### Validation VM107
+
+- Installation et lancement : PASS.
+- Premier clic host : PASS.
+- Premier clic droit Inventory : PASS.
+- Premier clic droit Depot prive : PASS.
+- Premier clic droit troisieme onglet : PASS.
+- Retour sur Inventory : PASS.
+- Deuxieme utilisation menus : PASS.
+- Total : 6/6 PASS.
+
+### Verification GDB Build C
+
+- Executable 1.8.3.7705 et symboles correspondants valides.
+- SHA256 executable :
+  4177BD4E303CB6752E14B888C4EBDE8602A4DECC03D0012D4EB377AA218ABFF5.
+- SHA256 symboles :
+  6B73CB938415654B246C16C1C6FAD0448A69A37D7BA81C0C0BF685318393BD1F.
+- Exception Invisible menu item non observee dans le
+  scenario teste.
+- Aucun SIGFPE menu observe pendant ce controle.
+- Avertissement Windows nlansp_c.dll distinct.
+
+### Decision
+
+- Correctif SOGrid : VALIDE fonctionnellement sur VM107.
+- Build C 7705 : nouvelle reference Windows x86 Lazarus 4.8.
+- Validation generale du produit : encore necessaire.
+- Release 1.8.3 : NON ENCORE VALIDEE.
+- OpenSSL 3.5.9 : conserver.
+- Ne pas reconstruire OpenSSL/cryptography.
+- Preserver les modifications preexistantes :
+  pltis_lazarus-exception-logger et packagefiles.xml.
+- Windows x64 et Python 3 : chantiers ulterieurs.

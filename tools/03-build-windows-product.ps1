@@ -10,6 +10,7 @@ param(
     [string]$LazarusPcp = 'C:\padit-build-lazarus-pcp-auto',
     [string]$SignKey,
     [string]$SignKeyPasswordFile,
+    [string]$BuildBranchSuffix,
     [switch]$Force
 )
 
@@ -217,8 +218,23 @@ Assert-File (Join-Path $Runtime 'python27.dll')
 Assert-File (Join-Path $Runtime 'pythoncom27.dll')
 Assert-File (Join-Path $Runtime 'pythoncomloader27.dll')
 Assert-File (Join-Path $Runtime 'pywintypes27.dll')
-Assert-File (Join-Path $Runtime 'libeay32.dll')
-Assert-File (Join-Path $Runtime 'ssleay32.dll')
+$OpenSsl3Runtime = Test-Path -LiteralPath (Join-Path $Runtime 'libcrypto-3.dll') -PathType Leaf
+
+if ($OpenSsl3Runtime) {
+    foreach ($Name in @('libcrypto-3.dll', 'libssl-3.dll', 'openssl.cnf', 'ossl-modules\legacy.dll', 'DLLs\_ssl.pyd', 'DLLs\_hashlib.pyd')) {
+        Assert-File (Join-Path $Runtime $Name)
+    }
+    foreach ($Name in @('libeay32.dll', 'ssleay32.dll')) {
+        if (Test-Path -LiteralPath (Join-Path $Runtime $Name)) {
+            throw "Mixed OpenSSL runtime: $Name"
+        }
+    }
+    Write-Host '[PASS] OpenSSL 3 packaging inputs'
+}
+else {
+    Assert-File (Join-Path $Runtime 'libeay32.dll')
+    Assert-File (Join-Path $Runtime 'ssleay32.dll')
+}
 Assert-File (Join-Path $Runtime 'openssl.exe')
 Assert-Directory (Join-Path $Runtime 'DLLs')
 Assert-Directory (Join-Path $Runtime 'Lib')
@@ -281,6 +297,14 @@ if ($LASTEXITCODE -ne 0 -or $BuildNumber -notmatch '^\d+$') {
 }
 
 $BuildBranch = "build/windows-1.8.3-$BuildNumber-auto"
+
+if ($BuildBranchSuffix) {
+    if ($BuildBranchSuffix -cnotmatch '^[a-zA-Z0-9-]+$') {
+        throw "Invalid build branch suffix: $BuildBranchSuffix"
+    }
+
+    $BuildBranch = "$BuildBranch-$BuildBranchSuffix"
+}
 
 Write-Host "Source commit : $SourceCommit"
 Write-Host "Build number  : $BuildNumber"
@@ -448,6 +472,23 @@ foreach ($submodule in $CommunitySubmodules) {
 
 Write-Host "[PASS] Community submodule gitlinks verified: 16/16"
 
+# A matching gitlink is not sufficient: the index and working tree
+# must also contain the expected checked-out files.
+foreach ($submodule in $CommunitySubmodules) {
+    $submodulePath = Join-Path $Worktree $submodule
+    $changes = @(git -C $submodulePath status --porcelain --untracked-files=normal)
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect submodule status: $submodule"
+    }
+
+    if ($changes.Count -ne 0) {
+        throw "Community submodule is not clean: $submodule"
+    }
+}
+
+Write-Host "[PASS] Community submodule working trees clean: 16/16"
+
 # ----------------------------------------------------------------------
 # Prepare isolated Lazarus primary config path
 # ----------------------------------------------------------------------
@@ -510,13 +551,33 @@ Write-Host "Registering Lazarus packages..."
 
 $LazbuildExe = Join-Path $Lazarus 'lazbuild.exe'
 
+# Select FPC shipped with the requested Lazarus installation.
+$FpcInstallations = @(Get-ChildItem (Join-Path $Lazarus 'fpc') -Directory)
+
+if ($FpcInstallations.Count -ne 1) {
+    throw "Expected exactly one FPC installation under $Lazarus"
+}
+
+$FpcCompiler = Join-Path $FpcInstallations[0].FullName 'bin\i386-win32\fpc.exe'
+
+Assert-File $FpcCompiler
+
+$FpcVersion = (& $FpcCompiler -iV).Trim()
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to determine FPC version"
+}
+
+Write-Host "Selected FPC: $FpcVersion"
+Write-Host "Compiler    : $FpcCompiler"
+
 foreach ($package in $LazarusPackages) {
     $packagePath = Join-Path $Worktree $package
 
     & $LazbuildExe `
         "--primary-config-path=$LazarusPcp" `
         "--lazarusdir=$Lazarus" `
-        "--compiler=ppc386" `
+        "--compiler=$FpcCompiler" `
         '--add-package-link' `
         "$packagePath"
 
@@ -526,6 +587,30 @@ foreach ($package in $LazarusPackages) {
 }
 
 Write-Host "[PASS] Lazarus packages registered: 17/17"
+
+# Pin the selected compiler explicitly: older Lazarus versions may
+# fail to resolve Lazarusdir macros and fall back to FPC from PATH.
+$PcpEnvironment = Join-Path $LazarusPcp 'environmentoptions.xml'
+Assert-File $PcpEnvironment
+
+[xml]$PcpXml = Get-Content -LiteralPath $PcpEnvironment
+$CompilerNode = $PcpXml.SelectSingleNode('//CompilerFilename')
+
+if ($null -eq $CompilerNode) {
+    throw "FPC compiler configuration missing from PCP: $PcpEnvironment"
+}
+
+$CompilerNode.SetAttribute('Value', $FpcCompiler)
+$PcpXml.Save($PcpEnvironment)
+
+[xml]$PcpVerify = Get-Content -LiteralPath $PcpEnvironment
+$ActualCompiler = $PcpVerify.SelectSingleNode('//CompilerFilename').GetAttribute('Value')
+
+if ($ActualCompiler -ine $FpcCompiler) {
+    throw "PCP compiler mismatch: $ActualCompiler"
+}
+
+Write-Host "[PASS] PCP compiler pinned: $ActualCompiler"
 
 # ----------------------------------------------------------------------
 # Lazarus Community build targets
@@ -588,6 +673,7 @@ if ($SignKey) {
 
 foreach ($project in $LazarusProjects) {
     $projectPath = Join-Path $Worktree $project
+    $ProjectTimer = [Diagnostics.Stopwatch]::StartNew()
 
     & $BuildPython $LazbuildPy `
         '-l' $LazbuildExe `
@@ -596,7 +682,11 @@ foreach ($project in $LazarusProjects) {
         @LazarusSignArgs `
         $projectPath
 
-    if ($LASTEXITCODE -ne 0) {
+    $BuildExitCode = $LASTEXITCODE
+    $ProjectTimer.Stop()
+    Write-Host ("[TIMING] {0} : {1:N2} seconds" -f $project, $ProjectTimer.Elapsed.TotalSeconds)
+
+    if ($BuildExitCode -ne 0) {
         throw "Lazarus build failed: $project"
     }
 }
@@ -931,6 +1021,39 @@ foreach ($artifact in $LazarusArtifacts) {
 }
 
 Write-Host "[PASS] Fresh Lazarus artifacts installed: 9/9"
+# W32-H58-Q: Verify embedded Lazarus Authenticode signatures.
+# A signed installer must never embed unsigned Lazarus executables.
+$RequiredSignedExecutables = @(
+    $LazarusArtifacts | Where-Object { $_ -like '*.exe' }
+)
+
+if ($RequiredSignedExecutables.Count -ne 7 -or
+    $RequiredSignedExecutables -notcontains 'waptconsole.exe') {
+    throw 'Unexpected mandatory Lazarus executable inventory'
+}
+
+Write-Host ""
+Write-Host "Validating embedded Lazarus Authenticode signatures..."
+
+foreach ($exeName in $RequiredSignedExecutables) {
+    $exePath = Join-Path $Output $exeName
+    Assert-File $exePath
+
+    $signature = Get-AuthenticodeSignature -LiteralPath $exePath
+
+    if ($signature.Status -eq 'Valid') {
+        Write-Host "[PASS] Authenticode: $exeName"
+    }
+    elseif ($SignKey) {
+        throw "Signed product build refused: $exeName has Authenticode status $($signature.Status)"
+    }
+    else {
+        Write-Warning "Unsigned product build: $exeName has Authenticode status $($signature.Status)"
+    }
+}
+
+Write-Host '[PASS] Lazarus Authenticode build guard completed.'
+
 
 # ----------------------------------------------------------------------
 # Generate canonical version-full
