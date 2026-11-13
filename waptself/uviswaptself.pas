@@ -1057,7 +1057,7 @@ begin
         tmpLang:='en'
       else
         tmpLang:='fr';
-      if (tmpLang<>GetDefaultLang) then
+      if (tmpLang<>GetWaptSelfLanguage) then
       begin
         ini:=TIniFile.Create(AppIniFilename);
         ini.WriteString('global','language',tmpLang);
@@ -1392,7 +1392,7 @@ begin
       Package.S['name']:=Package.S['package'];
     Package.S['namelower']:=LowerCase(Package.S['name']);
     Package.S['namelower']:=UTF8Decode(RemoveAccent(UTF8Encode(Package.S['namelower'])));
-    if (GetDefaultLang='fr') and (Package.S['categories']<>'') then
+    if (GetWaptSelfLanguage='fr') and (Package.S['categories']<>'') then
     begin
       tmp:=UTF8Encode(Package.S['categories']);
       tmp:=ReplaceStr(tmp,'Utilities','Utilitaires');

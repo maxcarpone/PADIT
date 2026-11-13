@@ -8,6 +8,8 @@ uses
   Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, StdCtrls,
   Buttons, ExtCtrls, Menus, ActnList, ComCtrls;
 
+function GetWaptSelfLanguage: string;
+
 type
 
   { TVisSettings }
@@ -32,15 +34,35 @@ var
 
 implementation
 
-uses LCLTranslator;
+uses IniFiles, GetText, waptcommon;
 
 {$R *.lfm}
 
-{ TVisSettings }
+function GetWaptSelfLanguage: string;
+var
+  Ini: TIniFile;
+  Lang, Fallback: string;
+begin
+  Ini := TIniFile.Create(AppIniFilename);
+  try
+    Result := LowerCase(Trim(Ini.ReadString('global', 'language', '')));
+  finally
+    Ini.Free;
+  end;
+
+  if Result = '' then
+  begin
+    GetLanguageIDs(Lang, Fallback);
+    if Copy(LowerCase(Lang), 1, 2) = 'fr' then
+      Result := 'fr'
+    else
+      Result := 'en';
+  end;
+end;
 
 procedure TVisSettings.FormCreate(Sender: TObject);
 begin
-  if (GetDefaultLang='fr') then
+  if (GetWaptSelfLanguage='fr') then
     ComboBoxLang.ItemIndex:=ComboBoxLang.Items.IndexOf('Français')
   else
     ComboBoxLang.ItemIndex:=ComboBoxLang.Items.IndexOf('English');
