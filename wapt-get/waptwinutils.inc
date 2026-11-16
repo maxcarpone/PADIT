@@ -270,10 +270,10 @@ type
   end; // TFixedFileInfo
 
 
-function GetApplicationVersion(Filename: ansistring = ''): ansistring;
+function GetApplicationVersion(Filename: UnicodeString = ''): ansistring;
 var
   dwHandle, dwVersionSize: DWORD;
-  strSubBlock: ansistring;
+  strSubBlock: UnicodeString;
   pTemp: Pointer;
   pData: Pointer;
 begin
@@ -283,7 +283,7 @@ begin
   strSubBlock := '\';
 
   // get version information values
-  dwVersionSize := GetFileVersionInfoSizeW(PWideChar(UTF8Decode(FileName)),
+  dwVersionSize := GetFileVersionInfoSizeW(PWideChar(FileName),
     // pointer to filename string
     dwHandle);        // pointer to variable to receive zero
 
@@ -292,16 +292,16 @@ begin
   begin
     GetMem(pTemp, dwVersionSize);
     try
-      if GetFileVersionInfo(PAnsiChar(FileName),
+      if GetFileVersionInfoW(PWideChar(FileName),
         // pointer to filename string
         dwHandle,                      // ignored
         dwVersionSize,                 // size of buffer
         pTemp) then
         // pointer to buffer to receive file-version info.
 
-        if VerQueryValue(pTemp,
+        if VerQueryValueW(pTemp,
           // pBlock     - address of buffer for version resource
-          PAnsiChar(strSubBlock),
+          PWideChar(strSubBlock),
           // lpSubBlock - address of value to retrieve
           pData,
           // lplpBuffer - address of buffer for version pointer
