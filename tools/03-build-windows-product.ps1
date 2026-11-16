@@ -659,25 +659,109 @@ if ($SignKey) {
     Write-Host "[PASS] Authenticode signing inputs validated."
 }
 
+$LazarusLogRoot = Join-Path $LazarusPcp 'padit-lazarus-logs'
+New-Item -ItemType Directory -Path $LazarusLogRoot -Force | Out-Null
+
+$LazarusSummary = @()
+
 foreach ($project in $LazarusProjects) {
     $projectPath = Join-Path $Worktree $project
+    $projectName = $project -replace '[\\/:*?"<>|]', '_'
+    $logPath = Join-Path $LazarusLogRoot "$projectName.log"
+
+    Write-Host ""
+    Write-Host "[BUILD] $project"
+    Write-Host "[LOG]   $logPath"
+
     $ProjectTimer = [Diagnostics.Stopwatch]::StartNew()
+    $BuildExitCode = $null
 
-    & $BuildPython $LazbuildPy `
-        '-l' $LazbuildExe `
-        '-p' $LazarusPcp `
-        '-e' 'community' `
-        @LazarusSignArgs `
-        $projectPath
+    $Writer = New-Object IO.StreamWriter(
+        $logPath,
+        $false,
+        (New-Object Text.UTF8Encoding($false))
+    )
+    $Writer.AutoFlush = $true
 
-    $BuildExitCode = $LASTEXITCODE
-    $ProjectTimer.Stop()
-    Write-Host ("[TIMING] {0} : {1:N2} seconds" -f $project, $ProjectTimer.Elapsed.TotalSeconds)
+    $PreviousPreference = $ErrorActionPreference
 
-    if ($BuildExitCode -ne 0) {
-        throw "Lazarus build failed: $project"
+    try {
+        # PowerShell 5.1 can represent native stderr as ErrorRecord.
+        # Keep these messages in the log without interrupting the build.
+        $ErrorActionPreference = 'Continue'
+
+        & $BuildPython '-u' $LazbuildPy `
+            '-l' $LazbuildExe `
+            '-p' $LazarusPcp `
+            '-e' 'community' `
+            @LazarusSignArgs `
+            $projectPath 2>&1 |
+            ForEach-Object {
+                $Line = [string]$_
+
+                # Complete log, including filtered messages.
+                $Writer.WriteLine($Line)
+
+                # Selected diagnostics and progress in real time.
+                if ($Line -match '(?i)Warning:|Error:|Fatal:|Compiling .*\.lpr|Linking |lines compiled') {
+                    Write-Host "[LIVE] $Line"
+                }
+            }
+
+        $BuildExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $PreviousPreference
+        $Writer.Dispose()
+        $ProjectTimer.Stop()
+    }
+
+    $DiagnosticCounts = @{}
+
+    foreach ($Severity in @('Fatal', 'Error', 'Warning', 'Hint', 'Note')) {
+        $DiagnosticCounts[$Severity] = @(
+            Select-String -LiteralPath $logPath `
+                -Pattern "(?i)\b$Severity\s*:"
+        ).Count
+    }
+
+    $LazarusSummary += [PSCustomObject]@{
+        Project  = $project
+        ExitCode = $BuildExitCode
+        Fatal    = $DiagnosticCounts['Fatal']
+        Error    = $DiagnosticCounts['Error']
+        Warning  = $DiagnosticCounts['Warning']
+        Hint     = $DiagnosticCounts['Hint']
+        Note     = $DiagnosticCounts['Note']
+        Seconds  = [math]::Round($ProjectTimer.Elapsed.TotalSeconds, 2)
+    }
+
+    $LazarusSummary |
+        Export-Csv -LiteralPath (Join-Path $LazarusLogRoot 'summary.csv') `
+            -NoTypeInformation -Encoding UTF8
+
+    Write-Host (
+        "[DIAG] Fatal={0} Error={1} Warning={2} Hint={3} Note={4}" -f `
+        $DiagnosticCounts['Fatal'],
+        $DiagnosticCounts['Error'],
+        $DiagnosticCounts['Warning'],
+        $DiagnosticCounts['Hint'],
+        $DiagnosticCounts['Note']
+    )
+
+    Write-Host (
+        "[TIMING] {0} : {1:N2} seconds" -f `
+        $project, $ProjectTimer.Elapsed.TotalSeconds
+    )
+
+    if ($null -eq $BuildExitCode -or $BuildExitCode -ne 0) {
+        Write-Host "=== LAST LAZARUS OUTPUT ==="
+        Get-Content -LiteralPath $logPath -Tail 30
+        throw "Lazarus build failed: $project (exit $BuildExitCode)"
     }
 }
+
+Write-Host "[PASS] Lazarus diagnostic summary: $LazarusLogRoot"
 
 Write-Host "[PASS] Lazarus Community builds completed: 9/9"
 
