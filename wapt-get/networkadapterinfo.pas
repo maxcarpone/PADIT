@@ -121,9 +121,9 @@ type
     end;
 
 
-  function Get_if_type(iType: integer): string;
-  function Get_if_admin_status(iStatus: integer): string;
-  function Get_if_oper_status(iStatus: integer): string;
+  function Get_if_type(iType: integer): UnicodeString;
+  function Get_if_admin_status(iStatus: integer): UnicodeString;
+  function Get_if_oper_status(iStatus: integer): UnicodeString;
 
 
 
@@ -133,9 +133,9 @@ uses Windows,winsock;
 function GetIfTable(pIfTable: P_IfTable; var pdwSize: LongInt; bOrder: BOOL): DWORD; stdcall; external 'IPHLPAPI.DLL';
 function GetIpAddrTable(pIpAddrTable: P_IpAddrTable; var pdwSize: LongInt; bOrder: BOOL): DWORD; stdcall; external 'IPHLPAPI.DLL';
 
-function Get_if_type(iType: integer): string;
+function Get_if_type(iType: integer): UnicodeString;
 var
-  sResult: string;
+  sResult: UnicodeString;
 begin
   sResult := 'UNKNOWN';
   case iType of
@@ -155,9 +155,9 @@ begin
   Result := sResult;
 end;
 
-function Get_if_admin_status(iStatus: integer): string;
+function Get_if_admin_status(iStatus: integer): UnicodeString;
 var
-  sResult: string;
+  sResult: UnicodeString;
 begin
   sResult := 'UNKNOWN';
 
@@ -170,9 +170,9 @@ begin
   Result := sResult;
 end;
 
-function Get_if_oper_status(iStatus: integer): string;
+function Get_if_oper_status(iStatus: integer): UnicodeString;
 var
-  sResult: string;
+  sResult: UnicodeString;
 begin
   sResult := 'UNKNOWN';
 
