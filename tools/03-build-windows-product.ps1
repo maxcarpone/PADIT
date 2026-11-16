@@ -1012,15 +1012,40 @@ try {
         throw "Incomplete Inno 7 distribution: $($SourceSignatures.Count) .issig files"
     }
 
-    # Preserve the complete vendor distribution including .issig files.
-    Get-ChildItem -LiteralPath $InnoTemp -Force |
+    # Exclude IDE, documentation and Inno Setup's own uninstall files.
+    # Keep all compiler engines, libraries, languages and .issig files.
+    $InnoExclude = @(
+        'ISIDE.exe',
+        'ISetup.chm',
+        'ISetup-dark.chm',
+        'whatsnew.htm',
+        'isfaq.url',
+        'unins000.exe',
+        'unins000.dat',
+        'unins000.msg'
+    )
+
+    $InnoEntries = @(
+        Get-ChildItem -LiteralPath $InnoTemp -Force
+    )
+
+    $InnoExcluded = @(
+        $InnoEntries | Where-Object { $_.Name -in $InnoExclude }
+    )
+
+    if ($InnoExcluded.Count -ne $InnoExclude.Count) {
+        throw "Unexpected Inno exclusion count: $($InnoExcluded.Count)"
+    }
+
+    $InnoEntries |
+        Where-Object { $_.Name -notin $InnoExclude } |
         Copy-Item -Destination $InnoTarget -Recurse -Force
 
     $TargetFiles = @(
         Get-ChildItem -LiteralPath $InnoTarget -Recurse -File
     )
 
-    if ($TargetFiles.Count -ne $SourceFiles.Count) {
+    if ($TargetFiles.Count -ne ($SourceFiles.Count - $InnoExclude.Count)) {
         throw "Inno 7 file count mismatch: $($SourceFiles.Count) / $($TargetFiles.Count)"
     }
 
