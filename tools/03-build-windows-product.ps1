@@ -684,7 +684,9 @@ foreach ($project in $LazarusProjects) {
     $Writer.AutoFlush = $true
 
     $PreviousPreference = $ErrorActionPreference
+    $ProjectDirectory = Split-Path -Parent $projectPath
 
+    Push-Location -LiteralPath $ProjectDirectory
     try {
         # PowerShell 5.1 can represent native stderr as ErrorRecord.
         # Keep these messages in the log without interrupting the build.
@@ -714,6 +716,7 @@ foreach ($project in $LazarusProjects) {
         $ErrorActionPreference = $PreviousPreference
         $Writer.Dispose()
         $ProjectTimer.Stop()
+        Pop-Location
     }
 
     $DiagnosticCounts = @{}
