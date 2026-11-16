@@ -1,5 +1,5 @@
 #define SrcApp wapt_base_dir+"wapt-get.exe"
-#define FileVerStr GetFileVersion(SrcApp)
+#define FileVerStr GetVersionNumbersString(SrcApp)
 #define AppVerStr FileVerStr
 
 ; offer the install of vcredist.exe
@@ -26,8 +26,7 @@ Source: "{#wapt_base_dir}Scripts\*"; DestDir: "{app}\Scripts"; Flags: createalls
 ; additional python modules
 Source: "{#wapt_base_dir}lib\*"; DestDir: "{app}\lib"; Flags: createallsubdirs recursesubdirs ; Excludes: "*.dist-info,*.pyc,*.pyo,test,*.~*,bson,*.chm,testsuite,Demos,tests,examples,HTML,scintilla,idle,idlelib,pylint,isort,mccabe*,*.whl,pydoc_data"
 
-; workaround for Windows XP openssl
-Source: "{app}\lib\site-packages\cryptography\hazmat\bindings242\*"; DestDir: "{app}\lib\site-packages\cryptography\hazmat\bindings"; OnlyBelowVersion: 6.0; Flags: external createallsubdirs recursesubdirs ; 
+
 
 ; wapt sources
 Source: "{#wapt_base_dir}waptutils.py"; DestDir: "{app}"; 
@@ -174,7 +173,7 @@ AppSupportURL=https://github.com/maxcarpone/PADIT/issues
 CloseApplications=Yes
 RestartApplications=No
 PrivilegesRequired=admin
-MinVersion=0,5.0sp4
+MinVersion=6.1sp1
 
 #ifdef waptenterprise
 LicenseFile={#wapt_base_dir}waptenterprise\COPYING.txt
@@ -207,13 +206,11 @@ Filename: "{app}\vc_redist\vcredist_x86.exe"; Parameters: "/q"; WorkingDir: "{tm
 ; rights rw for Admins and System, ro for users and authenticated users on wapt directory
 Filename: "cmd"; Parameters: "/C echo O| cacls ""{app}"" /S:""D:PAI(A;OICI;FA;;;BA)(A;OICI;FA;;;SY)(A;OICI;0x1200a9;;;BU)(A;OICI;0x1201a9;;;AU)"""; Flags: runhidden; WorkingDir: "{tmp}"; StatusMsg: "{cm:SetupACL}"; Description: "{cm:SetupACL}";
 Filename: "cmd"; Parameters: "/C icacls.exe ""{app}"" /inheritance:r"; MinVersion: 6.1; Flags: runhidden; WorkingDir: "{tmp}"; StatusMsg: "{cm:SetupACL}"; Description: "{cm:SetupACL}";
-Filename: "cmd"; Parameters: "/C {app}\vc_redist\icacls.exe ""{app}"" /inheritance:r"; OnlyBelowVersion: 6.1; Flags: runhidden; WorkingDir: "{tmp}"; StatusMsg: "{cm:SetupACL}"; Description: "{cm:SetupACL}";
 
 ; protect waptagent private directory
 
 Filename: "cmd"; Parameters: "/C icacls.exe ""{app}\private"" /inheritance:r  /grant *S-1-5-32-544:(OI)(CI)F  /grant *S-1-5-18:(OI)(CI)F"; MinVersion: 6.1; Flags: runhidden; WorkingDir: "{tmp}"; StatusMsg: "{cm:SetupACL}"; Description: "{cm:SetupACL}";
 
-Filename: "cmd"; Parameters: "/C {app}\vc_redist\icacls.exe ""{app}\private"" /inheritance:r /grant *S-1-5-32-544:(OI)(CI)F  /grant *S-1-5-18:(OI)(CI)F"; OnlyBelowVersion: 6.1; Flags: runhidden; WorkingDir: "{tmp}"; StatusMsg: "{cm:SetupACL}"; Description: "{cm:SetupACL}";
 
 ; if waptservice
 Filename: "{app}\waptpython.exe"; Parameters: """{app}\waptservice\service.py"" install"; Tasks:installService ; Flags: runhidden; StatusMsg: "{cm:InstallingWAPTservice}"; Description: "{cm:InstallingWAPTservice}";
@@ -250,13 +247,13 @@ Type: files; Name: "{app}\waptservice\*.pyc"
 Type: files; Name: "{app}\waptservice\waptservice.py*"
 
 [UninstallRun]
-Filename: "taskkill"; Parameters: "/t /im ""waptself.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptself"
-Filename: "taskkill"; Parameters: "/t /im ""waptmessage.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptmessage"
-Filename: "taskkill"; Parameters: "/t /im ""waptconsole.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptconsole"
-Filename: "taskkill"; Parameters: "/t /im ""wapttray.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de l'icône de notification"
-Filename: "net"; Parameters: "stop waptservice"; Flags: runhidden; StatusMsg: "Arrêt du service PADIT"
-Filename: "sc"; Parameters: "delete waptservice"; Flags: runhidden; StatusMsg: "Désinstallation du service PADIT"
-Filename: "taskkill"; Parameters: "/t /im ""waptpython.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptpython"
+Filename: "taskkill"; Parameters: "/t /im ""waptself.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptself"; RunOnceId: "PADIT_StopSelf"
+Filename: "taskkill"; Parameters: "/t /im ""waptmessage.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptmessage"; RunOnceId: "PADIT_StopMessage"
+Filename: "taskkill"; Parameters: "/t /im ""waptconsole.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptconsole"; RunOnceId: "PADIT_StopConsole"
+Filename: "taskkill"; Parameters: "/t /im ""wapttray.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de l'icône de notification"; RunOnceId: "PADIT_StopTray"
+Filename: "net"; Parameters: "stop waptservice"; Flags: runhidden; StatusMsg: "Arrêt du service PADIT"; RunOnceId: "PADIT_StopService"
+Filename: "sc"; Parameters: "delete waptservice"; Flags: runhidden; StatusMsg: "Désinstallation du service PADIT"; RunOnceId: "PADIT_DeleteService"
+Filename: "taskkill"; Parameters: "/t /im ""waptpython.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptpython"; RunOnceId: "PADIT_StopPython"
 
 [CustomMessages]
 ;French translations here
@@ -294,6 +291,12 @@ de.InstallVCpp=VC++ 2008 die Redistributables (für openssl) installieren
 de.ForceVCppReinstall=Force- VC++ 2008 redistributables (für openssl) deinstallieren
 de.UpdatePkgUponShutdown=Bitten, die Packete beim herunterfahren zu aktualisieren
 de.LaunchSession=PADIT setup Sitzung bei eröffnung der Sitzung starten
+de.InstallingWAPTservice=PADIT-Dienst wird installiert...
+de.InstallingVCpp=Microsoft-VC++-Bibliotheken werden installiert
+de.SetupACL=Zugriffsrechte fuer das PADIT-Installationsverzeichnis werden eingerichtet
+de.RunWaptTray=Benachrichtigungssymbol wird gestartet
+de.UnregisterWaptService=PADIT-Dienst wird entfernt
+de.EnableWaptServiceNoPassword=Fuer die Installation und Deinstallation von PADIT-Paketen kein Passwort anfordern
 
 
 [Code]
@@ -401,9 +404,9 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  Reply, ResultCode: Integer;
-  ServiceStatus: LongWord;
-  NetstatOutput, ConflictingService: AnsiString;
+  ResultCode: Integer;
+
+
 begin
   if CurStep = ssInstall then
   begin

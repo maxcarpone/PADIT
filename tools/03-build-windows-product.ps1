@@ -123,7 +123,7 @@ Write-Host ""
 $Vc90 = Join-Path $BuildKit 'runtime\vc90-crt'
 $Tools = Join-Path $BuildKit 'runtime\tools'
 $Nssm = Join-Path $BuildKit 'runtime\nssm'
-$InnoInstaller = Join-Path $BuildKit 'inno-setup\innosetup-5.6.0-unicode.exe'
+$InnoInstaller = Join-Path $BuildKit 'inno-setup\innosetup-7.1.1-x64.exe'
 $SignToolRoot = Join-Path $BuildKit 'windows-sdk\signtool'
 $SignTool = Join-Path $SignToolRoot 'signtool.exe'
 $SigningPublic = Join-Path $BuildKit 'signing\public'
@@ -176,34 +176,12 @@ Assert-File (Join-Path $Nssm 'win64\nssm.exe') `
     '2900F26D2ED74F4D5DB77CBCCBD4F2185FCCE2625A1BE724120984AC2418989B'
 
 Assert-File $InnoInstaller `
-    '84A97B5820F83E7EB7258B69CC857C4F446DFB5C7C337C35E05A0CC304729346'
+    '8A5A6711C3766A6E5FB74F280BA0E3551E719CE94538D901FDBD1F8F9920B3F0'
 Assert-File $SigningRootCer `
     '5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A'
 
 Write-Host "[PASS] Controlled Authenticode Root CA certificate validated."
 
-$InnoRootFiles = @(
-    'Default.isl',
-    'isbunzip.dll',
-    'isbzip.dll',
-    'ISCC.exe',
-    'ISCmplr.dll',
-    'islzma.dll',
-    'islzma32.exe',
-    'islzma64.exe',
-    'ISPP.dll',
-    'ISPPBuiltins.iss',
-    'isscint.dll',
-    'isunzlib.dll',
-    'iszlib.dll',
-    'license.txt',
-    'Setup.e32',
-    'SetupLdr.e32',
-    'WizModernImage-IS.bmp',
-    'WizModernImage.bmp',
-    'WizModernSmallImage-IS.bmp',
-    'WizModernSmallImage.bmp'
-)
 
 foreach ($file in $SignToolFiles.GetEnumerator()) {
     Assert-File (Join-Path $SignToolRoot $file.Key) $file.Value
@@ -273,9 +251,6 @@ Assert-File (Join-Path $SourceRoot 'waptsetup\waptserversetup.iss')
 Assert-File (Join-Path $SourceRoot 'waptsetup\waptstarter.iss')
 
 # Git-controlled installer languages.
-Assert-File (Join-Path $SourceRoot 'waptsetup\innosetup\Languages\French.isl')
-Assert-File (Join-Path $SourceRoot 'waptsetup\innosetup\Languages\German.isl')
-Assert-File (Join-Path $SourceRoot 'waptsetup\innosetup\Languages\french.lng')
 
 Write-Host ""
 Write-Host "[PASS] All controlled product-assembly inputs are present and validated."
@@ -983,10 +958,10 @@ Write-Host "Git-controlled Inno scripts: 7/7 PASS"
 # Reconstruct controlled Inno Setup tree
 # ----------------------------------------------------------------------
 
-Write-Host "Reconstructing controlled Inno Setup 5.6.0 tree..."
+Write-Host "Reconstructing controlled Inno Setup 7.1.1 x64 tree..."
 
 $InnoTemp = Join-Path $env:TEMP (
-    'wapt-innosetup-5.6.0-' + [Guid]::NewGuid().ToString('N')
+    'padit-innosetup-7.1.1-' + [Guid]::NewGuid().ToString('N')
 )
 $InnoTarget = Join-Path $Output 'waptsetup\innosetup'
 
@@ -999,48 +974,73 @@ try {
         -Wait -PassThru
 
     if ($innoProcess.ExitCode -ne 0) {
-        throw "Inno Setup installation failed with exit code $($innoProcess.ExitCode)"
+        throw "Inno Setup installation failed: $($innoProcess.ExitCode)"
     }
 
-    foreach ($file in $InnoRootFiles) {
-        $src = Join-Path $InnoTemp $file
-        Assert-File $src
-        Copy-Item -LiteralPath $src -Destination (Join-Path $InnoTarget $file) -Force
+    $RequiredRoot = @(
+        'Default.isl',
+        'ISCC.exe',
+        'ISCmplr.dll',
+        'ISCmplr.dll.issig',
+        'ISPP.dll',
+        'ISPP.dll.issig',
+        'ISPPBuiltins.iss',
+        'Setup.e32',
+        'Setup.e32.issig',
+        'SetupLdr.e32',
+        'SetupLdr.e32.issig',
+        'license.txt'
+    )
+
+    foreach ($name in $RequiredRoot) {
+        Assert-File (Join-Path $InnoTemp $name)
     }
 
-    $innoCopied = Get-ChildItem -LiteralPath $InnoTarget -File
-    if ($innoCopied.Count -ne 20) {
-        throw "Unexpected Inno root file count: expected 20, found $($innoCopied.Count)"
+    foreach ($name in @('French.isl', 'German.isl')) {
+        Assert-File (Join-Path $InnoTemp "Languages\$name")
     }
 
-    Write-Host "Controlled Inno root files: 20/20 PASS"
+    $SourceFiles = @(
+        Get-ChildItem -LiteralPath $InnoTemp -Recurse -File
+    )
 
-    $InnoLanguagesTarget = Join-Path $InnoTarget 'Languages'
-    New-Item -ItemType Directory -Path $InnoLanguagesTarget -Force | Out-Null
+    $SourceSignatures = @(
+        $SourceFiles | Where-Object { $_.Extension -eq '.issig' }
+    )
 
-    foreach ($file in @(
-        'French.isl',
-        'German.isl',
-        'french.lng'
-    )) {
-        $src = Join-Path $ProductSource "waptsetup\innosetup\Languages\$file"
-        Assert-File $src
-        Copy-Item -LiteralPath $src -Destination (Join-Path $InnoLanguagesTarget $file) -Force
+    if ($SourceSignatures.Count -lt 20) {
+        throw "Incomplete Inno 7 distribution: $($SourceSignatures.Count) .issig files"
     }
 
-    $innoLanguageFiles = Get-ChildItem -LiteralPath $InnoLanguagesTarget -File
-    if ($innoLanguageFiles.Count -ne 3) {
-        throw "Unexpected Inno language file count: expected 3, found $($innoLanguageFiles.Count)"
+    # Preserve the complete vendor distribution including .issig files.
+    Get-ChildItem -LiteralPath $InnoTemp -Force |
+        Copy-Item -Destination $InnoTarget -Recurse -Force
+
+    $TargetFiles = @(
+        Get-ChildItem -LiteralPath $InnoTarget -Recurse -File
+    )
+
+    if ($TargetFiles.Count -ne $SourceFiles.Count) {
+        throw "Inno 7 file count mismatch: $($SourceFiles.Count) / $($TargetFiles.Count)"
     }
 
-    Write-Host "Git-controlled Inno languages: 3/3 PASS"
+    foreach ($name in $RequiredRoot) {
+        Assert-File (Join-Path $InnoTarget $name)
+    }
+
+    foreach ($name in @('French.isl', 'German.isl')) {
+        Assert-File (Join-Path $InnoTarget "Languages\$name")
+    }
+
+    Write-Host "[PASS] Inno Setup 7.1.1 distribution copied: $($TargetFiles.Count) files"
+    Write-Host "[PASS] Inno component signatures: $($SourceSignatures.Count)"
+    Write-Host "[PASS] Inno languages: French / German"
 }
 finally {
     if (Test-Path -LiteralPath $InnoTemp) {
         Remove-Item -LiteralPath $InnoTemp -Recurse -Force
     }
 }
-
 # ----------------------------------------------------------------------
 # Install freshly built Lazarus artifacts
 # ----------------------------------------------------------------------
@@ -1184,7 +1184,7 @@ Assert-File $SetupIss
 
 Push-Location $Output
 try {
-    & $IsccExe '/Dwaptcommunity' '.\waptsetup\waptsetup.iss'
+    & $IsccExe '--define=waptcommunity' '.\waptsetup\waptsetup.iss'
 
     if ($LASTEXITCODE -ne 0) {
         throw "Inno Setup compilation failed with exit code $LASTEXITCODE"

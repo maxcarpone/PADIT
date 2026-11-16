@@ -523,7 +523,7 @@ var
   ServiceStatus: _SERVICE_STATUS;
   SCMHandle: Longword;
   ServiceHandle: Longword;
-  Error: Integer;
+
 begin
   Result := 0;
   SCMHandle := OpenSCManager('', '', SC_MANAGER_ALL_ACCESS);

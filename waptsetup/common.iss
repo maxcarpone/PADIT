@@ -69,7 +69,7 @@ OutputBaseFilename={#edition}
 #if edition == 'waptserversetup' 
 DefaultDirName=c:\wapt
 #else
-DefaultDirName={pf32}\wapt
+DefaultDirName={commonpf32}\wapt
 #endif
 
 #if edition != 'waptagent' 
@@ -287,6 +287,25 @@ de.RegisterHostOnServer=Diesen Computer auf PADIT Server speichern
 de.UpdateAvailablePkg=Liste der verfügbaren Pakete auf Main Repostitory aktualisieren
 de.UpdatePkgUponShutdown=Packete aktualisieren beim herunterfahren
 de.RunConfigTool=Führen Sie das Konfigurationstool aus
+de.EnableCheckCertificate=Pruefung des HTTPS-Zertifikats des PADIT-Servers aktivieren
+de.UseWaptServer=Computerstatus an einen PADIT-Server melden und Fernverwaltung aktivieren
+de.InstallSSLCertificates=Die mit diesem Installationsprogramm bereitgestellten Zertifikate installieren
+de.InstallStartPackages=Die Pakete {#set_start_packages} jetzt installieren
+de.UseKerberosForRegister=Computerkonto fuer die Kerberos-Registrierung am PADIT-Server verwenden
+de.VerifyServerCertificates=HTTPS-Serverzertifikate ueberpruefen
+de.DisableHiberBoot=Schnellstart deaktivieren und Zeitlimit fuer Gruppenrichtlinien beim Herunterfahren erhoehen (empfohlen)
+de.RemoveAllFiles=Alle verbleibenden Dateien im PADIT-Installationsverzeichnis {app} loeschen?
+de.UseWizard=Assistenten zum Abschluss der Erstkonfiguration verwenden
+de.DontChangeServerSetup=Aktuelle Konfiguration nicht aendern
+de.StaticURLS=Statische PADIT-Verbindungsadressen
+de.WAPTConsole=PADIT-Verwaltungskonsole
+de.WAPTSelf=PADIT-Software-Selbstbedienung
+de.UseRandomUUID=Zufaellige UUID anstelle der BIOS-Kennung zur Identifizierung des Computers verwenden
+de.InstallationOptions=Installationsoptionen
+de.RepoURL=Paketrepository-URL:
+de.ServerURL=Server-URL:
+de.Example=Beispiel
+de.Advanced=Erweitert
 
 [Code]
 var
@@ -470,7 +489,7 @@ end;
 
 function UseKerberosCheck(param:String):String;
 begin
-  if IsTaskSelected('UseKerberos') then
+  if WizardIsTaskSelected('UseKerberos') then
      Result := '1'
   else
      Result := '0';
@@ -478,7 +497,7 @@ end;
 
 function VerifyCertCheck(param:String):String;
 begin
-  if IsTaskSelected('VerifyServerCertificates') then
+  if WizardIsTaskSelected('VerifyServerCertificates') then
      Result := '1'
   else
      Result := '0'
@@ -489,7 +508,7 @@ begin
   // get supplied verify_cert from commandline, else take hardcoded in setup 
   Result := ExpandConstant('{param:DisableHiberBoot|{#set_disable_hiberboot}}');
   if Result = '' then
-    if IsTaskSelected('DisableHiberBoot') then
+    if WizardIsTaskSelected('DisableHiberBoot') then
        Result := '0'
     else
        Result := '1'
@@ -564,7 +583,7 @@ end;
 function GenerateHostUUID(Param:String):String;
 var
   aGuid:TGuid;
-  value: String;
+
 begin
   CoCreateGuid(aGuid);
   Result := 'rnd-'+FormatGuid(aGuid);     
@@ -576,7 +595,7 @@ var
 begin
   Result := False;
   ForcedUUID := GetIniString( 'global', 'uuid', '', ExpandConstant('{app}\wapt-get.ini'));
-  Result := ((ExpandConstant('{param:use_random_uuid|{#use_random_uuid}}')='1') or IsTaskSelected('UseRandomUUID')) and (ForcedUUID='');
+  Result := ((ExpandConstant('{param:use_random_uuid|{#use_random_uuid}}')='1') or WizardIsTaskSelected('UseRandomUUID')) and (ForcedUUID='');
 end;
 
 function CopyPackagesTrustedCACheck:Boolean;
@@ -639,7 +658,7 @@ end;
 
 function GetHostProfiles(param:String):String;
 var
-  AppendProfiles,NewProfiles,profile: String;
+  AppendProfiles,profile: String;
 begin
   Result := GetIniString('global', 'host_profiles', '',ExpandConstant('{app}\wapt-get.ini'));
   AppendProfiles := ExpandConstant('{param:append_host_profiles|{#append_host_profiles}}');
@@ -674,10 +693,9 @@ end;
 
 #if edition != "waptserversetup"
 procedure CurPageChanged(CurPageID: Integer);
-var
-  WaptRepo: String;
-  WaptServer: String;
-  i : integer;
+
+
+
 begin
   case CurPageID of
     wpWelcome:
@@ -691,7 +709,7 @@ begin
         #endif
         cbDontChangeConfig.Checked := not(GetRepoURL('') = '');
         cbStaticUrl.Checked := not(cbDontChangeConfig.Checked) or ((edWaptRepoUrl.Text<>'') and (edWaptRepoUrl.Text<>'unknown'));
-        //edWaptServerUrl.Visible := IsTaskSelected('use_waptserver');
+        //edWaptServerUrl.Visible := WizardIsTaskSelected('use_waptserver');
         //labServer.Visible := edWaptServerUrl.Visible;
       end;
 

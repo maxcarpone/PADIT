@@ -84,6 +84,8 @@ Filename: {cm:InstallDocURL}; Flags: postinstall runascurrentuser skipifsilent s
 fr.LaunchingPostConf=Lancement de la post-configuration de la console
 en.LaunchingPostConf=Launch console post-configuration
 de.LaunchingPostconf=Konsole Post-Konfiguration starten
+de.OpenWaptDocumentation=Installationsdokumentation anzeigen
+de.InstallDocURL=https://github.com/maxcarpone/PADIT
 fr.OpenWaptDocumentation=Afficher la documentation d'installation
 fr.InstallDocURL=https://github.com/maxcarpone/PADIT
 en.OpenWaptDocumentation=Show installation documentation

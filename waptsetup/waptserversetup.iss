@@ -451,7 +451,7 @@ end;
 
 function GetAllowUnauthenticatedRegistration(Param:String):String;
 begin
-	if IsTaskSelected('AllowUnauthenticatedRegistration') then
+	if WizardIsTaskSelected('AllowUnauthenticatedRegistration') then
 		Result := 'True'
 	else
 		Result := 'False';
