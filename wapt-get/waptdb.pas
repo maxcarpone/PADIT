@@ -56,7 +56,7 @@ type
 
 implementation
 
-uses LazFileUtils, sodbutils, Variants;
+uses LazFileUtils, sodbutils, Variants, sqlite3dyn;
 
 constructor TWAPTDB.create(dbpath:String);
 begin
@@ -64,11 +64,11 @@ begin
 
   // The sqlite dll is either in the same dir as application, or in the DLLs directory, or relative to dbpath (in case of initial install)
   if FileExists(AppendPathDelim(ExtractFilePath(ParamStr(0)))+'sqlite3.dll') then
-    SQLiteLibraryName:=AppendPathDelim(ExtractFilePath(ParamStr(0)))+'sqlite3.dll'
+    sqlite3dyn.SQLiteDefaultLibrary:=AppendPathDelim(ExtractFilePath(ParamStr(0)))+'sqlite3.dll'
   else if FileExists(AppendPathDelim(ExtractFilePath(ParamStr(0)))+'DLLs\sqlite3.dll') then
-    SQLiteLibraryName:=AppendPathDelim(ExtractFilePath(ParamStr(0)))+'DLLs\sqlite3.dll'
+    sqlite3dyn.SQLiteDefaultLibrary:=AppendPathDelim(ExtractFilePath(ParamStr(0)))+'DLLs\sqlite3.dll'
   else if FileExists(AppendPathDelim(ExtractFilePath(dbpath))+'..\DLLs\sqlite3.dll') then
-    SQLiteLibraryName:=AppendPathDelim(ExtractFilePath(dbpath))+'..\DLLs\sqlite3.dll';
+    sqlite3dyn.SQLiteDefaultLibrary:=AppendPathDelim(ExtractFilePath(dbpath))+'..\DLLs\sqlite3.dll';
 
   fsqltrans := TSQLTransaction.Create(Nil);
   fdb := TSQLite3Connection.Create(Nil);
