@@ -1,3 +1,4 @@
+#requires -Version 5.1
 [CmdletBinding()]
 param(
     [string]$ToolsRoot = 'C:\padit-02-tools',
@@ -9,12 +10,18 @@ param(
     [string]$GitRoot = (Join-Path $ToolsRoot 'Git'),
     [string]$InnoRoot = (Join-Path $ToolsRoot 'innosetup'),
     [string]$Vc9Root = (Join-Path $env:LOCALAPPDATA 'Programs\Common\Microsoft\Visual C++ for Python\9.0'),
-    [string]$VcVars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat',
-    [string]$Perl = 'C:\Strawberry\perl\bin\perl.exe',
-    [string]$Nasm = 'C:\Program Files\NASM\nasm.exe',
-    # Controlled offline recipes: Name, Installer, Sha256, Arguments, Probe.
-    # Paths, hashes and silent options must come from validated VM inputs.
-    [hashtable[]]$NativeToolInstallers = @()
+    [string]$MsvcInstallPath = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools',
+    [string]$VcVars = (Join-Path $MsvcInstallPath 'VC\Auxiliary\Build\vcvarsall.bat'),
+    [string]$Perl = (Join-Path $ToolsRoot 'strawberry\perl\bin\perl.exe'),
+    [string]$Nasm = (Join-Path $ToolsRoot 'nasm\nasm.exe'),
+    [string]$PerlArchive,
+    [string]$NasmArchive,
+    # Operator-controlled local layout; no Microsoft hash or archive name assumed.
+    [string]$MsvcLayout,
+    [string]$MsvcBootstrapper,
+    [string]$MsvcBootstrapperSha256,
+    [string]$VsWhere = (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+    [string]$WindowsSdkRoot = (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10')
 )
 
 Set-StrictMode -Version 2.0
@@ -84,6 +91,13 @@ $LazbuildExe = Join-Path $LazarusRoot 'lazbuild.exe'
 $FpcExe = Join-Path $LazarusRoot 'fpc\3.2.2\bin\i386-win32\fpc.exe'
 
 Write-Step 'Validating controlled bootstrap inputs'
+
+# Require the pinned archives to validate portable release identity on reuse too.
+$PerlHash = '6A081A811781C30ACA51DBC036AFD93092AF91E3297901F02C17043795A10690'
+$NasmHash = '161D0BFAFF53C2F9E9F3E69FD0672323EBABAFD1268976A5CEC11BE92A19AEE7'
+Assert-FileHash $PerlArchive $PerlHash
+Assert-FileHash $NasmArchive $NasmHash
+
 
 Assert-FileHash $GitInstaller `
     'C330C72E10B408CC39994BFEFDB63542B0D93D21699325C3E0BD874AF8A5A559'
@@ -350,39 +364,6 @@ if ($FpcVersion -ne '3.2.2') {
 Write-Host '[PASS] Lazarus 4.8'
 Write-Host '[PASS] FPC 3.2.2'
 
-Write-Step 'Installing controlled Windows SDK signing tools'
-$SignToolSource = Join-Path $BuildKit 'windows-sdk\signtool'
-$SignToolRoot = Join-Path $ToolsRoot 'signtool'
-$SignToolFiles = @{
-    'appxsip.dll'                                            = 'A7F956DC76B0330B557BE3882B66D49F75ED366A7A9AE4C5F9BB72E410C44F73'
-    'cert2spc.exe'                                           = '607D2F55A06D79243FAFA5CAF60493EDAE38D68F96C8652F69389A812CC30C38'
-    'dgssexwithfilehandlelib.dll'                            = '47BC33DA68E98E0618FE17C0BB002E3AC746491EA9DEE3A691736009D5F71596'
-    'makecat.exe'                                            = '39AF5BE7A9CFF87A6C861661B7ACFBD5FB68A14C4AC68F6DD736E3775B5A3244'
-    'makecat.exe.manifest'                                   = '459D995E14CF420836EC7566B60C3B134215F7ACD2C9B3B48A0B268A37FDC1F4'
-    'Microsoft.Windows.Build.Appx.AppxPackaging.dll.manifest'= 'B50D228857D9CD6509854FEACDC153A78804BE4312BF699298DBF6A5BD846DDD'
-    'Microsoft.Windows.Build.Appx.AppxSip.dll.manifest'      = 'BF9DADC2A05E46F479F8BDC4EBDA515682449CFE04794AFB9B8A9CF12EDF7F4E'
-    'Microsoft.Windows.Build.Appx.OpcServices.dll.manifest'  = '7BABCE6A576B434C71B93797AC6968963A9C23FEEA56D8D45FAEEAA8175907EC'
-    'Microsoft.Windows.Build.Signing.mssign32.dll.manifest'  = 'E0C65F5B5F5AE116ABBB566DC7DDF95B666FC9A7F327AFA67502100954D8D713'
-    'Microsoft.Windows.Build.Signing.wintrust.dll.manifest'  = '9A6E1A316F4148EAACE69326F5F99A6A7AC4E9B58B5C22082F6603DD964BFAD9'
-    'mssign32.dll'                                           = '8E8667AB09456006D9D0582DDA340F2C887B1F1D8D33FB8B89A49533CDC768F9'
-    'opcservices.dll'                                        = '4B46756E8278B02E3F0C33EE4ED65C15C14ECDEA0012BDB570DE43EB72172AC9'
-    'signtool.exe'                                           = '92A5751C292C7D3C41619CA0F0A28D1121CF55EF55D75DCCE394BF01F0194193'
-    'signtool.exe.manifest'                                  = 'C1A768E47B3D054EEE0D8AB9027EBA122A52BF6A058AE1C02E4DDCB96CF4B09F'
-    'wintrust.dll'                                           = '82DA576E1D3701666296E24B69F0AF11D0B96592348DF8EE7A5F8FC9F4513EE2'
-    'wintrust.dll.ini'                                       = 'CA458C3FF25D27A7C61674EE9547F13FC70C7208583CBFBA75CA39B4098FA21C'
-}
-foreach ($File in $SignToolFiles.GetEnumerator()) {
-    $Source = Join-Path $SignToolSource $File.Key
-    $Target = Join-Path $SignToolRoot $File.Key
-    Assert-FileHash $Source $File.Value
-    if (-not (Test-Path -LiteralPath $Target -PathType Leaf) -or
-        (Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash -ne $File.Value) {
-        New-Item -ItemType Directory -Path $SignToolRoot -Force | Out-Null
-        Copy-Item -LiteralPath $Source -Destination $Target -Force
-    }
-    Assert-FileHash $Target $File.Value
-}
-
 Write-Step 'Checking Inno Setup 7.1.1 x64'
 $InnoInstaller = Join-Path $BuildKit 'inno-setup\innosetup-7.1.1-x64.exe'
 Assert-FileHash $InnoInstaller '8A5A6711C3766A6E5FB74F280BA0E3551E719CE94538D901FDBD1F8F9920B3F0'
@@ -403,33 +384,148 @@ if ([BitConverter]::ToUInt16($InnoBytes, $InnoPe + 4) -ne 0x8664) {
 }
 Write-Host '[PASS] Inno Setup 7.1.1 x64'
 
+# Layout ownership and redistribution rights remain the operator's responsibility.
+function Assert-MicrosoftBinary {
+    param([string]$Path, [int]$Machine = 0)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Missing Microsoft binary: $Path" }
+    $Signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($Signature.Status -ne 'Valid' -or $Signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation(?:,|$)') {
+        throw "Invalid Microsoft Authenticode signature: $Path"
+    }
+    if ($Machine) {
+        $Bytes = [IO.File]::ReadAllBytes($Path)
+        $Pe = [BitConverter]::ToInt32($Bytes, 0x3c)
+        if ([BitConverter]::ToUInt16($Bytes, $Pe + 4) -ne $Machine) { throw "Wrong PE architecture: $Path" }
+    }
+}
+
+function Test-Msvc {
+    if (-not (Test-Path -LiteralPath $VsWhere -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $VcVars -PathType Leaf)) { return $false }
+    Assert-MicrosoftBinary $VsWhere
+    $Json = & $VsWhere -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.Windows11SDK.26100 -format json
+    if ($LASTEXITCODE -ne 0) { return $false }
+    $Instances = @($Json -join [Environment]::NewLine | ConvertFrom-Json)
+    $Matching = @($Instances | Where-Object {
+        [IO.Path]::GetFullPath((Join-Path $_.installationPath 'VC\Auxiliary\Build\vcvarsall.bat')) -ieq [IO.Path]::GetFullPath($VcVars)
+    })
+    if ($Matching.Count -eq 0) { return $false }
+    # Pin SDK selection too: another installed SDK must not silently replace 26100.
+    $SdkVersions = @(Get-ChildItem -LiteralPath (Join-Path $WindowsSdkRoot 'Include') -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^10\.0\.26100\.\d+$' } | Sort-Object { [version]$_.Name } -Descending)
+    if ($SdkVersions.Count -eq 0) { return $false }
+    $SdkVersion = $SdkVersions[0].Name
+    foreach ($Relative in @("Include\$SdkVersion\um\Windows.h", "Include\$SdkVersion\ucrt\stdio.h",
+        "Lib\$SdkVersion\um\x86\kernel32.lib", "Lib\$SdkVersion\ucrt\x86\ucrt.lib")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $WindowsSdkRoot $Relative) -PathType Leaf)) { return $false }
+    }
+    $Command = 'call "' + $VcVars + '" x86 ' + $SdkVersions[0].Name + ' >nul && cl.exe /Bv 2>&1'
+    $Banner = (& cmd.exe /d /s /c $Command) -join [Environment]::NewLine
+    return ($Banner -match '19\.44\.35229(?:\D|$)' -and $Banner -match '(80x86|x86)')
+}
+
 Write-Step 'Preparing mandatory OpenSSL 3.5.9 native tools'
-if (-not $OpenSsl35Toolchain) {
-    throw 'OpenSSL 3.5.9 toolchain is mandatory; OpenSSL 1.x fallback removed.'
+if (-not $OpenSsl35Toolchain) { throw 'OpenSSL 3.5.9 is mandatory; no OpenSSL 1.x fallback.' }
+if (-not (Test-Msvc)) {
+    if (-not $MsvcLayout -or -not $MsvcBootstrapper -or $MsvcBootstrapperSha256 -notmatch '^[0-9A-Fa-f]{64}$') {
+        throw 'BLOCKED: supply a controlled local MSVC 2022 layout, its bootstrapper and independently validated SHA256.'
+    }
+    $LayoutFull = [IO.Path]::GetFullPath($MsvcLayout).TrimEnd('\')
+    $BootstrapperFull = [IO.Path]::GetFullPath($MsvcBootstrapper)
+    if (-not (Test-Path -LiteralPath $LayoutFull -PathType Container) -or
+        -not $BootstrapperFull.StartsWith($LayoutFull + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Bootstrapper must belong to the controlled local layout.'
+    }
+    Assert-FileHash $BootstrapperFull $MsvcBootstrapperSha256
+    Assert-MicrosoftBinary $BootstrapperFull
+    # Verify the layout before installation. No online repair or download.
+    Invoke-CheckedProcess $BootstrapperFull @('--layout', ('"' + $LayoutFull + '"'), '--verify', '--quiet', '--wait')
+    $Process = Start-Process -FilePath $BootstrapperFull -ArgumentList @(
+        '--quiet', '--wait', '--norestart', '--noWeb',
+        '--installPath', ('"' + $MsvcInstallPath + '"'),
+        '--add', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+        '--add', 'Microsoft.VisualStudio.Component.Windows11SDK.26100'
+    ) -Wait -PassThru
+    if ($Process.ExitCode -eq 3010) { throw 'BLOCKED: MSVC requires a reboot; rerun 01 afterwards.' }
+    if ($Process.ExitCode -ne 0) { throw "MSVC installation failed: $($Process.ExitCode)" }
+    if (-not (Test-Msvc)) { throw 'BLOCKED: installed MSVC components/version do not match the required toolchain.' }
 }
-foreach ($Recipe in $NativeToolInstallers) {
-    if (-not (Test-Path -LiteralPath $Recipe.Probe -PathType Leaf)) {
-        Assert-FileHash $Recipe.Installer $Recipe.Sha256
-        Invoke-CheckedProcess $Recipe.Installer $Recipe.Arguments
-        if (-not (Test-Path -LiteralPath $Recipe.Probe -PathType Leaf)) {
-            throw "Native tool installation failed: $($Recipe.Name)"
-        }
+Write-Host '[PASS] MSVC 2022 19.44.35229 x86 and required components'
+
+$SdkBins = @(Get-ChildItem -LiteralPath (Join-Path $WindowsSdkRoot 'bin') -Directory |
+    Where-Object { $_.Name -match '^10\.0\.26100\.\d+$' } | Sort-Object { [version]$_.Name } -Descending)
+if ($SdkBins.Count -eq 0) { throw 'BLOCKED: Windows SDK 26100 signing tools missing.' }
+foreach ($Arch in @('x86','x64')) {
+    $SdkSignTool = Join-Path $SdkBins[0].FullName "$Arch\signtool.exe"
+    $Machine = 0x14c
+    if ($Arch -eq 'x64') { $Machine = 0x8664 }
+    Assert-MicrosoftBinary $SdkSignTool $Machine
+    if ((Get-Item -LiteralPath $SdkSignTool).VersionInfo.FileVersion -notmatch '^10\.0\.26100\.') {
+        throw "Unexpected SDK SignTool version: $SdkSignTool"
     }
 }
-foreach ($Tool in @($VcVars, $Perl, $Nasm)) {
-    if (-not (Test-Path -LiteralPath $Tool -PathType Leaf)) {
-        throw "BLOCKED: OpenSSL 3.5.9 prerequisite missing: $Tool. Supply a controlled offline NativeToolInstallers recipe to 01."
+Write-Host "[PASS] Microsoft SDK SignTool x86/x64: $($SdkBins[0].FullName)"
+
+function Expand-ControlledPortable {
+    param([string]$Archive, [string]$Hash, [string]$Destination)
+    if (-not $Archive) { throw "BLOCKED: supply the validated portable archive for $Destination" }
+    Assert-FileHash $Archive $Hash
+    if (Test-Path -LiteralPath $Destination) {
+        throw "BLOCKED: destination already exists with a nonconforming tool: $Destination"
+    }
+    New-Item -ItemType Directory -Path $Destination | Out-Null
+    Expand-Archive -LiteralPath $Archive -DestinationPath $Destination
+}
+function Test-ArchiveExecutable {
+    param([string]$Archive, [string]$Executable, [string]$Name)
+    # The archive hash pins the full portable release (including Perl's .1 build).
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $Zip = [IO.Compression.ZipFile]::OpenRead($Archive)
+    try {
+        $Entries = @($Zip.Entries | Where-Object { $_.Name -ieq $Name })
+        if ($Entries.Count -ne 1) { throw "BLOCKED: ambiguous executable in portable archive: $Archive" }
+        $Stream = $Entries[0].Open()
+        $Hasher = [Security.Cryptography.SHA256]::Create()
+        try { $Hash = ([BitConverter]::ToString($Hasher.ComputeHash($Stream))).Replace('-','') }
+        finally { $Stream.Dispose(); $Hasher.Dispose() }
+        return ((Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash -eq $Hash)
+    }
+    finally { $Zip.Dispose() }
+}
+function Test-Perl {
+    if (-not (Test-Path -LiteralPath $Perl -PathType Leaf)) { return $false }
+    if (-not (Test-ArchiveExecutable $PerlArchive $Perl 'perl.exe')) { return $false }
+    $Version = & $Perl -MConfig -e 'print "$^V|$Config{archname}"'
+    return ($LASTEXITCODE -eq 0 -and ($Version -join '') -match '^v5\.42\.3\|MSWin32-x64-')
+}
+function Test-Nasm {
+    if (-not (Test-Path -LiteralPath $Nasm -PathType Leaf)) { return $false }
+    if (-not (Test-ArchiveExecutable $NasmArchive $Nasm 'nasm.exe')) { return $false }
+    $Version = & $Nasm -v
+    $ExitCode = $LASTEXITCODE
+    $Bytes = [IO.File]::ReadAllBytes($Nasm)
+    $Pe = [BitConverter]::ToInt32($Bytes, 0x3c)
+    return ($ExitCode -eq 0 -and ($Version -join '') -match '^NASM version 3\.02(?:\s|$)' -and
+        [BitConverter]::ToUInt16($Bytes, $Pe + 4) -eq 0x8664)
+}
+if (-not (Test-Perl)) {
+    $PerlRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $Perl))
+    Expand-ControlledPortable $PerlArchive $PerlHash $PerlRoot
+}
+if (-not (Test-Nasm)) {
+    $NasmRoot = Split-Path -Parent $Nasm
+    Expand-ControlledPortable $NasmArchive $NasmHash $NasmRoot
+    # Official NASM ZIP may contain a versioned top-level directory.
+    if (-not (Test-Path -LiteralPath $Nasm -PathType Leaf)) {
+        $Candidates = @(Get-ChildItem -LiteralPath $NasmRoot -Recurse -File -Filter nasm.exe)
+        if ($Candidates.Count -ne 1) { throw 'BLOCKED: ambiguous NASM portable archive layout.' }
+        Get-ChildItem -LiteralPath $Candidates[0].DirectoryName | Copy-Item -Destination $NasmRoot -Recurse
     }
 }
-$VcBanner = (& cmd.exe /d /s /c ('call "' + $VcVars + '" x86 >nul && cl.exe /Bv 2>&1')) -join "`n"
-if ($VcBanner -notmatch '19\.44\.35229' -or $VcBanner -notmatch '(80x86|x86)') {
-    throw "Unexpected MSVC 2022 x86 compiler: $VcBanner"
-}
-& $Perl -v
-if ($LASTEXITCODE -ne 0) { throw 'Perl validation failed' }
-& $Nasm -v
-if ($LASTEXITCODE -ne 0) { throw 'NASM validation failed' }
+if (-not (Test-Perl)) { throw 'BLOCKED: Strawberry Perl 5.42.3.1 x64 portable validation failed.' }
+if (-not (Test-Nasm)) { throw 'BLOCKED: NASM 3.02 x64 portable validation failed.' }
 foreach ($Tool in @('tar.exe', 'git.exe')) {
     if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) { throw "Missing tool: $Tool" }
 }
-Write-Host '[PASS] Windows build tools validated. Runtime construction remains to be validated by 02.'
+Write-Host "[PASS] Native tools prepared. Pass -VcVars '$VcVars' -Perl '$Perl' -Nasm '$Nasm' to 02."
+Write-Host '[PASS] Tool probes completed; native compilation and runtime construction remain to be validated by 02.'
