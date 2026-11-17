@@ -15,7 +15,7 @@
 
   Baseline assumptions:
     - bootstrap CPython 2.7.18 x86 is installed temporarily
-    - C:\padit-build-kit contains the validated controlled inputs
+    - C:\padit-01-kit contains the validated controlled inputs
     - this script is run from a WAPT 1.8.3 source tree
 
   The resulting runtime is expected to execute without C:\Python27 in sys.path.
@@ -23,17 +23,18 @@
 
 [CmdletBinding()]
 param(
+    [string]$ToolsRoot = 'C:\padit-02-tools',
     [Parameter()]
     [string]$RepoRoot = "",
 
     [Parameter()]
-    [string]$BuildKit = "C:\padit-build-kit",
+    [string]$BuildKit = "C:\padit-01-kit",
 
     [Parameter()]
-    [string]$BootstrapPython = "C:\Python27\python.exe",
+    [string]$BootstrapPython = (Join-Path $ToolsRoot "Python27\python.exe"),
 
     [Parameter()]
-    [string]$Output = "C:\padit-runtime-1.8.3",
+    [string]$Output = "C:\padit-03-runtime",
 
     [switch]$Force,
 
@@ -41,12 +42,18 @@ param(
     [string]$UjsonPytestPackages = "",
 
     [Parameter()]
-    [string]$BuildPython = "C:\padit-build-python2\Scripts\python.exe",
+    [string]$BuildPython = (Join-Path $ToolsRoot "build-python2\Scripts\python.exe"),
 
-    [switch]$OpenSsl35,
+    [switch]$OpenSsl35 = $true,
 
+    [string]$VcVars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat',
+    [string]$Perl = 'C:\Strawberry\perl\bin\perl.exe',
+    [string]$Nasm = 'C:\Program Files\NASM\nasm.exe',
+    [string]$Vc9Root = (Join-Path $env:LOCALAPPDATA 'Programs\Common\Microsoft\Visual C++ for Python\9.0'),
     [switch]$OpenSslFullTests
 )
+
+if (-not $OpenSsl35) { throw 'BLOCKED: OpenSSL 3.5.9 is mandatory; OpenSSL 1.x fallback removed.' }
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -54,6 +61,7 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+$env:Path = (Join-Path $ToolsRoot 'Git\cmd') + ';' + $env:Path
 
 function Write-Step([string]$Text) {
     Write-Host ""
@@ -361,7 +369,6 @@ function Build-ControlledPywin32Native {
     $LibDir = Join-Path $WorkDir 'lib'
     $TempDir = Join-Path $WorkDir 'temp'
     $CompatDir = Join-Path $WorkDir 'sdk-compat\Lib\x86'
-    $VC9Root = Join-Path $env:LOCALAPPDATA 'Programs\Common\Microsoft\Visual C++ for Python\9.0'
     $VcVars = Join-Path $VC9Root 'vcvarsall.bat'
     $SdkRoot = Join-Path $VC9Root 'WinSDK'
     $SdkLib = Join-Path $SdkRoot 'Lib'
@@ -525,7 +532,6 @@ print('[PASS] 7/7 ACL checks; loaded DLL: %s' % loaded)
 
 $BuiltWheels = Join-Path $BuildKit "python\built-wheels"
 $PaditBins   = Join-Path $BuildKit "python\padit-binaries"
-$OpenSslZip  = Join-Path $BuildKit "runtime\openssl\openssl-1.0.2u-i386-win32.zip"
 # W32: controlled OpenSSL 3.5.9 source archives.
 $OpenSsl35Source = Join-Path $BuildKit 'runtime\openssl\sources\openssl-3.5.9.tar.gz'
 $Python27Source = Join-Path $BuildKit 'python\sources\Python-2.7.18.tgz'
@@ -557,9 +563,6 @@ Assert-Sha256 $PythonCom   "074F23F9710BBCF1447763829C0E3D16AFA5502EFC6F784077CF
 Assert-Sha256 $PythonComL  "CC5BA5439CFA435FC9BD442F6509EBDF83646DF0756093DFF6777775FD2246E6"
 Ensure-ControlledUjsonWheel
 Assert-Sha256 $ActiveDir   "EDFE01A38139D79A2EAC7B6F409B0495A447536CBB004318811D5CAF5842A556"
-if (-not $OpenSsl35) {
-    Assert-Sha256 $OpenSslZip "644FEDF6FC567716EF25F4FC805E2AAAC5BB7D32D01349EAEB62802CD20AE81A"
-}
 if ($OpenSslFullTests -and -not $OpenSsl35) {
     throw 'OpenSslFullTests requires OpenSsl35'
 }
@@ -642,9 +645,9 @@ if ($OpenSsl35) {
 
     Write-Step 'Building OpenSSL 3.5.9 Windows x86'
 
-    $W32VcVars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat'
-    $W32Perl = 'C:\Strawberry\perl\bin\perl.exe'
-    $W32Nasm = 'C:\Program Files\NASM\nasm.exe'
+    $W32VcVars = $VcVars
+    $W32Perl = $Perl
+    $W32Nasm = $Nasm
 
     foreach ($Tool in @($W32VcVars, $W32Perl, $W32Nasm)) {
         Assert-File $Tool
@@ -687,7 +690,7 @@ if ($OpenSsl35) {
             '@echo off'
             "call `"$W32VcVars`" x86 >nul"
             'if errorlevel 1 exit /b 1'
-            'set "PATH=C:\Strawberry\perl\bin;C:\Program Files\NASM;%PATH%"'
+            ('set "PATH=' + (Split-Path $W32Perl -Parent) + ';' + (Split-Path $W32Nasm -Parent) + ';%PATH%"')
             "cd /d `"$W32Source`""
             "$Command > `"$Log`" 2>&1"
             'exit /b %ERRORLEVEL%'
@@ -2555,33 +2558,6 @@ if ($OpenSsl35) {
 
     Write-Host '[PASS] OpenSSL 3.5.9 runtime artifacts assembled'
 }
-else {Write-Step "Adding controlled external WAPT OpenSSL baseline"
-
-$sslTemp = Join-Path ([IO.Path]::GetTempPath()) ("wapt-openssl-" + [Guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $sslTemp | Out-Null
-try {
-    Expand-Archive -LiteralPath $OpenSslZip -DestinationPath $sslTemp
-
-    Copy-Checked (Join-Path $sslTemp "openssl.exe") `
-        (Join-Path $Output "openssl.exe") `
-        "6063E160E812F3D57B67B77581E30F110FDFC708F763BB2FCC82FA9CAAC816A3"
-
-    Copy-Checked (Join-Path $sslTemp "libeay32.dll") `
-        (Join-Path $Output "libeay32.dll") `
-        "5264A4A478383F501961F2BD9BEB1F77A43A487B76090561BBA2CBFE951E5305"
-
-    Copy-Checked (Join-Path $sslTemp "ssleay32.dll") `
-        (Join-Path $Output "ssleay32.dll") `
-        "0A4031AB00664CC5E202C8731798800F0475EF76800122CEBD71D249655D725F"
-}
-finally {
-    Remove-Item -LiteralPath $sslTemp -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-
-
-}
-
 # ---------------------------------------------------------------------------
 # W22 - RPyC 4.1.5 / CVE-2024-27758.
 # ---------------------------------------------------------------------------

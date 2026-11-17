@@ -1,16 +1,17 @@
 [CmdletBinding()]
 param(
+    [string]$ToolsRoot = 'C:\padit-02-tools',
     [string]$SourceRoot,
-    [string]$BuildKit = 'C:\padit-build-kit',
-    [string]$Runtime = 'C:\padit-runtime-1.8.3',
-    [string]$BuildPython = 'C:\padit-build-python2\Scripts\python.exe',
-    [string]$Output = 'C:\padit-product-1.8.3',
-    [string]$Worktree = 'C:\padit-build-worktree-auto',
-    [string]$Lazarus = 'C:\lazarus',
-    [string]$LazarusPcp = 'C:\padit-build-lazarus-pcp-auto',
+    [string]$BuildKit = 'C:\padit-01-kit',
+    [string]$Runtime = 'C:\padit-03-runtime',
+    [string]$BuildPython = (Join-Path $ToolsRoot 'build-python2\Scripts\python.exe'),
+    [string]$Output = 'C:\padit-04-product',
+    [string]$Worktree,
+    [string]$Lazarus = (Join-Path $ToolsRoot 'lazarus'),
+    [string]$LazarusPcp = (Join-Path $ToolsRoot 'lazarus-pcp'),
+    [string]$InnoRoot = (Join-Path $ToolsRoot 'innosetup'),
     [string]$SignKey,
     [string]$SignKeyPasswordFile,
-    [string]$BuildBranchSuffix,
     [switch]$Force
 )
 
@@ -18,7 +19,15 @@ if (-not $SourceRoot) {
     $SourceRoot = Split-Path -Parent $PSScriptRoot
 }
 
+if (-not $Worktree) { $Worktree = $SourceRoot }
+if ([IO.Path]::GetFullPath($Worktree) -ine [IO.Path]::GetFullPath($SourceRoot)) {
+    throw 'SourceRoot must identify the existing experimental worktree; no new worktree is created.'
+}
+if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot '.git') -PathType Leaf)) {
+    throw 'Product compilation requires an existing linked experimental worktree, not the main repository.'
+}
 $ErrorActionPreference = 'Stop'
+$env:Path = (Join-Path $ToolsRoot 'Git\cmd') + ';' + $env:Path
 
 function Assert-File {
     param(
@@ -89,18 +98,17 @@ $ProtectedPaths = @(
     $SourceRoot,
     $BuildKit,
     $Runtime,
+    $InnoRoot,
+    $BuildPython,
     $Lazarus
 )
 
 Assert-SafeDisposablePath -Path $Output     -ProtectedPaths $ProtectedPaths
-Assert-SafeDisposablePath -Path $Worktree   -ProtectedPaths $ProtectedPaths
 Assert-SafeDisposablePath -Path $LazarusPcp -ProtectedPaths $ProtectedPaths
 
 Assert-SafeDisposablePath -Path $Output `
     -ProtectedPaths @($Worktree, $LazarusPcp)
 
-Assert-SafeDisposablePath -Path $Worktree `
-    -ProtectedPaths @($Output, $LazarusPcp)
 
 Assert-SafeDisposablePath -Path $LazarusPcp `
     -ProtectedPaths @($Output, $Worktree)
@@ -123,8 +131,8 @@ Write-Host ""
 $Vc90 = Join-Path $BuildKit 'runtime\vc90-crt'
 $Tools = Join-Path $BuildKit 'runtime\tools'
 $Nssm = Join-Path $BuildKit 'runtime\nssm'
-$InnoInstaller = Join-Path $BuildKit 'inno-setup\innosetup-7.1.1-x64.exe'
-$SignToolRoot = Join-Path $BuildKit 'windows-sdk\signtool'
+
+$SignToolRoot = Join-Path $ToolsRoot 'signtool'
 $SignTool = Join-Path $SignToolRoot 'signtool.exe'
 $SigningPublic = Join-Path $BuildKit 'signing\public'
 $SigningRootCer = Join-Path $SigningPublic 'Thouet-Software-Signing-Root-CA.cer'
@@ -175,8 +183,10 @@ Assert-File (Join-Path $Nssm 'win32\nssm.exe') `
 Assert-File (Join-Path $Nssm 'win64\nssm.exe') `
     '2900F26D2ED74F4D5DB77CBCCBD4F2185FCCE2625A1BE724120984AC2418989B'
 
-Assert-File $InnoInstaller `
-    '8A5A6711C3766A6E5FB74F280BA0E3551E719CE94538D901FDBD1F8F9920B3F0'
+Assert-File (Join-Path $InnoRoot 'ISCC.exe')
+if ((Get-Item -LiteralPath (Join-Path $InnoRoot 'ISCC.exe')).VersionInfo.ProductVersion -notmatch '^7\.1\.1(?:\D|$)') {
+    throw 'Run 01 first: Inno Setup 7.1.1 is required.'
+}
 Assert-File $SigningRootCer `
     '5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A'
 
@@ -210,10 +220,13 @@ if ($OpenSsl3Runtime) {
     Write-Host '[PASS] OpenSSL 3 packaging inputs'
 }
 else {
-    Assert-File (Join-Path $Runtime 'libeay32.dll')
-    Assert-File (Join-Path $Runtime 'ssleay32.dll')
+    throw 'BLOCKED: OpenSSL 3.5.9 runtime required; validate 02. OpenSSL 1.x is unsupported.'
 }
 Assert-File (Join-Path $Runtime 'openssl.exe')
+$RuntimeSslVersion = & (Join-Path $Runtime 'waptpython.exe') -c 'import ssl; print(ssl.OPENSSL_VERSION)'
+if ($LASTEXITCODE -ne 0 -or ($RuntimeSslVersion -join '') -notmatch '^OpenSSL 3\.5\.9(?:\s|$)') {
+    throw "BLOCKED: runtime must load OpenSSL 3.5.9: $RuntimeSslVersion"
+}
 Assert-Directory (Join-Path $Runtime 'DLLs')
 Assert-Directory (Join-Path $Runtime 'Lib')
 Assert-Directory (Join-Path $Runtime 'Scripts')
@@ -271,126 +284,8 @@ if ($LASTEXITCODE -ne 0 -or $BuildNumber -notmatch '^\d+$') {
     throw "Unable to determine natural Git build number"
 }
 
-$BuildBranch = "build/windows-1.8.3-$BuildNumber-auto"
-
-if ($BuildBranchSuffix) {
-    if ($BuildBranchSuffix -cnotmatch '^[a-zA-Z0-9-]+$') {
-        throw "Invalid build branch suffix: $BuildBranchSuffix"
-    }
-
-    $BuildBranch = "$BuildBranch-$BuildBranchSuffix"
-}
-
 Write-Host "Source commit : $SourceCommit"
 Write-Host "Build number  : $BuildNumber"
-Write-Host "Build branch  : $BuildBranch"
-
-# ----------------------------------------------------------------------
-# Prepare isolated Git worktree
-# ----------------------------------------------------------------------
-
-Write-Host ""
-Write-Host "Preparing isolated Git worktree..."
-
-# Remove a previous disposable worktree if explicitly allowed.
-if (Test-Path -LiteralPath $Worktree) {
-    if (-not $Force) {
-        throw "Worktree directory already exists: $Worktree. Use -Force to replace it."
-    }
-
-    # First try the normal Git-aware removal.
-    & git -C $SourceRoot worktree remove --force $Worktree 2>$null
-
-    if ($LASTEXITCODE -ne 0) {
-        # The directory may be a stale/unregistered disposable worktree.
-        # Never delete it unless it still identifies itself as a Git worktree
-        # belonging to this repository.
-        $staleCommonDir = (& git -C $Worktree rev-parse --git-common-dir 2>$null)
-
-        if ($LASTEXITCODE -ne 0 -or -not $staleCommonDir) {
-            throw "Existing path is not a recognized Git worktree; refusing recursive deletion: $Worktree"
-        }
-
-        $expectedCommonDir = (& git -C $SourceRoot rev-parse --git-common-dir).Trim()
-        if ($LASTEXITCODE -ne 0) {
-            throw "Unable to resolve source repository common Git directory"
-        }
-
-        $actualCommonDir = $staleCommonDir.Trim()
-
-        if (-not [IO.Path]::IsPathRooted($expectedCommonDir)) {
-            $expectedCommonDir = Join-Path $SourceRoot $expectedCommonDir
-        }
-
-        if (-not [IO.Path]::IsPathRooted($actualCommonDir)) {
-            $actualCommonDir = Join-Path $Worktree $actualCommonDir
-        }
-
-        $expectedCommonDir = [IO.Path]::GetFullPath($expectedCommonDir).TrimEnd('\')
-        $actualCommonDir   = [IO.Path]::GetFullPath($actualCommonDir).TrimEnd('\')
-
-        if ($actualCommonDir -ine $expectedCommonDir) {
-            throw "Existing path belongs to another Git repository; refusing deletion: $Worktree"
-        }
-
-        Remove-Item -LiteralPath $Worktree -Recurse -Force
-        & git -C $SourceRoot worktree prune
-    }
-}
-
-# Remove a stale local build branch from a previous run.
-$existingBranch = & git -C $SourceRoot branch --list $BuildBranch
-if ($LASTEXITCODE -ne 0) {
-    throw "Unable to inspect local Git build branch"
-}
-
-if ($existingBranch) {
-    if (-not $Force) {
-        throw "Local build branch already exists: $BuildBranch. Use -Force to replace it."
-    }
-
-    & git -C $SourceRoot branch -D $BuildBranch
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to remove stale local build branch: $BuildBranch"
-    }
-}
-
-& git -C $SourceRoot worktree add -b $BuildBranch $Worktree $SourceCommit
-if ($LASTEXITCODE -ne 0) {
-    throw "Unable to create Git worktree: $Worktree"
-}
-
-$WorktreeCommit = (& git -C $Worktree rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or $WorktreeCommit -ne $SourceCommit) {
-    throw "Worktree HEAD mismatch. Expected $SourceCommit, got $WorktreeCommit"
-}
-
-$WorktreeBranch = (& git -C $Worktree branch --show-current).Trim()
-if ($LASTEXITCODE -ne 0 -or $WorktreeBranch -ne $BuildBranch) {
-    throw "Worktree branch mismatch. Expected $BuildBranch, got $WorktreeBranch"
-}
-
-Write-Host "Worktree commit : $WorktreeCommit"
-Write-Host "Worktree branch : $WorktreeBranch"
-Write-Host "[PASS] Isolated Git worktree created."
-
-# ----------------------------------------------------------------------
-# Synchronize submodule configuration
-# ----------------------------------------------------------------------
-
-Write-Host ""
-Write-Host "Synchronizing Git submodule configuration..."
-
-& git -C $Worktree submodule sync --recursive
-if ($LASTEXITCODE -ne 0) {
-    throw "Git submodule sync failed"
-}
-
-Write-Host "[PASS] Git submodule configuration synchronized."
-
-# ----------------------------------------------------------------------
-# Initialize Community submodules only
-# ----------------------------------------------------------------------
 
 $CommunitySubmodules = @(
     'submodules\pltis_bgrabitmap',
@@ -410,19 +305,6 @@ $CommunitySubmodules = @(
     'submodules\pltis_virtualtreesextra',
     'submodules\pltis_visualcontrols'
 )
-
-Write-Host ""
-Write-Host "Initializing 16 Community submodules..."
-
-foreach ($submodule in $CommunitySubmodules) {
-    & git -C $Worktree submodule update --init -- $submodule
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Git submodule update failed: $submodule"
-    }
-}
-
-Write-Host "[PASS] Community submodules initialized: 16/16"
 
 Write-Host ""
 Write-Host "Verifying Community submodule gitlinks..."
@@ -1047,23 +929,11 @@ Write-Host "Git-controlled Inno scripts: 7/7 PASS"
 
 Write-Host "Reconstructing controlled Inno Setup 7.1.1 x64 tree..."
 
-$InnoTemp = Join-Path $env:TEMP (
-    'padit-innosetup-7.1.1-' + [Guid]::NewGuid().ToString('N')
-)
 $InnoTarget = Join-Path $Output 'waptsetup\innosetup'
 
 New-Item -ItemType Directory -Path $InnoTarget -Force | Out-Null
 
-try {
-    $innoProcess = Start-Process `
-        -FilePath $InnoInstaller `
-        -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$InnoTemp" `
-        -Wait -PassThru
-
-    if ($innoProcess.ExitCode -ne 0) {
-        throw "Inno Setup installation failed: $($innoProcess.ExitCode)"
-    }
-
+& {
     $RequiredRoot = @(
         'Default.isl',
         'ISCC.exe',
@@ -1080,15 +950,15 @@ try {
     )
 
     foreach ($name in $RequiredRoot) {
-        Assert-File (Join-Path $InnoTemp $name)
+        Assert-File (Join-Path $InnoRoot $name)
     }
 
     foreach ($name in @('French.isl', 'German.isl')) {
-        Assert-File (Join-Path $InnoTemp "Languages\$name")
+        Assert-File (Join-Path $InnoRoot "Languages\$name")
     }
 
     $SourceFiles = @(
-        Get-ChildItem -LiteralPath $InnoTemp -Recurse -File
+        Get-ChildItem -LiteralPath $InnoRoot -Recurse -File
     )
 
     $SourceSignatures = @(
@@ -1113,7 +983,7 @@ try {
     )
 
     $InnoEntries = @(
-        Get-ChildItem -LiteralPath $InnoTemp -Force
+        Get-ChildItem -LiteralPath $InnoRoot -Force
     )
 
     $InnoExcluded = @(
@@ -1144,14 +1014,21 @@ try {
         Assert-File (Join-Path $InnoTarget "Languages\$name")
     }
 
+    foreach ($SourceFile in $SourceFiles) {
+        $Relative = $SourceFile.FullName.Substring($InnoRoot.TrimEnd('\').Length + 1)
+        if ($Relative -in $InnoExclude) { continue }
+        $TargetFile = Join-Path $InnoTarget $Relative
+        Assert-File $TargetFile
+        if ((Get-FileHash -LiteralPath $SourceFile.FullName -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath $TargetFile -Algorithm SHA256).Hash) {
+            throw "Inno copy mismatch: $Relative"
+        }
+    }
+    $TargetSignatures = @(Get-ChildItem -LiteralPath $InnoTarget -Recurse -File -Filter '*.issig')
+    if ($TargetSignatures.Count -ne $SourceSignatures.Count) { throw 'Inno .issig inventory mismatch' }
     Write-Host "[PASS] Inno Setup 7.1.1 distribution copied: $($TargetFiles.Count) files"
     Write-Host "[PASS] Inno component signatures: $($SourceSignatures.Count)"
     Write-Host "[PASS] Inno languages: French / German"
-}
-finally {
-    if (Test-Path -LiteralPath $InnoTemp) {
-        Remove-Item -LiteralPath $InnoTemp -Recurse -Force
-    }
 }
 # ----------------------------------------------------------------------
 # Install freshly built Lazarus artifacts

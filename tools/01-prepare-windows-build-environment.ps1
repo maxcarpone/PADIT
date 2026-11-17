@@ -1,14 +1,25 @@
 [CmdletBinding()]
 param(
-    [string]$BuildKit = 'C:\padit-build-kit',
-    [string]$PythonRoot = 'C:\Python27',
-    [string]$BuildPythonRoot = 'C:\padit-build-python2',
-    [string]$LazarusRoot = 'C:\lazarus',
-    [switch]$OpenSsl35Toolchain
+    [string]$ToolsRoot = 'C:\padit-02-tools',
+    [string]$BuildKit = 'C:\padit-01-kit',
+    [string]$PythonRoot = (Join-Path $ToolsRoot 'Python27'),
+    [string]$BuildPythonRoot = (Join-Path $ToolsRoot 'build-python2'),
+    [string]$LazarusRoot = (Join-Path $ToolsRoot 'lazarus'),
+    [switch]$OpenSsl35Toolchain = $true,
+    [string]$GitRoot = (Join-Path $ToolsRoot 'Git'),
+    [string]$InnoRoot = (Join-Path $ToolsRoot 'innosetup'),
+    [string]$Vc9Root = (Join-Path $env:LOCALAPPDATA 'Programs\Common\Microsoft\Visual C++ for Python\9.0'),
+    [string]$VcVars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat',
+    [string]$Perl = 'C:\Strawberry\perl\bin\perl.exe',
+    [string]$Nasm = 'C:\Program Files\NASM\nasm.exe',
+    # Controlled offline recipes: Name, Installer, Sha256, Arguments, Probe.
+    # Paths, hashes and silent options must come from validated VM inputs.
+    [hashtable[]]$NativeToolInstallers = @()
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+$env:Path = (Join-Path $GitRoot 'cmd') + ';' + $env:Path
 
 function Write-Step {
     param([string]$Message)
@@ -114,9 +125,9 @@ if (-not $GitOk) {
 
     Invoke-CheckedProcess `
         $GitInstaller `
-        @('/VERYSILENT','/NORESTART')
+        @('/VERYSILENT','/NORESTART', "/DIR=`"$GitRoot`"")
 
-    $env:Path = 'C:\Program Files\Git\cmd;' + $env:Path
+    $env:Path = (Join-Path $GitRoot 'cmd') + ';' + $env:Path
 }
 
 $GitVersion = (& git --version).Trim()
@@ -213,6 +224,8 @@ if (-not (Test-Path -LiteralPath $BuildPythonExe -PathType Leaf)) {
     }
 }
 
+$BuildPythonPackageState = & $BuildPythonExe -c "import pkg_resources; names=['GitPython','gitdb2','smmap2','smmap']; installed=dict((d.key,d.version) for d in pkg_resources.working_set); print('|'.join(installed.get(n.lower(),'missing') for n in names))"
+if ($LASTEXITCODE -ne 0 -or ($BuildPythonPackageState -join '').Trim() -ne '2.1.15|2.0.6|3.0.1|3.0.5') {
 & $BuildPythonExe -m pip install `
     --no-index `
     --no-deps `
@@ -223,6 +236,8 @@ if (-not (Test-Path -LiteralPath $BuildPythonExe -PathType Leaf)) {
 
 if ($LASTEXITCODE -ne 0) {
     throw 'Offline GitPython build dependency installation failed.'
+}
+
 }
 
 $BuildPythonPackageState = (& $BuildPythonExe -c "import pkg_resources; print('|'.join([pkg_resources.get_distribution(x).version for x in ['GitPython','gitdb2','smmap2','smmap']]))").Trim()
@@ -244,8 +259,8 @@ $VcInstaller = Join-Path $BuildKit 'windows-sdk\VCForPython27.msi'
 Assert-FileHash $VcInstaller `
     '070474DB76A2E625513A5835DF4595DF9324D820F9CC97EAB2A596DCBC2F5CBF'
 
-$VcRoot = Join-Path $env:LOCALAPPDATA `
-    'Programs\Common\Microsoft\Visual C++ for Python\9.0'
+
+$VcRoot = $Vc9Root
 
 $VcFiles = @(
     'vcvarsall.bat',
@@ -281,8 +296,8 @@ foreach ($File in $VcFiles) {
     }
 }
 
-$VcVars = Join-Path $VcRoot 'vcvarsall.bat'
-$VcCommand = 'call "' + $VcVars + '" x86 >nul && cl.exe 2>&1'
+$Vc9Vars = Join-Path $VcRoot 'vcvarsall.bat'
+$VcCommand = 'call "' + $Vc9Vars + '" x86 >nul && cl.exe 2>&1'
 
 $VcOutput = & cmd.exe /d /s /c $VcCommand 2>&1
 $VcBanner = $VcOutput -join "`n"
@@ -317,7 +332,7 @@ if (-not $LazarusOk) {
         @(
             '/VERYSILENT',
             '/NORESTART',
-            "/DIR=$LazarusRoot"
+            "/DIR=`"$LazarusRoot`""
         )
 }
 
@@ -335,110 +350,86 @@ if ($FpcVersion -ne '3.2.2') {
 Write-Host '[PASS] Lazarus 4.8'
 Write-Host '[PASS] FPC 3.2.2'
 
-Write-Step 'Windows build environment ready'
-
-Write-Host ''
-Write-Host '[PASS] Controlled Windows build prerequisites validated.'
-Write-Host ''
-Write-Host 'Git:             2.56.1.windows.1'
-Write-Host 'Python:          2.7.18 x86'
-Write-Host 'virtualenv:      15.1.0'
-Write-Host "Build Python:     $BuildPythonRoot"
-Write-Host 'Lazarus:         4.8'
-Write-Host 'FPC:             3.2.2'
-Write-Host 'VCForPython27:   9.0 (VC9 x86, 15.00.30729.01)'
-Write-Host 'Global Inno:     not required'
-
-
-# ---------------------------------------------------------------------------
-# W32 / Optional OpenSSL 3.5.9 Windows x86 build toolchain
-# ---------------------------------------------------------------------------
-
-if ($OpenSsl35Toolchain) {
-    Write-Step 'Checking OpenSSL 3.5.9 build toolchain'
-
-    $VcVars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat'
-    $Perl = 'C:\Strawberry\perl\bin\perl.exe'
-    $Nasm = 'C:\Program Files\NASM\nasm.exe'
-
-    foreach ($Tool in @($VcVars, $Perl, $Nasm)) {
-        if (-not (Test-Path -LiteralPath $Tool -PathType Leaf)) {
-            throw "Missing OpenSSL build prerequisite: $Tool"
-        }
-    }
-
-    $VcTestDir = Join-Path $env:TEMP (
-        'padit-w32-msvc-' + [Guid]::NewGuid().ToString('N')
-    )
-
-    New-Item -ItemType Directory -Path $VcTestDir | Out-Null
-
-    try {
-        $VcSource = Join-Path $VcTestDir 'check.c'
-        $VcObject = Join-Path $VcTestDir 'check.obj'
-        $VcBatch = Join-Path $VcTestDir 'check.cmd'
-        $VcLog = Join-Path $VcTestDir 'check.log'
-
-        [IO.File]::WriteAllText(
-            $VcSource,
-            'int padit_w32_check(void) { return 0; }',
-            [Text.Encoding]::ASCII
-        )
-
-        $Commands = @(
-            '@echo off'
-            "call `"$VcVars`" x86 >nul"
-            'if errorlevel 1 exit /b 1'
-            "cl.exe /nologo /Bv /c /Fo`"$VcObject`" `"$VcSource`" > `"$VcLog`" 2>&1"
-            'exit /b %ERRORLEVEL%'
-        )
-
-        [IO.File]::WriteAllLines(
-            $VcBatch,
-            $Commands,
-            [Text.Encoding]::ASCII
-        )
-
-        & cmd.exe /d /c "`"$VcBatch`""
-        $VcExit = $LASTEXITCODE
-
-        if (-not (Test-Path -LiteralPath $VcLog)) {
-            throw 'MSVC compilation log missing'
-        }
-
-        $VcText = Get-Content -LiteralPath $VcLog -Raw
-
-        if ($VcExit -ne 0) {
-            throw "MSVC x86 compilation failed: $VcText"
-        }
-
-        if (-not (Test-Path -LiteralPath $VcObject)) {
-            throw 'MSVC x86 object file missing'
-        }
-
-        if ($VcText -notmatch '19\.44\.35229') {
-            throw "Unexpected MSVC version: $VcText"
-        }
-
-        Write-Host '[PASS] MSVC 2022 19.44 x86 compilation'
-    }
-    finally {
-        Remove-Item -LiteralPath $VcTestDir `
-            -Recurse -Force -ErrorAction SilentlyContinue
-    }
-
-    & $Perl -v | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Strawberry Perl check failed'
-    }
-
-    Write-Host '[PASS] Strawberry Perl'
-
-    & $Nasm -v
-    if ($LASTEXITCODE -ne 0) {
-        throw 'NASM check failed'
-    }
-
-    Write-Host '[PASS] NASM'
-    Write-Host '[PASS] OpenSSL 3.5.9 build toolchain'
+Write-Step 'Installing controlled Windows SDK signing tools'
+$SignToolSource = Join-Path $BuildKit 'windows-sdk\signtool'
+$SignToolRoot = Join-Path $ToolsRoot 'signtool'
+$SignToolFiles = @{
+    'appxsip.dll'                                            = 'A7F956DC76B0330B557BE3882B66D49F75ED366A7A9AE4C5F9BB72E410C44F73'
+    'cert2spc.exe'                                           = '607D2F55A06D79243FAFA5CAF60493EDAE38D68F96C8652F69389A812CC30C38'
+    'dgssexwithfilehandlelib.dll'                            = '47BC33DA68E98E0618FE17C0BB002E3AC746491EA9DEE3A691736009D5F71596'
+    'makecat.exe'                                            = '39AF5BE7A9CFF87A6C861661B7ACFBD5FB68A14C4AC68F6DD736E3775B5A3244'
+    'makecat.exe.manifest'                                   = '459D995E14CF420836EC7566B60C3B134215F7ACD2C9B3B48A0B268A37FDC1F4'
+    'Microsoft.Windows.Build.Appx.AppxPackaging.dll.manifest'= 'B50D228857D9CD6509854FEACDC153A78804BE4312BF699298DBF6A5BD846DDD'
+    'Microsoft.Windows.Build.Appx.AppxSip.dll.manifest'      = 'BF9DADC2A05E46F479F8BDC4EBDA515682449CFE04794AFB9B8A9CF12EDF7F4E'
+    'Microsoft.Windows.Build.Appx.OpcServices.dll.manifest'  = '7BABCE6A576B434C71B93797AC6968963A9C23FEEA56D8D45FAEEAA8175907EC'
+    'Microsoft.Windows.Build.Signing.mssign32.dll.manifest'  = 'E0C65F5B5F5AE116ABBB566DC7DDF95B666FC9A7F327AFA67502100954D8D713'
+    'Microsoft.Windows.Build.Signing.wintrust.dll.manifest'  = '9A6E1A316F4148EAACE69326F5F99A6A7AC4E9B58B5C22082F6603DD964BFAD9'
+    'mssign32.dll'                                           = '8E8667AB09456006D9D0582DDA340F2C887B1F1D8D33FB8B89A49533CDC768F9'
+    'opcservices.dll'                                        = '4B46756E8278B02E3F0C33EE4ED65C15C14ECDEA0012BDB570DE43EB72172AC9'
+    'signtool.exe'                                           = '92A5751C292C7D3C41619CA0F0A28D1121CF55EF55D75DCCE394BF01F0194193'
+    'signtool.exe.manifest'                                  = 'C1A768E47B3D054EEE0D8AB9027EBA122A52BF6A058AE1C02E4DDCB96CF4B09F'
+    'wintrust.dll'                                           = '82DA576E1D3701666296E24B69F0AF11D0B96592348DF8EE7A5F8FC9F4513EE2'
+    'wintrust.dll.ini'                                       = 'CA458C3FF25D27A7C61674EE9547F13FC70C7208583CBFBA75CA39B4098FA21C'
 }
+foreach ($File in $SignToolFiles.GetEnumerator()) {
+    $Source = Join-Path $SignToolSource $File.Key
+    $Target = Join-Path $SignToolRoot $File.Key
+    Assert-FileHash $Source $File.Value
+    if (-not (Test-Path -LiteralPath $Target -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $Target -Algorithm SHA256).Hash -ne $File.Value) {
+        New-Item -ItemType Directory -Path $SignToolRoot -Force | Out-Null
+        Copy-Item -LiteralPath $Source -Destination $Target -Force
+    }
+    Assert-FileHash $Target $File.Value
+}
+
+Write-Step 'Checking Inno Setup 7.1.1 x64'
+$InnoInstaller = Join-Path $BuildKit 'inno-setup\innosetup-7.1.1-x64.exe'
+Assert-FileHash $InnoInstaller '8A5A6711C3766A6E5FB74F280BA0E3551E719CE94538D901FDBD1F8F9920B3F0'
+$Iscc = Join-Path $InnoRoot 'ISCC.exe'
+$InnoOk = (Test-Path -LiteralPath $Iscc -PathType Leaf) -and
+    ((Get-Item -LiteralPath $Iscc).VersionInfo.ProductVersion -match '^7\.1\.1(?:\D|$)')
+if (-not $InnoOk) {
+    Invoke-CheckedProcess $InnoInstaller @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=`"$InnoRoot`"")
+}
+if (-not (Test-Path -LiteralPath $Iscc -PathType Leaf) -or
+    (Get-Item -LiteralPath $Iscc).VersionInfo.ProductVersion -notmatch '^7\.1\.1(?:\D|$)') {
+    throw 'Inno Setup 7.1.1 validation failed'
+}
+$InnoBytes = [IO.File]::ReadAllBytes($Iscc)
+$InnoPe = [BitConverter]::ToInt32($InnoBytes, 0x3c)
+if ([BitConverter]::ToUInt16($InnoBytes, $InnoPe + 4) -ne 0x8664) {
+    throw 'Inno Setup compiler must be x64'
+}
+Write-Host '[PASS] Inno Setup 7.1.1 x64'
+
+Write-Step 'Preparing mandatory OpenSSL 3.5.9 native tools'
+if (-not $OpenSsl35Toolchain) {
+    throw 'OpenSSL 3.5.9 toolchain is mandatory; OpenSSL 1.x fallback removed.'
+}
+foreach ($Recipe in $NativeToolInstallers) {
+    if (-not (Test-Path -LiteralPath $Recipe.Probe -PathType Leaf)) {
+        Assert-FileHash $Recipe.Installer $Recipe.Sha256
+        Invoke-CheckedProcess $Recipe.Installer $Recipe.Arguments
+        if (-not (Test-Path -LiteralPath $Recipe.Probe -PathType Leaf)) {
+            throw "Native tool installation failed: $($Recipe.Name)"
+        }
+    }
+}
+foreach ($Tool in @($VcVars, $Perl, $Nasm)) {
+    if (-not (Test-Path -LiteralPath $Tool -PathType Leaf)) {
+        throw "BLOCKED: OpenSSL 3.5.9 prerequisite missing: $Tool. Supply a controlled offline NativeToolInstallers recipe to 01."
+    }
+}
+$VcBanner = (& cmd.exe /d /s /c ('call "' + $VcVars + '" x86 >nul && cl.exe /Bv 2>&1')) -join "`n"
+if ($VcBanner -notmatch '19\.44\.35229' -or $VcBanner -notmatch '(80x86|x86)') {
+    throw "Unexpected MSVC 2022 x86 compiler: $VcBanner"
+}
+& $Perl -v
+if ($LASTEXITCODE -ne 0) { throw 'Perl validation failed' }
+& $Nasm -v
+if ($LASTEXITCODE -ne 0) { throw 'NASM validation failed' }
+foreach ($Tool in @('tar.exe', 'git.exe')) {
+    if (-not (Get-Command $Tool -ErrorAction SilentlyContinue)) { throw "Missing tool: $Tool" }
+}
+Write-Host '[PASS] Windows build tools validated. Runtime construction remains to be validated by 02.'
