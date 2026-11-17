@@ -57,7 +57,7 @@ function Invoke-CheckedProcess {
     }
 }
 
-$GitInstaller = Join-Path $BuildKit 'git\Git-2.55.0.5-64-bit.exe'
+$GitInstaller = Join-Path $BuildKit 'git\Git-2.56.1-64-bit.exe'
 $PythonInstaller = Join-Path $BuildKit 'python\python-2.7.18-x86.msi'
 $VirtualenvWheel = Join-Path $BuildKit 'python\virtualenv-15.1.0-py2.py3-none-any.whl'
 $BuiltWheels = Join-Path $BuildKit 'python\built-wheels'
@@ -75,7 +75,7 @@ $FpcExe = Join-Path $LazarusRoot 'fpc\3.2.2\bin\i386-win32\fpc.exe'
 Write-Step 'Validating controlled bootstrap inputs'
 
 Assert-FileHash $GitInstaller `
-    'D065A4E23C3D9A6B5073D609B5BE0830227EC3CA053C083BA385061DDFAF94C6'
+    'C330C72E10B408CC39994BFEFDB63542B0D93D21699325C3E0BD874AF8A5A559'
 
 Assert-FileHash $PythonInstaller `
     'D901802E90026E9BAD76B8A81F8DD7E43C7D7E8269D9281C9E9DF7A9C40480A9'
@@ -98,13 +98,13 @@ Assert-FileHash $BuildSmmapWheel `
 Assert-FileHash $LazarusInstaller `
     '81DA36A9AEAFEE55EAE29AAA636CCDB009F2BCEEE3215A87EC99F6F3F81B709E'
 
-Write-Step 'Checking Git 2.55.0.windows.5'
+Write-Step 'Checking Git 2.56.1.windows.1'
 
 $GitOk = $false
 
 try {
     $GitVersion = (& git --version 2>$null).Trim()
-    $GitOk = ($GitVersion -eq 'git version 2.55.0.windows.5')
+    $GitOk = ($GitVersion -eq 'git version 2.56.1.windows.1')
 } catch {
     $GitOk = $false
 }
@@ -121,7 +121,7 @@ if (-not $GitOk) {
 
 $GitVersion = (& git --version).Trim()
 
-if ($GitVersion -ne 'git version 2.55.0.windows.5') {
+if ($GitVersion -ne 'git version 2.56.1.windows.1') {
     throw "Unexpected Git version: $GitVersion"
 }
 
@@ -340,7 +340,7 @@ Write-Step 'Windows build environment ready'
 Write-Host ''
 Write-Host '[PASS] Controlled Windows build prerequisites validated.'
 Write-Host ''
-Write-Host 'Git:             2.55.0.windows.5'
+Write-Host 'Git:             2.56.1.windows.1'
 Write-Host 'Python:          2.7.18 x86'
 Write-Host 'virtualenv:      15.1.0'
 Write-Host "Build Python:     $BuildPythonRoot"
