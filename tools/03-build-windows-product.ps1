@@ -164,10 +164,95 @@ Assert-File (Join-Path $Nssm 'win32\nssm.exe') `
 Assert-File (Join-Path $Nssm 'win64\nssm.exe') `
     '2900F26D2ED74F4D5DB77CBCCBD4F2185FCCE2625A1BE724120984AC2418989B'
 
-Assert-File (Join-Path $InnoRoot 'ISCC.exe')
-if ((Get-Item -LiteralPath (Join-Path $InnoRoot 'ISCC.exe')).VersionInfo.ProductVersion -notmatch '^7\.1\.1(?:\D|$)') {
-    throw 'Run 01 first: Inno Setup 7.1.1 is required.'
+# Uninstall metadata identifies the installation and its declared version.
+function Test-InnoRegistration {
+    param([string]$Root)
+
+    $ExpectedLocation = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Root).TrimEnd('\')
+    $UninstallPath = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
+    $Locations = @(
+        @{ Hive = 'LocalMachine'; View = 'Registry64' }
+        @{ Hive = 'LocalMachine'; View = 'Registry32' }
+        @{ Hive = 'CurrentUser'; View = 'Default' }
+    )
+    $MatchingVersion = $false
+    $OtherVersion = $false
+
+    foreach ($Location in $Locations) {
+        $BaseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey($Location.Hive, $Location.View)
+        try {
+            $UninstallKey = $BaseKey.OpenSubKey($UninstallPath)
+            if ($null -eq $UninstallKey) { continue }
+            try {
+                foreach ($Name in $UninstallKey.GetSubKeyNames()) {
+                    $Entry = $UninstallKey.OpenSubKey($Name)
+                    if ($null -eq $Entry) { continue }
+                    try {
+                        if ($Entry.GetValue('DisplayName') -notmatch '^Inno Setup(?: \d|$)') { continue }
+                        $InstallLocation = $Entry.GetValue('InstallLocation')
+                        if ($InstallLocation -isnot [string] -or
+                            $InstallLocation -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2})') { continue }
+                        try {
+                            $RegisteredLocation = [IO.Path]::GetFullPath($InstallLocation).TrimEnd('\')
+                        }
+                        catch [System.ArgumentException], [System.NotSupportedException], [System.IO.PathTooLongException] {
+                            continue
+                        }
+                        if (-not [string]::Equals($RegisteredLocation, $ExpectedLocation, [StringComparison]::OrdinalIgnoreCase)) {
+                            continue
+                        }
+
+                        $Version = $Entry.GetValue('DisplayVersion')
+                        if ($Version -is [string] -and $Version -ceq '7.1.1') {
+                            $MatchingVersion = $true
+                        }
+                        else {
+                            $OtherVersion = $true
+                        }
+                    }
+                    finally { $Entry.Dispose() }
+                }
+            }
+            finally { $UninstallKey.Dispose() }
+        }
+        finally { $BaseKey.Dispose() }
+    }
+
+    if ($MatchingVersion -and $OtherVersion) {
+        throw "Conflicting Inno Setup versions in Windows Uninstall for: $ExpectedLocation"
+    }
+    return $MatchingVersion
 }
+
+function Assert-InnoCompiler {
+    param([string]$Root)
+
+    $Iscc = Join-Path ($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Root)) 'ISCC.exe'
+    if (-not (Test-Path -LiteralPath $Iscc -PathType Leaf)) {
+        throw "Inno Setup compiler missing: $Iscc"
+    }
+
+    $Bytes = [IO.File]::ReadAllBytes($Iscc)
+    if ($Bytes.Length -lt 0x40 -or [BitConverter]::ToUInt16($Bytes, 0) -ne 0x5A4D) {
+        throw "Invalid ISCC executable header: $Iscc"
+    }
+    $PeOffset = [BitConverter]::ToInt32($Bytes, 0x3c)
+    if ($PeOffset -lt 0x40 -or $PeOffset -gt ($Bytes.Length - 6) -or
+        [BitConverter]::ToUInt32($Bytes, $PeOffset) -ne 0x00004550 -or
+        [BitConverter]::ToUInt16($Bytes, $PeOffset + 4) -ne 0x8664) {
+        throw "Inno Setup compiler must be an x64 PE executable: $Iscc"
+    }
+
+    $HelpOutput = & cmd.exe /d /c ('"' + $Iscc + '" /? 2>&1')
+    if ($LASTEXITCODE -ne 0 -or ($HelpOutput -join [Environment]::NewLine) -notmatch '(?m)^Inno Setup 7 Command-Line Compiler\s*$') {
+        throw "Inno Setup 7 compiler help failed (exit $LASTEXITCODE): $Iscc"
+    }
+}
+
+if (-not (Test-InnoRegistration $InnoRoot)) {
+    throw "Run 01 first: Inno Setup 7.1.1 registration not found in Windows Uninstall for: $InnoRoot"
+}
+Assert-InnoCompiler $InnoRoot
 Assert-File $SigningRootCer `
     '5BB7881D601856F1EE55C7A7B88E988751751779DEE1AB08D21DD319B1690E7A'
 
@@ -184,7 +269,7 @@ $SdkSignature = Get-AuthenticodeSignature -LiteralPath $SignTool
 if ($SdkSignature.Status -ne 'Valid' -or $SdkSignature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation(?:,|$)') {
     throw "Invalid Microsoft Authenticode signature: $SignTool"
 }
-if ((Get-Item -LiteralPath $SignTool).VersionInfo.FileVersion -notmatch '^10\.0\.26100\.') {
+if ((Get-Item -LiteralPath $SignTool).VersionInfo.ProductVersion -notmatch '^10\.0\.26100\.') {
     throw "Unexpected SDK SignTool version: $SignTool"
 }
 $SignToolBytes = [IO.File]::ReadAllBytes($SignTool)
