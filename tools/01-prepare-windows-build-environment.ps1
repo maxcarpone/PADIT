@@ -543,15 +543,95 @@ foreach ($Arch in @('x86','x64')) {
 }
 Write-Host "[PASS] Microsoft SDK SignTool x86/x64: $($SdkBins[0].FullName)"
 
+function Find-7Zip {
+    $Command = Get-Command 7z.exe -CommandType Application -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($Command) { return $Command.Source }
+
+    foreach ($Root in @($env:ProgramW6432, $env:ProgramFiles, [Environment]::GetEnvironmentVariable('ProgramFiles(x86)'))) {
+        if ($Root) {
+            $Candidate = Join-Path $Root '7-Zip\7z.exe'
+            if (Test-Path -LiteralPath $Candidate -PathType Leaf) { return $Candidate }
+        }
+    }
+}
+
 function Expand-ControlledPortable {
     param([string]$Archive, [string]$Hash, [string]$Destination)
     if (-not $Archive) { throw "BLOCKED: supply the validated portable archive for $Destination" }
-    Assert-FileHash $Archive $Hash
+    $Archive = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Archive)
+    $Destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Destination)
     if (Test-Path -LiteralPath $Destination) {
         throw "BLOCKED: destination already exists with a nonconforming tool: $Destination"
     }
-    New-Item -ItemType Directory -Path $Destination | Out-Null
-    Expand-Archive -LiteralPath $Archive -DestinationPath $Destination
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    # Hold a read handle throughout validation and extraction.
+    $Zip = [IO.Compression.ZipFile]::OpenRead($Archive)
+    try {
+        Assert-FileHash $Archive $Hash
+        $Stage = Join-Path ([IO.Path]::GetDirectoryName($Destination)) ('.portable-' + [guid]::NewGuid().ToString('N'))
+        $Targets = @{}
+        foreach ($Entry in $Zip.Entries) {
+            $RelativePath = $Entry.FullName.Replace('/', '\')
+            if ($RelativePath.EndsWith('\')) { $RelativePath = $RelativePath.Substring(0, $RelativePath.Length - 1) }
+            foreach ($Part in ($RelativePath -split '\\')) {
+                if (-not $Part -or $Part -match '[<>:"|?*\x00-\x1f]|[ .]$' -or
+                    $Part -match '^(?:CON|PRN|AUX|NUL|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3]) *(?:\.|$)') {
+                    throw "BLOCKED: unsafe ZIP path: $($Entry.FullName)"
+                }
+            }
+            $Attributes = $Entry.ExternalAttributes
+            if (($Attributes -band 0xF0000000) -eq 0xA0000000 -or ($Attributes -band 0x400)) {
+                throw "BLOCKED: link or reparse point in ZIP: $($Entry.FullName)"
+            }
+            if ($Targets.ContainsKey($RelativePath)) {
+                throw "BLOCKED: duplicate ZIP path: $($Entry.FullName)"
+            }
+            $Targets[$RelativePath] = $Entry
+        }
+
+        $SevenZip = Find-7Zip
+        $Method = 'Expand-Archive (.NET)'
+        if ($SevenZip) { $Method = "7-Zip ($SevenZip)" }
+        Write-Host "[INFO] Extracting $Archive with $Method"
+        $Timer = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            [IO.Directory]::CreateDirectory($Stage) | Out-Null
+            if ($SevenZip) {
+                & $SevenZip x -tzip -y -spd "-o$Stage" -- $Archive | Out-Host
+                if ($LASTEXITCODE -ne 0) {
+                    throw "7-Zip extraction failed with exit code $($LASTEXITCODE): $Archive"
+                }
+            }
+            else {
+                Expand-Archive -LiteralPath $Archive -DestinationPath $Stage
+            }
+        }
+        finally {
+            $Timer.Stop()
+            Write-Host ('[INFO] Extraction with {0} took {1:F2} s' -f $Method, $Timer.Elapsed.TotalSeconds)
+        }
+
+        foreach ($RelativePath in $Targets.Keys) {
+            $Entry = $Targets[$RelativePath]
+            $Target = [IO.Path]::Combine($Stage, $RelativePath)
+            if ($Entry.FullName -match '[/\\]$') {
+                if (-not [IO.Directory]::Exists($Target)) {
+                    throw "BLOCKED: missing extracted directory: $Target"
+                }
+            }
+            else {
+                $File = [IO.FileInfo]::new($Target)
+                if (-not $File.Exists -or $File.Length -ne $Entry.Length) {
+                    throw "BLOCKED: missing or incomplete extracted file: $Target"
+                }
+            }
+        }
+        # A failed extraction must never be reused from the final destination.
+        [IO.Directory]::Move($Stage, $Destination)
+    }
+    finally { $Zip.Dispose() }
 }
 function Test-ArchiveExecutable {
     param([string]$Archive, [string]$Executable, [string]$Name)
