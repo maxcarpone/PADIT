@@ -47,8 +47,8 @@ param(
     [switch]$OpenSsl35 = $true,
 
     [string]$VcVars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat',
-    [string]$Perl = 'C:\Strawberry\perl\bin\perl.exe',
-    [string]$Nasm = 'C:\Program Files\NASM\nasm.exe',
+    [string]$Perl = (Join-Path $ToolsRoot 'strawberry\perl\bin\perl.exe'),
+    [string]$Nasm = (Join-Path $ToolsRoot 'nasm\nasm.exe'),
     [string]$Vc9Root = (Join-Path $env:LOCALAPPDATA 'Programs\Common\Microsoft\Visual C++ for Python\9.0'),
     [switch]$OpenSslFullTests
 )
@@ -61,7 +61,26 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
-$env:Path = (Join-Path $ToolsRoot 'Git\cmd') + ';' + $env:Path
+
+# Prevent destructive/ambiguous output choices.
+$repoFull = [IO.Path]::GetFullPath($RepoRoot).TrimEnd('\')
+$outFull  = [IO.Path]::GetFullPath($Output).TrimEnd('\')
+$kitFull  = [IO.Path]::GetFullPath($BuildKit).TrimEnd('\')
+
+if ($outFull -eq $repoFull -or $outFull.StartsWith($repoFull + "\", [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Output must not be the WAPT repository or a child of it: $Output"
+}
+if ($outFull -eq $kitFull -or $outFull.StartsWith($kitFull + "\", [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Output must not be inside the controlled build-kit: $Output"
+}
+
+if (Test-Path -LiteralPath $Output) {
+    throw "Output already exists: $Output. Choose an unused -Output path."
+}
+
+if ($Force) {
+    throw '-Force is unsupported for runtime construction.'
+}
 
 function Write-Step([string]$Text) {
     Write-Host ""
@@ -116,14 +135,13 @@ function Invoke-UjsonNative([string]$Name, [scriptblock]$Command) {
 }
 
 function Build-ControlledUjsonWheel {
-    Write-Step "Building patched ujson 2.0.3 wheel with VC9 (wheel absent)"
+    Write-Step 'Building patched ujson 2.0.3 wheel with MSVC 2022 x86 (wheel absent)'
     $Archive = Join-Path $BuildKit 'python\sources\ujson-2.0.3.tar.gz'
     $PatchRoot = Join-Path $RepoRoot 'utils\patch-ujson-2.0.3'
-    $WorkRoot = Join-Path $BuildKit ('python\work\ujson-2.0.3-integrated-' + [guid]::NewGuid().ToString('N'))
+    $WorkRoot = Join-Path $RuntimeWork 'ujson-2.0.3'
     $SourceDir = Join-Path $WorkRoot 'ujson-2.0.3'
-    $WheelDir = $BuiltWheels
+    $WheelDir = Split-Path -Parent $UjsonWheel
     $StageDir = Join-Path $WorkRoot 'wheel-dist'
-    $VC9 = Join-Path $env:LOCALAPPDATA 'Programs\Common\Microsoft\Visual C++ for Python\9.0\vcvarsall.bat'
 
     $Patches = @(
         @{Name='CVE-2022-31116.patch'; Hash='CCEF883E16BBD8DAD3B790F38FF2D324F5D0515A7E0D6F6377B86F509A6FB18D'},
@@ -136,7 +154,7 @@ function Build-ControlledUjsonWheel {
 
     Assert-Sha256 $Archive 'BD2DEFFC983827510E5145FB66E4CC0F577480C62FE0B4882139F8F7D27AE9A3'
     Assert-File $BuildPython
-    Assert-File $VC9
+    Assert-File $VcVars
     Assert-File (Join-Path $PatchRoot 'tests\test_ujson_security.py')
     foreach ($Item in $Patches) {
         Assert-Sha256 (Join-Path $PatchRoot $Item.Name) $Item.Hash
@@ -166,15 +184,61 @@ function Build-ControlledUjsonWheel {
 
     Copy-Item -LiteralPath (Join-Path $PatchRoot 'tests\test_ujson_security.py') -Destination (Join-Path $SourceDir 'tests\test_ujson_security.py')
 
+    # Keep the Python 2 compatibility hunks and security patches. Restore
+    # stdint.h for SIZE_MAX with the modern SDK in the extracted decoder.
+    $Decoder = Join-Path $SourceDir 'lib\ultrajsondec.c'
+    $DecoderText = [IO.File]::ReadAllText($Decoder)
+    $StdintGuard = '(?m)^#ifndef _WIN32\r?\n(#include <stdint\.h>\r?\n)#endif\r?\n'
+    if ([regex]::Matches($DecoderText, $StdintGuard).Count -ne 1) {
+        throw 'Unexpected ujson decoder stdint.h guard'
+    }
+    [IO.File]::WriteAllText($Decoder, [regex]::Replace($DecoderText, $StdintGuard, '$1'))
+
+    # Use the release version from the verified archive's version.h. This
+    # avoids setup_requires fetching setuptools_scm during an offline build.
+    $Setup = Join-Path $SourceDir 'setup.py'
+    $SetupText = [IO.File]::ReadAllText($Setup)
+    $ScmOptions = '(?ms)^    use_scm_version=\{.*?^    \},\r?\n    setup_requires=\["setuptools_scm"\],'
+    if ([regex]::Matches($SetupText, $ScmOptions).Count -ne 1) {
+        throw 'Unexpected ujson setup.py version options'
+    }
+    $SetupText = [regex]::Replace($SetupText, $ScmOptions, '    version=get_version(),')
+    $SetupText = $SetupText.Replace('extra_compile_args=["-D_GNU_SOURCE"],', 'extra_compile_args=[],')
+    $SetupText = $SetupText.Replace('extra_link_args=["-lstdc++", "-lm"],', 'extra_link_args=["/MACHINE:X86"],')
+    [IO.File]::WriteAllText($Setup, $SetupText)
+
+    # Python 2.7 distutils uses the configured SDK tools with these variables
+    # set, while retaining the cp27 ABI and linking to python27.lib.
+    # Use a batch file so cmd expands the VS environment after vcvarsall runs.
+    $BuildScript = Join-Path $WorkRoot 'build-ujson.cmd'
+    [IO.File]::WriteAllLines($BuildScript, @(
+        '@echo off'
+        'setlocal'
+        ('call "' + $VcVars + '" x86')
+        'if errorlevel 1 exit /b 10'
+        'if not "%VSCMD_VER:~0,3%"=="17." exit /b 11'
+        'if /i not "%VSCMD_ARG_TGT_ARCH%"=="x86" exit /b 12'
+        'set "DISTUTILS_USE_SDK=1"'
+        'set "MSSdk=1"'
+        ('"' + $BuildPython + '" setup.py %*')
+        'exit /b %ERRORLEVEL%'
+    ), [Text.Encoding]::ASCII)
+
+    Push-Location $SourceDir
+    try {
+        Invoke-UjsonNative 'MSVC 2022 x86 extension build' {
+            & cmd.exe /d /c ('call "' + $BuildScript + '" build_ext --inplace --force')
+        }
+    }
+    finally { Pop-Location }
+
     $OldPythonPath = $env:PYTHONPATH
     try {
         # pytest dependencies are only needed in the test subprocess.
         $env:PYTHONPATH = $UjsonPytestPackages
         Push-Location $SourceDir
         try {
-            $BuildCmd = 'call "' + $VC9 + '" x86 && set DISTUTILS_USE_SDK=1 && set MSSdk=1 && "' + $BuildPython + '" setup.py build_ext --inplace --force'
-            Invoke-UjsonNative 'VC9 extension build' { & cmd.exe /d /s /c $BuildCmd }
-            Invoke-UjsonNative 'pytest' { & $BuildPython -m pytest tests\test_ujson.py tests\test_ujson_security.py -q }
+            Invoke-UjsonNative 'pytest' { & $BuildPython -B -m pytest tests\test_ujson.py tests\test_ujson_security.py -q }
         }
         finally { Pop-Location }
     }
@@ -183,9 +247,12 @@ function Build-ControlledUjsonWheel {
     # CVE-2022-31117: source-level fix reviewed; deterministic realloc-failure
     # injection has NOT been tested. This limitation is not a wheel build blocker.
     New-Item -ItemType Directory -Path $StageDir -Force | Out-Null
-    $WheelCmd = 'call "' + $VC9 + '" x86 && set DISTUTILS_USE_SDK=1 && set MSSdk=1 && "' + $BuildPython + '" setup.py bdist_wheel --dist-dir "' + $StageDir + '"'
     Push-Location $SourceDir
-    try { Invoke-UjsonNative 'VC9 wheel build' { & cmd.exe /d /s /c $WheelCmd } }
+    try {
+        Invoke-UjsonNative 'MSVC 2022 x86 wheel build' {
+            & cmd.exe /d /c ('call "' + $BuildScript + '" bdist_wheel --dist-dir "' + $StageDir + '"')
+        }
+    }
     finally { Pop-Location }
 
     $Wheels = @(Get-ChildItem -LiteralPath $StageDir -Filter 'ujson-2.0.3-*-win32.whl' -File)
@@ -211,7 +278,7 @@ function Build-ControlledUjsonWheel {
         if ((Get-FileHash -LiteralPath $FinalWheel -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $Wheel.FullName -Algorithm SHA256).Hash) {
             throw "Wheel already exists with different content: $FinalWheel"
         }
-        Write-Host '[OK] Identical wheel already in controlled wheelhouse'
+        Write-Host '[OK] Identical wheel already in temporary wheel directory'
     }
     else { Copy-Item -LiteralPath $Wheel.FullName -Destination $FinalWheel }
     if ((Get-FileHash -LiteralPath $FinalWheel -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $Wheel.FullName -Algorithm SHA256).Hash) { throw 'Wheel copy verification failed' }
@@ -224,7 +291,7 @@ function Build-ControlledUjsonWheel {
 
 function Ensure-ControlledUjsonWheel {
     $Expected = '3FB4044AF8DA8BB21C486365EEA4C74BC7C6C0B134FBF83569659DC18D5B05CD'
-    if (Test-Path -LiteralPath $UjsonWheel -PathType Leaf) {
+    if ($UjsonWheel -eq $KitUjsonWheel) {
         Write-Step 'Reusing SHA256-verified patched ujson 2.0.3 wheel'
         Assert-Sha256 $UjsonWheel $Expected
     }
@@ -233,9 +300,8 @@ function Ensure-ControlledUjsonWheel {
             throw 'Wheel absent: provide -UjsonPytestPackages pointing to offline pytest dependencies.'
         }
         Build-ControlledUjsonWheel
-        # A new VC9 build may have a different PE timestamp and therefore a
-        # different SHA256. Its source, patches, tests, wheel tag and contents
-        # have been verified by Build-ControlledUjsonWheel.
+        # The MSVC 2022 build has its own SHA256. The fixed hash above applies
+        # to the original kit wheel.
         Assert-File $UjsonWheel
         Write-Host ('[PASS] Freshly built wheel SHA256: ' + (Get-FileHash -LiteralPath $UjsonWheel -Algorithm SHA256).Hash)
     }
@@ -248,7 +314,7 @@ function Ensure-ControlledUjsonWheel {
 function Build-ControlledPyasn1Wheel {
     $Archive = Join-Path $BuildKit 'python\sources\pyasn1-0.5.1.tar.gz'
     $PatchRoot = Join-Path $RepoRoot 'utils\patch-pyasn1-0.5.1'
-    $WorkRoot = Join-Path $BuildKit ('python\work\pyasn1-0.5.1-' + [guid]::NewGuid().ToString('N'))
+    $WorkRoot = Join-Path $RuntimeWork 'pyasn1-0.5.1'
     $SourceDir = Join-Path $WorkRoot 'pyasn1-0.5.1'
     $DistDir = Join-Path $WorkRoot 'wheel-dist'
 
@@ -362,9 +428,12 @@ function Build-ControlledPyasn1Wheel {
 # This function is intentionally part of the runtime builder, not a new tool.
 # ---------------------------------------------------------------------------
 function Build-ControlledPywin32Native {
+    # Keep the same CRT as the b228 wheel's native modules. For example,
+    # pywintypes allocates the array returned by PyWinObject_AsDWORDArray
+    # with malloc, and win32clipboard and pythoncom free it in their own code.
     $Archive = Join-Path $BuildKit 'python\sources\pywin32-b228-source.zip'
     $PatchDir = Join-Path $RepoRoot 'utils\patch-pywin32-228'
-    $WorkDir = Join-Path $BuildKit ('python\work\pywin32-b228-controlled-' + [guid]::NewGuid().ToString('N'))
+    $WorkDir = Join-Path $RuntimeWork 'pywin32-b228'
     $SourceDir = Join-Path $WorkDir 'source'
     $LibDir = Join-Path $WorkDir 'lib'
     $TempDir = Join-Path $WorkDir 'temp'
@@ -465,7 +534,7 @@ function Build-ControlledPywin32Native {
 
 function Test-ControlledPywin32Acl {
     Write-Step 'Testing controlled pywin32 native ACL security (7 variants)'
-    $TestFile = Join-Path $env:TEMP ('padit-pywin32-acl-' + [guid]::NewGuid().ToString('N') + '.py')
+    $TestFile = Join-Path $RuntimeWork 'pywin32-acl.py'
     $Code = @'
 import os, ctypes, hashlib
 import pywintypes, win32security
@@ -516,14 +585,13 @@ print('[PASS] 7/7 ACL checks; loaded DLL: %s' % loaded)
     $OldPythonPath = $env:PYTHONPATH
     try {
         Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
-        Push-Location $env:TEMP
+        Push-Location $RuntimeWork
         try { Invoke-Checked $RuntimePython @($TestFile) }
         finally { Pop-Location }
     }
     finally {
         if ($null -eq $OldPythonPath) { Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue }
         else { $env:PYTHONPATH = $OldPythonPath }
-        Remove-Item -LiteralPath $TestFile -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -540,7 +608,8 @@ $Cryptography33Source = Join-Path $BuildKit 'python\sources\cryptography-3.3.2.t
 $Python27Dll = Join-Path $PaditBins "python27.dll"
 $PythonCom   = Join-Path $PaditBins "pywin32-228\pythoncom27.dll"
 $PythonComL  = Join-Path $PaditBins "pywin32-228\pythoncomloader27.dll"
-$UjsonWheel = Join-Path $BuiltWheels "ujson-2.0.3-cp27-cp27m-win32.whl"
+$UjsonWheelName = "ujson-2.0.3-cp27-cp27m-win32.whl"
+$KitUjsonWheel = Join-Path $BuiltWheels $UjsonWheelName
 $ActiveDir   = Join-Path $PaditBins "active_directory-0.6.7.py"
 
 $ReqGeneric  = Join-Path $RepoRoot "requirements-agent.txt"
@@ -549,6 +618,27 @@ $ReqWindows  = Join-Path $RepoRoot "requirements-agent-windows.txt"
 # ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
+
+$PreviousTemp = $env:TEMP
+$PreviousTmp = $env:TMP
+$RuntimeWork = [IO.Path]::GetFullPath(
+    (Join-Path ([IO.Path]::GetTempPath()) ('padit-02-' + [guid]::NewGuid().ToString('N')))
+)
+foreach ($ProtectedRoot in @($kitFull, $outFull)) {
+    if ($RuntimeWork -eq $ProtectedRoot -or
+        $RuntimeWork.StartsWith($ProtectedRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Temporary work directory must be outside the build-kit and Output: $RuntimeWork"
+    }
+}
+
+New-Item -ItemType Directory -Path $RuntimeWork | Out-Null
+$RuntimeSucceeded = $false
+$PreviousBuildPath = $env:PATH
+try {
+    $env:Path = (Join-Path $ToolsRoot 'Git\cmd') + ';' + $env:Path
+    $env:TEMP = $RuntimeWork
+    $env:TMP = $RuntimeWork
+    Write-Host "Temporary work directory: $RuntimeWork"
 
 Write-Step "Preflight"
 
@@ -561,6 +651,10 @@ Assert-File $ReqWindows
 Assert-Sha256 $Python27Dll "8C81C84548CE191B11390EBAA71397D23662593B1C113AAA0392E40FF0F9307A"
 Assert-Sha256 $PythonCom   "074F23F9710BBCF1447763829C0E3D16AFA5502EFC6F784077CF334F28CEFFB7"
 Assert-Sha256 $PythonComL  "CC5BA5439CFA435FC9BD442F6509EBDF83646DF0756093DFF6777775FD2246E6"
+$UjsonWheel = $KitUjsonWheel
+if (-not (Test-Path -LiteralPath $KitUjsonWheel -PathType Leaf)) {
+    $UjsonWheel = Join-Path $RuntimeWork "wheels\$UjsonWheelName"
+}
 Ensure-ControlledUjsonWheel
 Assert-Sha256 $ActiveDir   "EDFE01A38139D79A2EAC7B6F409B0495A447536CBB004318811D5CAF5842A556"
 if ($OpenSslFullTests -and -not $OpenSsl35) {
@@ -586,18 +680,6 @@ if ($bootstrapLibFiles.Count -ne 19) {
     throw "Unexpected Python 2.7 libs content: expected 19 files, found $($bootstrapLibFiles.Count) in $bootstrapLibs"
 }
 
-# Prevent destructive/ambiguous output choices.
-$repoFull = [IO.Path]::GetFullPath($RepoRoot).TrimEnd('\')
-$outFull  = [IO.Path]::GetFullPath($Output).TrimEnd('\')
-$kitFull  = [IO.Path]::GetFullPath($BuildKit).TrimEnd('\')
-
-if ($outFull -eq $repoFull -or $outFull.StartsWith($repoFull + "\", [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Output must not be the WAPT repository or a child of it: $Output"
-}
-if ($outFull -eq $kitFull -or $outFull.StartsWith($kitFull + "\", [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Output must not be inside the controlled build-kit: $Output"
-}
-
 # Clear PYTHONPATH for every bootstrap operation.
 Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
 
@@ -609,13 +691,6 @@ if ($pyInfo[0].Trim() -ne "2.7.18" -or $pyInfo[1].Trim() -ne "32") {
 }
 
 if ($OpenSsl35) {
-    if ($Force) {
-        throw 'W32 mode forbids -Force'
-    }
-
-    if (Test-Path -LiteralPath $Output) {
-        throw "W32 output already exists: $Output"
-    }
     Write-Step 'Validating controlled OpenSSL 3.5.9 sources'
 
     Assert-Sha256 $OpenSsl35Source `
@@ -653,9 +728,7 @@ if ($OpenSsl35) {
         Assert-File $Tool
     }
 
-    $W32Work = Join-Path $BuildKit (
-        'runtime\openssl\work\W32-' + [Guid]::NewGuid().ToString('N')
-    )
+    $W32Work = Join-Path $RuntimeWork 'W32'
 
     $W32Source = Join-Path $W32Work 'openssl-3.5.9'
     $W32Install = Join-Path $W32Work 'install'
@@ -1107,15 +1180,9 @@ if ($OpenSsl35) {
     Write-Host '[PASS] W32 native components built; proceeding to runtime assembly'
 }
 
-if ($OpenSsl35 -and $Force) {
-    throw 'W32 mode does not permit -Force during integration'
-}
+# Recheck after the native build, before creating the virtualenv.
 if (Test-Path -LiteralPath $Output) {
-    if (-not $Force) {
-        throw "Output already exists: $Output. Use -Force to replace it."
-    }
-    Write-Step "Removing existing output"
-    Remove-Item -LiteralPath $Output -Recurse -Force
+    throw "Output already exists: $Output. Choose an unused -Output path."
 }
 
 # ---------------------------------------------------------------------------
@@ -1132,6 +1199,23 @@ $RuntimePip     = Join-Path $Output "Scripts\pip.exe"
 
 Assert-File $RuntimePython
 Assert-File $RuntimePip
+
+# Stage the shared DLLs once, beside the final root executables. The build
+# interpreter still lives in Scripts and needs the runtime root on PATH.
+Write-Step 'Staging OpenSSL 3.5.9 runtime DLLs'
+foreach ($DllName in @('libcrypto-3.dll', 'libssl-3.dll')) {
+    $SourceFile = Join-Path $W32Source $DllName
+    Assert-File $SourceFile
+    if ((Get-Item -LiteralPath $SourceFile).Length -eq 0) {
+        throw "Empty W32 source artifact: $SourceFile"
+    }
+
+    $SourceHash = (Get-FileHash -LiteralPath $SourceFile -Algorithm SHA256).Hash
+    $DestinationFile = Join-Path $outFull $DllName
+    Copy-Checked $SourceFile $DestinationFile $SourceHash
+    Write-Host "[PASS] W32 runtime artifact: $DestinationFile"
+}
+$env:PATH = "$outFull;$env:PATH"
 
 # ---------------------------------------------------------------------------
 # Install controlled wheels
@@ -1814,7 +1898,7 @@ if ($FlaskActualHash -ne '4B2A84CCDC10495DB631719F1B58FA16E2C4A7DEF27695FF39E6A0
 
 # Patch paths use src/flask/*.py. Work on a temporary source layout,
 # then copy only the four patched files into the new runtime.
-$FlaskStage = Join-Path $Output '_flask_security_stage'
+$FlaskStage = Join-Path $RuntimeWork '_flask_security_stage'
 $FlaskStageSrc = Join-Path $FlaskStage 'src'
 $FlaskStagePackage = Join-Path $FlaskStageSrc 'flask'
 
@@ -1846,8 +1930,6 @@ foreach ($Name in @('app.py', 'ctx.py', 'sessions.py', 'templating.py')) {
         -LiteralPath (Join-Path $FlaskStagePackage $Name) `
         -Destination (Join-Path $FlaskDir $Name) -Force
 }
-
-Remove-Item -LiteralPath $FlaskStage -Recurse -Force
 
 & $RuntimePython -m py_compile `
     (Join-Path $FlaskDir 'app.py') `
@@ -1898,7 +1980,7 @@ $Jinja2Patches = @(
     'CVE-2024-56326-CVE-2025-27516.patch'
 )
 
-$Jinja2Stage = Join-Path $Output '_jinja2_security_stage'
+$Jinja2Stage = Join-Path $RuntimeWork '_jinja2_security_stage'
 $Jinja2StageSrc = Join-Path $Jinja2Stage 'src'
 $Jinja2StagePackage = Join-Path $Jinja2StageSrc 'jinja2'
 
@@ -1944,8 +2026,6 @@ foreach ($Name in @('filters.py', 'sandbox.py')) {
         -Destination (Join-Path $Jinja2Dir $Name) -Force
 }
 
-Remove-Item -LiteralPath $Jinja2Stage -Recurse -Force
-
 & $RuntimePython -m py_compile `
     (Join-Path $Jinja2Dir 'filters.py') `
     (Join-Path $Jinja2Dir 'sandbox.py')
@@ -1969,7 +2049,7 @@ Write-Step 'Applying idna 2.10 security backport'
 
 $IdnaDir = Join-Path $Output 'Lib\site-packages\idna'
 $IdnaPatch = Join-Path $RepoRoot 'utils\patch-idna-2.10\CVE-2024-3651-CVE-2026-45409.patch'
-$IdnaStage = Join-Path $Output '_idna_security_stage'
+$IdnaStage = Join-Path $RuntimeWork '_idna_security_stage'
 $IdnaStagePackage = Join-Path $IdnaStage 'idna'
 
 Assert-Dir $IdnaDir
@@ -2010,8 +2090,6 @@ foreach ($Name in @('core.py', 'codec.py')) {
         -LiteralPath (Join-Path $IdnaStagePackage $Name) `
         -Destination (Join-Path $IdnaDir $Name) -Force
 }
-
-Remove-Item -LiteralPath $IdnaStage -Recurse -Force
 
 & $RuntimePython -m py_compile `
     (Join-Path $IdnaDir 'core.py') `
@@ -2088,7 +2166,7 @@ $SoupPatch = Join-Path $RepoRoot 'utils\patch-soupsieve-1.9.6\CVE-2026-49476-494
 $SoupTest = Join-Path $RepoRoot 'utils\patch-soupsieve-1.9.6\test_security.py'
 $SoupNewPatch = Join-Path $RepoRoot 'utils\patch-soupsieve-1.9.6\CVE-2026-126190-126191-126192-126193.patch'
 $SoupNewTest = Join-Path $RepoRoot 'utils\patch-soupsieve-1.9.6\test_cve_2026_126190_126191_126192_126193.py'
-$SoupStage = Join-Path $Output '_soupsieve_security_stage'
+$SoupStage = Join-Path $RuntimeWork '_soupsieve_security_stage'
 $SoupStagePackage = Join-Path $SoupStage 'soupsieve'
 
 Assert-Dir $SoupDir
@@ -2192,7 +2270,7 @@ getattr(module, sys.argv[2])()
 print('[PASS] ' + sys.argv[2])
 '@
 
-$SoupRunnerFile = Join-Path $Output '_soupsieve_security_runner.py'
+$SoupRunnerFile = Join-Path $RuntimeWork '_soupsieve_security_runner.py'
 [IO.File]::WriteAllText($SoupRunnerFile, $SoupRunner, [Text.Encoding]::ASCII)
 
 foreach ($SoupName in $SoupNames) {
@@ -2206,7 +2284,7 @@ foreach ($SoupName in $SoupNames) {
     }
     $SoupProcess.StartInfo.UseShellExecute = $false
     $SoupProcess.StartInfo.CreateNoWindow = $true
-    $SoupLog = Join-Path $Output ("_soupsieve_test_" + $SoupName + ".log")
+    $SoupLog = Join-Path $RuntimeWork ("_soupsieve_test_" + $SoupName + ".log")
     if (Test-Path -LiteralPath $SoupLog) {
         throw "soupsieve test log already exists: $SoupLog"
     }
@@ -2245,8 +2323,6 @@ foreach ($SoupName in $SoupNames) {
     }
 }
 
-Remove-Item -LiteralPath $SoupRunnerFile -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $SoupStage -Recurse -Force
 Write-Host '[PASS] W16 soupsieve 1.9.6 security backport'
 
 # ---------------------------------------------------------------------------
@@ -2257,7 +2333,7 @@ Write-Step 'Applying waitress 1.4.4 security backports'
 $WaitressDir = Join-Path $Output 'Lib\site-packages\waitress'
 $WaitressPatch = Join-Path $RepoRoot 'utils\patch-waitress-1.4.4\CVE-2022-24761-CVE-2024-49769.patch'
 $WaitressTest = Join-Path $RepoRoot 'utils\patch-waitress-1.4.4\test_security.py'
-$WaitressStage = Join-Path $Output '_waitress_security_stage'
+$WaitressStage = Join-Path $RuntimeWork '_waitress_security_stage'
 $WaitressStagePackage = Join-Path $WaitressStage 'waitress'
 
 Assert-Dir $WaitressDir
@@ -2343,8 +2419,6 @@ foreach ($Name in @('parser', 'receiver', 'rfc7230', 'channel', 'wasyncore')) {
 
     Write-Host "[PASS] waitress corrected module: $FileName"
 }
-
-Remove-Item -LiteralPath $WaitressStage -Recurse -Force
 
 foreach ($Name in @('parser', 'receiver', 'rfc7230', 'channel', 'wasyncore')) {
     Invoke-Checked $RuntimePython @(
@@ -2542,10 +2616,6 @@ if ($OpenSsl35) {
     $W32Copies = @(
         @($W32SslPyd, (Join-Path $W32RuntimeDlls '_ssl.pyd')),
         @($W32HashPyd, (Join-Path $W32RuntimeDlls '_hashlib.pyd')),
-        @((Join-Path $W32Source 'libcrypto-3.dll'), (Join-Path $Output 'libcrypto-3.dll')),
-        @((Join-Path $W32Source 'libssl-3.dll'), (Join-Path $Output 'libssl-3.dll')),
-        @((Join-Path $W32Source 'libcrypto-3.dll'), (Join-Path $W32RuntimeDlls 'libcrypto-3.dll')),
-        @((Join-Path $W32Source 'libssl-3.dll'), (Join-Path $W32RuntimeDlls 'libssl-3.dll')),
         @((Join-Path $W32Source 'providers\legacy.dll'), (Join-Path $W32ModuleDir 'legacy.dll')),
         @((Join-Path $W32Source 'apps\openssl.exe'), (Join-Path $Output 'openssl.exe')),
         @((Join-Path $W32Source 'apps\openssl.cnf'), (Join-Path $Output 'openssl.cnf'))
@@ -2774,27 +2844,22 @@ print("PADIT core: OK")
 print("PADIT 1.8.3 AUTONOMOUS RUNTIME: PASS")
 '@
 
-$TestFile = Join-Path $env:TEMP ("wapt-runtime-test-" + [Guid]::NewGuid().ToString("N") + ".py")
+$TestFile = Join-Path $RuntimeWork "wapt-runtime-test.py"
 [IO.File]::WriteAllText($TestFile, $TestScript, [Text.Encoding]::ASCII)
+Push-Location $RuntimeWork
 try {
-    Push-Location $env:TEMP
-    try {
-        Invoke-Checked (Join-Path $Output "waptpython.exe") @($TestFile)
-        Invoke-Checked (Join-Path $Output "waptpython.exe") @((Join-Path $Output "wapt-get.py"), "--help")
-        Invoke-Checked (Join-Path $Output "openssl.exe") @("version")
-    }
-    finally {
-        Pop-Location
-    }
+    Invoke-Checked (Join-Path $Output "waptpython.exe") @($TestFile)
+    Invoke-Checked (Join-Path $Output "waptpython.exe") @((Join-Path $Output "wapt-get.py"), "--help")
+    Invoke-Checked (Join-Path $Output "openssl.exe") @("version")
 }
 finally {
-    Remove-Item -LiteralPath $TestFile -Force -ErrorAction SilentlyContinue
+    Pop-Location
 }
 
 $OpenSSLExe = Join-Path $Output 'openssl.exe'
 Assert-File $OpenSSLExe
 
-$W28Temp = Join-Path $env:TEMP ('padit-W28-' + [guid]::NewGuid().ToString('N'))
+$W28Temp = Join-Path $RuntimeWork 'W28'
 New-Item -ItemType Directory -Path $W28Temp | Out-Null
 
 $PreviousOpenSSLConf = $env:OPENSSL_CONF
@@ -2819,7 +2884,6 @@ try {
 finally {
     $env:OPENSSL_CONF = $PreviousOpenSSLConf
     $env:PATH = $PreviousPath
-    Remove-Item -LiteralPath $W28Temp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host '[PASS] W28 pyOpenSSL CVE-2026-27448 security backport'
@@ -2971,7 +3035,7 @@ if ($OpenSsl35) {
     $W32OldPythonPath = $env:PYTHONPATH
 
     try {
-        $env:PATH = "$Output;$Output\DLLs;$W32OldPath"
+        $env:PATH = "$Output;$Output\DLLs;$PreviousBuildPath"
         $env:OPENSSL_CONF = Join-Path $Output 'openssl.cnf'
         $env:OPENSSL_MODULES = Join-Path $Output 'ossl-modules'
         Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
@@ -2999,6 +3063,26 @@ if ($OpenSsl35) {
 
     Write-Host '[PASS] W32 autonomous runtime acceptance'
 }
+    $RuntimeSucceeded = $true
+}
+finally {
+    $env:PATH = $PreviousBuildPath
+    $env:TEMP = $PreviousTemp
+    $env:TMP = $PreviousTmp
+
+    if ($RuntimeSucceeded) {
+        try {
+            Remove-Item -LiteralPath $RuntimeWork -Recurse -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Warning "Could not remove temporary work directory: $RuntimeWork. $_"
+        }
+    }
+    else {
+        Write-Warning "Temporary work directory kept for diagnostics: $RuntimeWork"
+    }
+}
+
 Write-Step "SUCCESS"
 Write-Host "Autonomous PADIT 1.8.3 runtime assembled at:"
 Write-Host "  $Output"
