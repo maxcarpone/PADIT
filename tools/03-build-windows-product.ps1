@@ -243,7 +243,7 @@ function Assert-InnoCompiler {
         throw "Inno Setup compiler must be an x64 PE executable: $Iscc"
     }
 
-    $HelpOutput = & cmd.exe /d /c ('"' + $Iscc + '" /? 2>&1')
+    $HelpOutput = & cmd.exe /d /s /c ('""' + $Iscc + '" /? 2>&1"')
     if ($LASTEXITCODE -ne 0 -or ($HelpOutput -join [Environment]::NewLine) -notmatch '(?m)^Inno Setup 7 Command-Line Compiler\s*$') {
         throw "Inno Setup 7 compiler help failed (exit $LASTEXITCODE): $Iscc"
     }
@@ -305,7 +305,14 @@ else {
     throw 'BLOCKED: OpenSSL 3.5.9 runtime required; validate 02. OpenSSL 1.x is unsupported.'
 }
 Assert-File (Join-Path $Runtime 'openssl.exe')
-$RuntimeSslVersion = & (Join-Path $Runtime 'waptpython.exe') -c 'import ssl; print(ssl.OPENSSL_VERSION)'
+$PreviousRuntimePath = $env:PATH
+try {
+    $env:PATH = "$Runtime;$Runtime\DLLs;$PreviousRuntimePath"
+    $RuntimeSslVersion = & (Join-Path $Runtime 'waptpython.exe') -c 'import ssl; print(ssl.OPENSSL_VERSION)'
+}
+finally {
+    $env:PATH = $PreviousRuntimePath
+}
 if ($LASTEXITCODE -ne 0 -or ($RuntimeSslVersion -join '') -notmatch '^OpenSSL 3\.5\.9(?:\s|$)') {
     throw "BLOCKED: runtime must load OpenSSL 3.5.9: $RuntimeSslVersion"
 }
@@ -415,7 +422,7 @@ Write-Host "[PASS] Community submodule gitlinks verified: 16/16"
 # must also contain the expected checked-out files.
 foreach ($submodule in $CommunitySubmodules) {
     $submodulePath = Join-Path $Worktree $submodule
-    $changes = @(git -C $submodulePath status --porcelain --untracked-files=normal)
+    $changes = @(git -C $submodulePath status --porcelain --untracked-files=no)
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to inspect submodule status: $submodule"
@@ -436,14 +443,23 @@ Write-Host ""
 Write-Host "Preparing isolated Lazarus PCP..."
 
 if (Test-Path -LiteralPath $LazarusPcp) {
-    if (-not $Force) {
-        throw "Lazarus PCP already exists: $LazarusPcp. Use -Force to replace it."
+    if (-not (Test-Path -LiteralPath $LazarusPcp -PathType Container)) {
+        throw "Invalid Lazarus PCP path: $LazarusPcp"
     }
 
-    Remove-Item -LiteralPath $LazarusPcp -Recurse -Force
+    if ($Force) {
+        Remove-Item -LiteralPath $LazarusPcp -Recurse -Force
+        New-Item -ItemType Directory -Path $LazarusPcp | Out-Null
+        Write-Host "[PASS] Lazarus PCP recreated."
+    }
+    else {
+        Write-Host "[PASS] Existing Lazarus PCP reused."
+    }
 }
-
-New-Item -ItemType Directory -Path $LazarusPcp | Out-Null
+else {
+    New-Item -ItemType Directory -Path $LazarusPcp | Out-Null
+    Write-Host "[PASS] Lazarus PCP created."
+}
 
 if (-not (Test-Path -LiteralPath $LazarusPcp -PathType Container)) {
     throw "Unable to create Lazarus PCP: $LazarusPcp"
@@ -804,18 +820,23 @@ Write-Host "[PASS] Product Git source locked to isolated worktree: $SourceCommit
 # ----------------------------------------------------------------------
 
 if (Test-Path -LiteralPath $Output) {
-    if (-not $Force) {
-        throw "Output directory already exists: $Output. Use -Force to replace it."
+    if (-not (Test-Path -LiteralPath $Output -PathType Container)) {
+        throw "Invalid product output path: $Output"
     }
 
-    Write-Host "Removing existing product tree..."
-    Remove-Item -LiteralPath $Output -Recurse -Force
+    if ($Force) {
+        Write-Host "Removing existing product tree..."
+        Remove-Item -LiteralPath $Output -Recurse -Force
+        New-Item -ItemType Directory -Path $Output | Out-Null
+    }
+    else {
+        Write-Host "[PASS] Existing product directory reused: $Output"
+    }
 }
-
-Write-Host ""
-Write-Host "Creating product tree: $Output"
-
-New-Item -ItemType Directory -Path $Output | Out-Null
+else {
+    Write-Host "Creating product tree: $Output"
+    New-Item -ItemType Directory -Path $Output | Out-Null
+}
 
 # Start from the validated autonomous Python runtime.
 Write-Host "Copying autonomous Python runtime..."

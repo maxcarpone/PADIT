@@ -111,7 +111,7 @@ def get_current_version():
         if line.strip().startswith('__version__'):
             wapt_version = str(Version(line.split('=')[1].strip().replace('"', '').replace("'", ''),3))
     r = Repo('.',search_parent_directories=True)
-    rev_count = '%04d' % (r.active_branch.commit.count(),)
+    rev_count = '%04d' % (r.head.commit.count(),)
 
     return wapt_version +'.'+rev_count
 
