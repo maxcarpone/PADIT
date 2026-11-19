@@ -2537,6 +2537,27 @@ grep -A6 'response = dns.query.udp' "${DNSPYTHON_DIR}/resolver.py" \
     | grep -q 'ignore_errors=True' \
     || die "dnspython CVE-2023-29483 resolver marker not found"
 
+# CVE-2026-128089: bound WKS service numbers.
+DNSPYTHON_PATCH_128089="${REPO_ROOT}/utils/patch-dnspython-1.16.0/CVE-2026-128089.patch"
+DNSPYTHON_TEST_128089="${REPO_ROOT}/utils/patch-dnspython-1.16.0/test_cve_2026_128089.py"
+
+echo "a51ebb37b4ecf1507a9edc5b689c9e399090b0c08066ded5f1004727cd518b65  ${DNSPYTHON_PATCH_128089}" |
+    sha256sum -c - || die "dnspython CVE-2026-128089 patch SHA256 mismatch"
+echo "c5d93cb1b6c932b35201a7578ee4b90b83d446a720b9c9bf1ba49c2d64deb8fb  ${DNSPYTHON_TEST_128089}" |
+    sha256sum -c - || die "dnspython CVE-2026-128089 test SHA256 mismatch"
+
+(
+    cd "${DNSPYTHON_DIR}" &&
+    patch --forward --dry-run -p1 < "${DNSPYTHON_PATCH_128089}" &&
+    patch --forward -p1 < "${DNSPYTHON_PATCH_128089}"
+) || die "dnspython CVE-2026-128089 patch application failed"
+
+"${PYTHON}" -m py_compile "${DNSPYTHON_DIR}/rdtypes/IN/WKS.py" ||
+    die "dnspython CVE-2026-128089 compilation failed"
+"${PYTHON}" "${DNSPYTHON_TEST_128089}" ||
+    die "dnspython CVE-2026-128089 security regression failed"
+echo "[PASS] dnspython CVE-2026-128089"
+
 echo ">>> Running CVE-2023-29483 dnspython standalone regression test..."
 
 "${PYTHON}" - <<'PYTEST'

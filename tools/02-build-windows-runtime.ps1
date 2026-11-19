@@ -1383,52 +1383,66 @@ foreach ($Item in $SecurityPatches) {
     Write-Host "[PASS] $PackageName CVE-2023-29483 backport"
 }
 
-# W18: CVE-2026-114605 - limit DNS compression pointer traversal.
-Write-Step 'Applying dnspython CVE-2026-114605 backport'
+# dnspython parser backports and their regression tests.
+$DnsPackageDir = Join-Path $Output 'Lib\site-packages\dns'
+$DnsBackportDir = Join-Path $RepoRoot 'utils\patch-dnspython-1.16.0'
+Assert-Dir $DnsPackageDir
 
-$DnsW18Dir = Join-Path $Output 'Lib\site-packages\dns'
-$DnsW18Patch = Join-Path $RepoRoot 'utils\patch-dnspython-1.16.0\CVE-2026-114605.patch'
-$DnsW18Test = Join-Path $RepoRoot 'utils\patch-dnspython-1.16.0\test_cve_2026_114605.py'
+foreach ($Backport in @(
+    @{
+        Cve = 'CVE-2026-114605'
+        Module = 'name.py'
+        PatchHash = '3FD7D9501CC7874943B98E1877E7713F898073E79B818329BB6CD984AFC0D559'
+        TestHash = '6135449C996F6C858D544CC4A9A563B66FEBD0EBBF0AFB8BA49798D1B0987F6F'
+    },
+    @{
+        Cve = 'CVE-2026-128089'
+        Module = 'rdtypes\IN\WKS.py'
+        PatchHash = 'A51EBB37B4ECF1507A9EDC5B689C9E399090B0C08066DED5F1004727CD518B65'
+        TestHash = 'C5D93CB1B6C932B35201A7578EE4B90B83D446A720B9C9BF1BA49C2D64DEB8FB'
+    }
+)) {
+    $Cve = $Backport.Cve
+    Write-Step "Applying dnspython $Cve backport"
+    $Patch = Join-Path $DnsBackportDir "$Cve.patch"
+    $Test = Join-Path $DnsBackportDir ("test_" + $Cve.ToLowerInvariant().Replace('-', '_') + '.py')
+    Assert-File $Patch
+    Assert-File $Test
 
-Assert-Dir $DnsW18Dir
-Assert-File $DnsW18Patch
-Assert-File $DnsW18Test
-
-if ((Get-FileHash -LiteralPath $DnsW18Patch -Algorithm SHA256).Hash -ne
-    '3FD7D9501CC7874943B98E1877E7713F898073E79B818329BB6CD984AFC0D559') {
-    throw 'W18 dnspython patch SHA256 mismatch'
-}
-if ((Get-FileHash -LiteralPath $DnsW18Test -Algorithm SHA256).Hash -ne
-    '6135449C996F6C858D544CC4A9A563B66FEBD0EBBF0AFB8BA49798D1B0987F6F') {
-    throw 'W18 dnspython test SHA256 mismatch'
-}
-
-Push-Location $DnsW18Dir
-try {
-    & git apply --check -p1 $DnsW18Patch
-    if ($LASTEXITCODE -ne 0) {
-        throw 'W18 dnspython patch check failed'
+    if ((Get-FileHash -LiteralPath $Patch -Algorithm SHA256).Hash -ne $Backport.PatchHash) {
+        throw "dnspython $Cve patch SHA256 mismatch"
+    }
+    if ((Get-FileHash -LiteralPath $Test -Algorithm SHA256).Hash -ne $Backport.TestHash) {
+        throw "dnspython $Cve test SHA256 mismatch"
     }
 
-    & git apply -p1 $DnsW18Patch
-    if ($LASTEXITCODE -ne 0) {
-        throw 'W18 dnspython patch application failed'
+    Push-Location $DnsPackageDir
+    try {
+        & git apply --check -p1 $Patch
+        if ($LASTEXITCODE -ne 0) {
+            throw "dnspython $Cve patch check failed"
+        }
+
+        & git apply -p1 $Patch
+        if ($LASTEXITCODE -ne 0) {
+            throw "dnspython $Cve patch application failed"
+        }
     }
-}
-finally {
-    Pop-Location
-}
+    finally {
+        Pop-Location
+    }
 
-& $RuntimePython -m py_compile (Join-Path $DnsW18Dir 'name.py')
-if ($LASTEXITCODE -ne 0) {
-    throw 'W18 dnspython compilation failed'
-}
+    & $RuntimePython -m py_compile (Join-Path $DnsPackageDir $Backport.Module)
+    if ($LASTEXITCODE -ne 0) {
+        throw "dnspython $Cve compilation failed"
+    }
 
-& $RuntimePython $DnsW18Test
-if ($LASTEXITCODE -ne 0) {
-    throw 'W18 dnspython security regression failed'
+    & $RuntimePython $Test
+    if ($LASTEXITCODE -ne 0) {
+        throw "dnspython $Cve security regression failed"
+    }
+    Write-Host "[PASS] dnspython $Cve"
 }
-Write-Host '[PASS] W18 dnspython CVE-2026-114605'
 
 $DnsQueryFile = Join-Path $Output 'Lib\site-packages\dns\query.py'
 $DnsResolverFile = Join-Path $Output 'Lib\site-packages\dns\resolver.py'

@@ -188,29 +188,32 @@ grep -A6 'response = dns.query.udp' "${DNSPYTHON_DIR}/resolver.py" \
     | grep -q 'ignore_errors=True' \
     || die "dnspython CVE-2023-29483 resolver marker not found"
 
-# W18: CVE-2026-114605 - limit DNS compression pointer traversal.
-DNSPYTHON_PATCH_W18="${REPO_ROOT}/utils/patch-dnspython-1.16.0/CVE-2026-114605.patch"
-DNSPYTHON_TEST_W18="${REPO_ROOT}/utils/patch-dnspython-1.16.0/test_cve_2026_114605.py"
+# dnspython parser backports and their regression tests.
+while read -r cve module patch_hash test_hash; do
+    dns_patch="${REPO_ROOT}/utils/patch-dnspython-1.16.0/${cve}.patch"
+    test_name="${cve,,}"
+    dns_test="${REPO_ROOT}/utils/patch-dnspython-1.16.0/test_${test_name//-/_}.py"
 
-echo "3fd7d9501cc7874943b98e1877e7713f898073e79b818329bb6cd984afc0d559  ${DNSPYTHON_PATCH_W18}" |
-    sha256sum -c - || die "W18 dnspython patch SHA256 mismatch"
+    echo "${patch_hash}  ${dns_patch}" | sha256sum -c - ||
+        die "dnspython ${cve} patch SHA256 mismatch"
+    echo "${test_hash}  ${dns_test}" | sha256sum -c - ||
+        die "dnspython ${cve} test SHA256 mismatch"
 
-echo "6135449c996f6c858d544cc4a9a563b66febd0ebbf0afb8ba49798d1b0987f6f  ${DNSPYTHON_TEST_W18}" |
-    sha256sum -c - || die "W18 dnspython test SHA256 mismatch"
+    (
+        cd "${DNSPYTHON_DIR}" &&
+        patch --forward --dry-run -p1 < "${dns_patch}" &&
+        patch --forward -p1 < "${dns_patch}"
+    ) || die "dnspython ${cve} patch application failed"
 
-(
-    cd "${DNSPYTHON_DIR}"
-    patch --dry-run -p1 < "${DNSPYTHON_PATCH_W18}"
-    patch -p1 < "${DNSPYTHON_PATCH_W18}"
-) || die "W18 dnspython patch application failed"
-
-"${PYTHON}" -m py_compile "${DNSPYTHON_DIR}/name.py" ||
-    die "W18 dnspython compilation failed"
-
-"${PYTHON}" "${DNSPYTHON_TEST_W18}" ||
-    die "W18 dnspython security regression failed"
-
-echo "[PASS] W18 dnspython CVE-2026-114605"
+    "${PYTHON}" -m py_compile "${DNSPYTHON_DIR}/${module}" ||
+        die "dnspython ${cve} compilation failed"
+    "${PYTHON}" "${dns_test}" ||
+        die "dnspython ${cve} security regression failed"
+    echo "[PASS] dnspython ${cve}"
+done <<'DNSPYTHON_BACKPORTS'
+CVE-2026-114605 name.py 3fd7d9501cc7874943b98e1877e7713f898073e79b818329bb6cd984afc0d559 6135449c996f6c858d544cc4a9a563b66febd0ebbf0afb8ba49798d1b0987f6f
+CVE-2026-128089 rdtypes/IN/WKS.py a51ebb37b4ecf1507a9edc5b689c9e399090b0c08066ded5f1004727cd518b65 c5d93cb1b6c932b35201a7578ee4b90b83d446a720b9c9bf1ba49c2d64deb8fb
+DNSPYTHON_BACKPORTS
 
 echo ">>> Running CVE-2023-29483 dnspython standalone regression test..."
 
