@@ -2331,3 +2331,99 @@ Reprendre le chantier Inno Setup 7.1.1 x64 depuis ce checkpoint.
   sans decision explicite.
 - Reprise suivante : poursuivre la validation de la chaine
   de construction PADIT, puis les priorites RC1 restantes.
+
+---
+
+## W109-85 - VALIDATION CHAINE WINDOWS COMPLETE
+Date : 2026-11-19
+Projet : PADIT Community 1.8.3 Windows x86
+Machine : VM109 / compte Maintenance
+
+### ARCHITECTURE VALIDEE
+- C:\padit-01-kit : BuildKit v1.0.0 valide.
+- C:\padit-02-tools : outils installes.
+- C:\padit-03-runtime : runtime initial conserve.
+- C:\padit-03-runtime-validation : nouveau runtime valide.
+- C:\padit-04-product : livrables Product.
+- Constructeur 01 : PASS + idempotence PASS.
+- Constructeur 02 : construction complete PASS.
+- Constructeur 03 : premier assemblage Product PASS.
+- Aucun besoin de reconstruire Python/OpenSSL.
+
+### CONSTRUCTEUR 02
+- Commit f66ebecf publie sur release/1.8.3.
+- Modernisation par Codex integree.
+- Espace temporaire isole via RuntimeWork.
+- Construction Windows x86 avec OpenSSL 3.5.9.
+- Python 2.7.18 / cryptography 3.3.2.
+- Tests autonomes RSA, X509 et TLS 1.2 PASS.
+- Chargement des DLL OpenSSL depuis le runtime PASS.
+- Runtime de validation conserve.
+- Validation fonctionnelle complete du constructeur : PASS.
+
+### CONSTRUCTEUR 03
+- Worktree experimental :
+  C:\Users\Maintenance\PADIT\Worktree-Product-W109
+- Detached HEAD : f66ebecf.
+- Sous-modules Community initialises.
+- 16/16 gitlinks verifies : PASS.
+- Suppressions indexees restaurees dans les sous-modules
+  concernes sans nettoyage general.
+- Sous-module Enterprise exclu.
+- Runtime utilise : C:\padit-03-runtime-validation.
+- Assemblage Product termine : PASS.
+- Compilation Inno Setup reussie.
+- Build number : 7735.
+- Installateur :
+  C:\padit-04-product\waptsetup\waptsetup.exe
+- FileVersion / ProductVersion : 1.8.3.7735.
+- ProductName : PADITSetup.
+- Taille : 38428010 octets.
+- SHA256 :
+  AC3B1DDB9863B92610BC9897564E3C25DE0C83F7D8DDB340FC7351EDD37309CD
+- Validation finale du fichier : PASS.
+- Installateur NON SIGNE : build de validation uniquement.
+- Pas de validation installation/desinstallation encore realisee.
+
+### SECURITE
+- Soup Sieve : 26/26 tests Windows + Unix PASS.
+- dnspython : 6/6 tests Windows PASS.
+- Alertes Dependabot #192 a #196 dismissed.
+- Commits de securite publies.
+- Voir section W109-83 pour les details.
+
+### ETAT GIT
+- Branche principale : release/1.8.3.
+- Dernier commit publie : f66ebecf.
+- Ne pas pousser sans accord explicite.
+- Worktree Product experimental a conserver.
+- Ne pas modifier ni nettoyer les worktrees W33 sur VM106.
+
+### REPRISE DEMAIN - W109-86
+Priorite : validation fonctionnelle du produit 1.8.3.7735.
+
+1. Preparer un environnement Windows de test isole.
+2. Preserver les installations et validations RC1/RC2.
+3. Examiner la politique de signature pour le build de test.
+4. Tester installation et desinstallation.
+5. Tester le demarrage des composants Community.
+6. Tester la console, les interactions avec les hotes
+   et les fonctions essentielles.
+7. Documenter les resultats PASS/FAIL.
+8. Corriger uniquement les blocages constates.
+
+### CONTRAINTES
+- Aucun rebuild inutile des constructeurs 01 et 02.
+- Aucun nouveau controle du BuildKit archive.
+- Aucun nettoyage non autorise.
+- Ne pas confondre build non signe et release signee.
+- Ne pas declarer RC1 validee avant tests fonctionnels.
+- Preserver les travaux Lazarus W33/VM106.
+- Preserver les anciens produits RC1/RC2.
+- Une etape utile a la fois.
+
+### PHRASE DE REPRISE
+Reprise PADIT W109-86.
+Chaine Windows x86 01/02/03 validee sur VM109.
+Build Community 1.8.3.7735 non signe disponible.
+Preparer les tests d'installation sans ecraser RC1/RC2.
