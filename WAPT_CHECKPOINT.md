@@ -2266,3 +2266,68 @@ Commit : 64cb5e3
 Reprise PADIT W33-N275, lundi 16 novembre 2026.
 RC2 1.8.3.7717 validee sur VM107 : 3/3 PASS.
 Reprendre le chantier Inno Setup 7.1.1 x64 depuis ce checkpoint.
+
+---
+
+## W109-83 — CLOTURE CVE SOUP SIEVE / DNSPYTHON (2026-11-19)
+
+### CONTEXTE
+- PADIT Community 1.8.3, branche release/1.8.3.
+- VM109 Windows x86, compte Maintenance.
+- Debian Bookworm : waptworm, /git/paditdev.
+- Architecture Windows : C:\padit-01-kit, C:\padit-02-tools,
+  C:\padit-03-runtime, C:\padit-04-product.
+- Les acquis BuildKit v1.0.0 restent valides : ne pas refaire
+  les telechargements et controles SHA256 deja realises.
+
+### GIT
+- 1655673f : Backport dnspython CVE-2026-128089 for Python 2.7.
+- 66541274 : Backport Soup Sieve 1.9.6 CVE-2026-126190 through 126193.
+- Sept commits locaux publies sur origin/release/1.8.3.
+- HEAD publie : 66541274.
+- Synchronisation Debian Bookworm : fast-forward effectue.
+- VM109 : tools/02-build-windows-runtime.ps1 conserve des
+  modifications locales non commitees de Codex. A PRESERVER.
+- waptworm : avertissement d'acces au sous-module
+  submodules/pltis_sogrid (d58cb63f) pendant le pull.
+  Le fast-forward du depot principal a reussi.
+
+### SOUP SIEVE 1.9.6
+- Quatre nouveaux correctifs : CVE-2026-126190 a 126193.
+- Patch et tests integres aux constructeurs Windows et Unix.
+- Modules corriges : css_parser.py et css_match.py.
+- Windows x86 : 7/7 nouveaux tests PASS.
+- Windows x86 : 6/6 tests historiques W16 PASS.
+- Debian Bookworm Python 2.7, copie isolee W25 :
+  7/7 nouveaux tests PASS et 6/6 historiques PASS.
+- Runtime Windows existant : deux modules corriges installes,
+  13/13 tests PASS directement sur le runtime.
+- Sauvegardes des modules Windows originaux conservees.
+- Reproductibilite complete des constructeurs non encore validee.
+
+### DNSPYTHON 1.16.0
+- CVE-2026-128089, module dns/rdtypes/IN/WKS.py.
+- Patch applique et teste sur une copie isolee Windows.
+- 6/6 tests PASS sur copie isolee.
+- Module WKS.py corrige installe dans le runtime Windows x86.
+- 6/6 tests PASS directement sur le runtime autonome.
+- Sauvegarde du WKS.py original conservee.
+- Reproductibilite du constructeur non encore validee.
+
+### DEPENDABOT
+- Soup Sieve : alertes #192, #193, #194, #195 dismissed.
+- dnspython : alerte #196 dismissed.
+- Justification : fix_started, retroportages documentes.
+- Reponses API GitHub confirmees le 2026-11-19.
+- Aucun controle redondant necessaire.
+
+### ETAT ET REPRISE
+- W109-83X : PASS, cloture des cinq alertes.
+- Total : 26 tests Soup Sieve PASS (Windows + Unix),
+  plus 6 tests dnspython PASS sur runtime Windows.
+- Conserver les travaux W33/VM106 et leurs checkpoints.
+- Ne pas reconstruire Python/OpenSSL inutilement.
+- Ne pas supprimer les copies de test et sauvegardes
+  sans decision explicite.
+- Reprise suivante : poursuivre la validation de la chaine
+  de construction PADIT, puis les priorites RC1 restantes.
