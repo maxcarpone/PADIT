@@ -2086,17 +2086,22 @@ Write-Step 'Applying soupsieve 1.9.6 security backport'
 $SoupDir = Join-Path $Output 'Lib\site-packages\soupsieve'
 $SoupPatch = Join-Path $RepoRoot 'utils\patch-soupsieve-1.9.6\CVE-2026-49476-49477-85999-86000.patch'
 $SoupTest = Join-Path $RepoRoot 'utils\patch-soupsieve-1.9.6\test_security.py'
+$SoupNewPatch = Join-Path $RepoRoot 'utils\patch-soupsieve-1.9.6\CVE-2026-126190-126191-126192-126193.patch'
+$SoupNewTest = Join-Path $RepoRoot 'utils\patch-soupsieve-1.9.6\test_cve_2026_126190_126191_126192_126193.py'
 $SoupStage = Join-Path $Output '_soupsieve_security_stage'
 $SoupStagePackage = Join-Path $SoupStage 'soupsieve'
-$SoupParser = Join-Path $SoupDir 'css_parser.py'
 
 Assert-Dir $SoupDir
-Assert-File $SoupParser
 Assert-File $SoupPatch
 Assert-File $SoupTest
+Assert-File $SoupNewPatch
+Assert-File $SoupNewTest
 
 Assert-Sha256 $SoupPatch 'DADE2C1F8539B7316C2436E9C1C0A9B803055A08CBB D538A8FB84262A88AC201'.Replace(' ', '')
 Assert-Sha256 $SoupTest 'B144B07F1B449DD60517917354E3B9387ADA9A576DAC4352C5FCC98746AF8907'
+
+Assert-Sha256 $SoupNewPatch '120EFEC555541779FECBA7BD73AB3DD38B827FB22D6F1B0F615EEBE11941EC4A'
+Assert-Sha256 $SoupNewTest 'E985C36091FE5A3025E0E6D17C9AECB61373FFC986BA7BFC55577842109C0BF3'
 
 $SoupVersion = & $RuntimePython -c 'import soupsieve; print(soupsieve.__version__)'
 if ($LASTEXITCODE -ne 0 -or $SoupVersion.Trim() -ne '1.9.6') {
@@ -2112,62 +2117,70 @@ Copy-Item -LiteralPath $SoupDir -Destination $SoupStagePackage -Recurse
 
 Push-Location $SoupStage
 try {
-    & git apply --check --whitespace=nowarn -p1 $SoupPatch
-    if ($LASTEXITCODE -ne 0) {
-        throw 'soupsieve patch validation failed'
-    }
+    foreach ($SoupPatchFile in @($SoupPatch, $SoupNewPatch)) {
+        & git apply --check --whitespace=nowarn -p1 $SoupPatchFile
+        if ($LASTEXITCODE -ne 0) {
+            throw 'soupsieve patch validation failed'
+        }
 
-    & git apply --whitespace=nowarn -p1 $SoupPatch
-    if ($LASTEXITCODE -ne 0) {
-        throw 'soupsieve patch application failed'
+        & git apply --whitespace=nowarn -p1 $SoupPatchFile
+        if ($LASTEXITCODE -ne 0) {
+            throw 'soupsieve patch application failed'
+        }
     }
 }
 finally {
     Pop-Location
 }
 
-$SoupPatched = Join-Path $SoupStagePackage 'css_parser.py'
-Assert-File $SoupPatched
-
-# Verify LF-normalized content against the validated Unix W16 parser.
-$SoupNormalized = [IO.File]::ReadAllText($SoupPatched).Replace("`r`n", "`n")
-$SoupNormalizedBytes = [Text.Encoding]::UTF8.GetBytes($SoupNormalized)
-$SoupHasher = [Security.Cryptography.SHA256]::Create()
-try {
-    $SoupNormalizedHash = (
-        [BitConverter]::ToString($SoupHasher.ComputeHash($SoupNormalizedBytes))
-    ).Replace('-', '')
+$SoupModuleHashes = @{
+    'css_parser.py' = '95042758B6B65623F1FE1C7A1B36E4EE2F48398DFD0C20DAC18E7F1CFE307749'
+    'css_match.py' = 'FF57FD5CC1EDE0FE430B8211E6592B37CCB9DDAD586A3A0DE6118FED2313546A'
 }
-finally {
-    $SoupHasher.Dispose()
+foreach ($SoupModule in $SoupModuleHashes.GetEnumerator()) {
+    $SoupPatched = Join-Path $SoupStagePackage $SoupModule.Key
+    $SoupInstalled = Join-Path $SoupDir $SoupModule.Key
+    Assert-File $SoupPatched
+
+    # Verify LF-normalized content against the validated Unix sources.
+    $SoupNormalized = [IO.File]::ReadAllText($SoupPatched).Replace("`r`n", "`n")
+    $SoupNormalizedBytes = [Text.Encoding]::UTF8.GetBytes($SoupNormalized)
+    $SoupHasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $SoupNormalizedHash = (
+            [BitConverter]::ToString($SoupHasher.ComputeHash($SoupNormalizedBytes))
+        ).Replace('-', '')
+    }
+    finally {
+        $SoupHasher.Dispose()
+    }
+
+    if ($SoupNormalizedHash -ne $SoupModule.Value) {
+        throw "soupsieve patched module SHA256 mismatch ($($SoupModule.Key)): $SoupNormalizedHash"
+    }
+
+    Copy-Item -LiteralPath $SoupPatched -Destination $SoupInstalled -Force
+
+    # Confirm installed parser is byte-for-byte identical to the patched stage.
+    $SoupStageHash = (Get-FileHash -LiteralPath $SoupPatched -Algorithm SHA256).Hash
+    Assert-Sha256 $SoupInstalled $SoupStageHash
+    Write-Host "[PASS] Installed soupsieve $($SoupModule.Key) SHA256 verified"
+
+    & $RuntimePython -m py_compile $SoupInstalled
+    if ($LASTEXITCODE -ne 0) {
+        throw "soupsieve module compilation failed: $($SoupModule.Key)"
+    }
 }
 
-if ($SoupNormalizedHash -ne '9FC72FB3B683704AE27404D66639B7A6960D0DCB27C268FD2FA1202EBABB06DC') {
-    throw "soupsieve patched parser SHA256 mismatch: $SoupNormalizedHash"
-}
-
-Copy-Item -LiteralPath $SoupPatched -Destination $SoupParser -Force
-
-# Confirm installed parser is byte-for-byte identical to the patched stage.
-$SoupStageHash = (Get-FileHash -LiteralPath $SoupPatched -Algorithm SHA256).Hash
-Assert-Sha256 $SoupParser $SoupStageHash
-Write-Host '[PASS] Installed soupsieve parser SHA256 verified'
-
-Remove-Item -LiteralPath $SoupStage -Recurse -Force
-
-& $RuntimePython -m py_compile $SoupParser
-if ($LASTEXITCODE -ne 0) {
-    throw 'soupsieve patched parser compilation failed'
-}
-
-# Run the six regression tests without installing pytest.
+# Run both regression sets without installing pytest.
 $SoupNames = @(
     'test_cve_2026_49476_selector_limit',
     'test_cve_2026_49476_relative_limit',
     'test_cve_2026_49476_token_budget',
     'test_cve_2026_49477_unterminated_quotes',
     'test_cve_2026_85999_whitespace',
-    'test_cve_2026_86000_identifier'
+    'test_cve_2026_86000_identifier',
+    'CVE-2026-126190-126191-126192-126193'
 )
 
 $SoupRunner = @'
@@ -2182,59 +2195,58 @@ print('[PASS] ' + sys.argv[2])
 $SoupRunnerFile = Join-Path $Output '_soupsieve_security_runner.py'
 [IO.File]::WriteAllText($SoupRunnerFile, $SoupRunner, [Text.Encoding]::ASCII)
 
-try {
-    foreach ($SoupName in $SoupNames) {
-        $SoupProcess = New-Object System.Diagnostics.Process
-        $SoupProcess.StartInfo.FileName = $RuntimePython
-        $SoupProcess.StartInfo.Arguments = (
-            '-u "{0}" "{1}" "{2}"' -f
-            $SoupRunnerFile, $SoupTest, $SoupName
+foreach ($SoupName in $SoupNames) {
+    $SoupProcess = New-Object System.Diagnostics.Process
+    $SoupProcess.StartInfo.FileName = $RuntimePython
+    $SoupProcess.StartInfo.Arguments = if ($SoupName -eq 'CVE-2026-126190-126191-126192-126193') {
+        '-B -u "{0}" -v' -f $SoupNewTest
+    }
+    else {
+        '-B -u "{0}" "{1}" "{2}"' -f $SoupRunnerFile, $SoupTest, $SoupName
+    }
+    $SoupProcess.StartInfo.UseShellExecute = $false
+    $SoupProcess.StartInfo.CreateNoWindow = $true
+    $SoupLog = Join-Path $Output ("_soupsieve_test_" + $SoupName + ".log")
+    if (Test-Path -LiteralPath $SoupLog) {
+        throw "soupsieve test log already exists: $SoupLog"
+    }
+    $SoupProcess.StartInfo.RedirectStandardOutput = $true
+    $SoupProcess.StartInfo.RedirectStandardError = $true
+
+    try {
+        if (-not $SoupProcess.Start()) {
+            throw "soupsieve test process could not start: $SoupName"
+        }
+
+        if (-not $SoupProcess.WaitForExit(10000)) {
+            $SoupProcess.Kill()
+            $SoupProcess.WaitForExit()
+            throw "soupsieve regression TIMEOUT: $SoupName"
+        }
+
+        $SoupStdout = $SoupProcess.StandardOutput.ReadToEnd()
+        $SoupStderr = $SoupProcess.StandardError.ReadToEnd()
+        [IO.File]::WriteAllText(
+            $SoupLog,
+            $SoupStdout + $SoupStderr,
+            [Text.Encoding]::UTF8
         )
-        $SoupProcess.StartInfo.UseShellExecute = $false
-        $SoupProcess.StartInfo.CreateNoWindow = $true
-        $SoupLog = Join-Path $Output ("_soupsieve_test_" + $SoupName + ".log")
-        if (Test-Path -LiteralPath $SoupLog) {
-            throw "soupsieve test log already exists: $SoupLog"
+
+        if ($SoupProcess.ExitCode -ne 0) {
+            Write-Host ($SoupStdout + $SoupStderr)
+            throw "soupsieve regression failed: $SoupName"
         }
-        $SoupProcess.StartInfo.RedirectStandardOutput = $true
-        $SoupProcess.StartInfo.RedirectStandardError = $true
 
-        try {
-            if (-not $SoupProcess.Start()) {
-                throw "soupsieve test process could not start: $SoupName"
-            }
-
-            if (-not $SoupProcess.WaitForExit(10000)) {
-                $SoupProcess.Kill()
-                $SoupProcess.WaitForExit()
-                throw "soupsieve regression TIMEOUT: $SoupName"
-            }
-
-            $SoupStdout = $SoupProcess.StandardOutput.ReadToEnd()
-            $SoupStderr = $SoupProcess.StandardError.ReadToEnd()
-            [IO.File]::WriteAllText(
-                $SoupLog,
-                $SoupStdout + $SoupStderr,
-                [Text.Encoding]::UTF8
-            )
-
-            if ($SoupProcess.ExitCode -ne 0) {
-                Write-Host ($SoupStdout + $SoupStderr)
-                throw "soupsieve regression failed: $SoupName"
-            }
-
-            Write-Host ($SoupStdout.Trim())
-            Write-Host "[PASS] Windows soupsieve regression: $SoupName"
-        }
-        finally {
-            $SoupProcess.Dispose()
-        }
+        Write-Host (($SoupStdout + $SoupStderr).Trim())
+        Write-Host "[PASS] Windows soupsieve regression: $SoupName"
+    }
+    finally {
+        $SoupProcess.Dispose()
     }
 }
-finally {
-    Remove-Item -LiteralPath $SoupRunnerFile -Force -ErrorAction SilentlyContinue
-}
 
+Remove-Item -LiteralPath $SoupRunnerFile -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $SoupStage -Recurse -Force
 Write-Host '[PASS] W16 soupsieve 1.9.6 security backport'
 
 # ---------------------------------------------------------------------------

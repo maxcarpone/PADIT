@@ -498,6 +498,8 @@ echo ">>> Building secured soupsieve 1.9.6..."
 SOUP_ARCHIVE="${REPO_ROOT}/utils/sources/soupsieve-1.9.6.tar.gz"
 SOUP_PATCH="${REPO_ROOT}/utils/patch-soupsieve-1.9.6/CVE-2026-49476-49477-85999-86000.patch"
 SOUP_TEST="${REPO_ROOT}/utils/patch-soupsieve-1.9.6/test_security.py"
+SOUP_NEW_PATCH="${REPO_ROOT}/utils/patch-soupsieve-1.9.6/CVE-2026-126190-126191-126192-126193.patch"
+SOUP_NEW_TEST="${REPO_ROOT}/utils/patch-soupsieve-1.9.6/test_cve_2026_126190_126191_126192_126193.py"
 SOUP_WORK="${BUILD_ROOT}/soupsieve-secure"
 SOUP_SOURCE="${SOUP_WORK}/soupsieve-1.9.6"
 SOUP_DIST="${SOUP_WORK}/dist"
@@ -505,6 +507,8 @@ SOUP_DIST="${SOUP_WORK}/dist"
 [ -f "${SOUP_ARCHIVE}" ] || die "Missing soupsieve archive"
 [ -f "${SOUP_PATCH}" ] || die "Missing soupsieve patch"
 [ -f "${SOUP_TEST}" ] || die "Missing soupsieve tests"
+[ -f "${SOUP_NEW_PATCH}" ] || die "Missing new soupsieve patch"
+[ -f "${SOUP_NEW_TEST}" ] || die "Missing new soupsieve tests"
 [ ! -e "${SOUP_WORK}" ] || die "soupsieve work directory exists"
 
 echo "7985bacc98c34923a439967c1a602dc4f1e15f923b6fcf02344184f86cc7efaa  ${SOUP_ARCHIVE}" |
@@ -515,6 +519,12 @@ echo "dade2c1f8539b7316c2436e9c1c0a9b803055a08cbbd538a8fb84262a88ac201  ${SOUP_P
 
 echo "b144b07f1b449dd60517917354e3b9387ada9a576dac4352c5fcc98746af8907  ${SOUP_TEST}" |
     sha256sum -c - || die "soupsieve test SHA256 mismatch"
+
+echo "120efec555541779fecba7bd73ab3dd38b827fb22d6f1b0f615eebe11941ec4a  ${SOUP_NEW_PATCH}" |
+    sha256sum -c - || die "New soupsieve patch SHA256 mismatch"
+
+echo "e985c36091fe5a3025e0e6d17c9aecb61373ffc986ba7bfc55577842109c0bf3  ${SOUP_NEW_TEST}" |
+    sha256sum -c - || die "New soupsieve test SHA256 mismatch"
 
 python3 - "${SOUP_ARCHIVE}" <<'PYSOUPTAR' || die "soupsieve archive validation failed"
 import pathlib
@@ -544,6 +554,7 @@ tar -xzf "${SOUP_ARCHIVE}" -C "${SOUP_WORK}" ||
 (
     cd "${SOUP_SOURCE}" &&
     patch --batch --fuzz=0 -p1 < "${SOUP_PATCH}" &&
+    patch --batch --fuzz=0 -p1 < "${SOUP_NEW_PATCH}" &&
     "${RUNTIME_ROOT}/bin/python" setup.py bdist_wheel --dist-dir "${SOUP_DIST}"
 ) || die "soupsieve patch or wheel build failed"
 
@@ -562,22 +573,18 @@ import os
 import soupsieve
 
 assert soupsieve.__version__ == '1.9.6'
-source = os.path.join(
-    os.environ['SOUP_SOURCE_ROOT'], 'soupsieve', 'css_parser.py'
-)
-installed = os.path.join(
-    os.path.dirname(os.path.realpath(soupsieve.__file__)),
-    'css_parser.py'
-)
-
 def digest(path):
     with open(path, 'rb') as handle:
         return hashlib.sha256(handle.read()).hexdigest()
 
-assert digest(source) == digest(installed)
-assert digest(installed) == (
-    '9fc72fb3b683704ae27404d66639b7a6960d0dcb27c268fd2fa1202ebabb06dc'
-)
+expected = {
+    'css_parser.py': '95042758b6b65623f1fe1c7a1b36e4ee2f48398dfd0c20dac18e7f1cfe307749',
+    'css_match.py': 'ff57fd5cc1ede0fe430b8211e6592b37ccb9ddad586a3a0de6118fed2313546a',
+}
+source_dir = os.path.join(os.environ['SOUP_SOURCE_ROOT'], 'soupsieve')
+installed_dir = os.path.dirname(os.path.realpath(soupsieve.__file__))
+for name, expected_hash in expected.items():
+    assert digest(os.path.join(source_dir, name)) == digest(os.path.join(installed_dir, name)) == expected_hash, name
 print('[PASS] Secured soupsieve installation provenance')
 PYSOUPVERIFY
 
@@ -592,7 +599,7 @@ for test_name in \
     test_cve_2026_86000_identifier
 do
     timeout --kill-after=2s 10s \
-        "${RUNTIME_ROOT}/bin/python" - "${SOUP_TEST}" "${test_name}" <<'PYSOUPTEST' || die "soupsieve security regression failed"
+        "${RUNTIME_ROOT}/bin/python" -B - "${SOUP_TEST}" "${test_name}" <<'PYSOUPTEST' || die "soupsieve security regression failed"
 import imp
 import sys
 
@@ -601,6 +608,9 @@ getattr(module, sys.argv[2])()
 print('[PASS] ' + sys.argv[2])
 PYSOUPTEST
 done
+
+timeout --kill-after=2s 10s "${RUNTIME_ROOT}/bin/python" -B "${SOUP_NEW_TEST}" -v ||
+    die "New soupsieve security regression failed"
 
 echo "[PASS] W16 secured soupsieve 1.9.6 installed"
 
