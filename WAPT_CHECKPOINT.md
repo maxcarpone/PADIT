@@ -2459,3 +2459,34 @@ Preparer les tests d'installation sans ecraser RC1/RC2.
 - Reprendre les autres points ouverts de l'audit W109-88.
 - Ne pas refaire les validations acquises.
 - Conserver les branches SOGrid existantes en attendant une revue Git dediee.
+
+## W109-88C — Correction export CSV SOGrid (2026-11-20)
+
+### Correctif
+- Restauration du guillemetage des champs et en-tetes CSV.
+- Doublement des guillemets internes.
+- Gestion des valeurs absentes, null et vides.
+- Conservation du separateur tabulation et de l'encodage UTF-8.
+- Aucun changement des menus ou du copier/coller W109-88B14.
+
+### Commits publies
+- SOGrid feature/padit-sogrid-paste : aa58bda
+- PADIT release/1.8.3 : 018ac74b
+- Gitlink SOGrid : 2ac5f19 -> aa58bda
+
+### Validations
+- Compilation SOGrid Lazarus 4.8 / FPC 3.2.2 : PASS.
+- Compilation waptconsole.exe Windows x86 : PASS.
+- Signature Authenticode : PASS.
+- VM107 : export standard dans ONLYOFFICE : PASS.
+- VM107 : en-tetes et valeurs guillemetes : PASS.
+- VM107 : champs vides et accents UTF-8 : PASS.
+- Guillemets internes, tabulations et retours a la ligne : validation statique uniquement.
+
+### Points differes
+- Compatibilite du format .csv avec separateur tabulation.
+- Aucun changement du presse-papiers ou des autres commandes SOGrid.
+
+### Suite
+- Reprendre les autres points ouverts de W109-88.
+- Ne pas refaire les validations acquises.
