@@ -4340,10 +4340,28 @@ var
   soresult,columns,urlParams, Hosts,fields: ISuperObject;
   prop: string;
   HostsCount,i: integer;
+  SelectedUUIDs: ISuperObject;
+  FocusedUUID, UUID: String;
+  Node, FocusNode, FirstSelectedNode: PVirtualNode;
 const
   DefaultColumns:Array[0..15] of String = ('uuid','os_name','connected_ips','computer_fqdn',
     'computer_name','manufacturer','description','productname','serialnr','mac_addresses','connected_users','last_logged_on_user',
     'computer_ad_ou','computer_ad_site','platform','host_capabilities');
+
+  function HostUUID(HostNode: PVirtualNode): String;
+  var
+    Row, Value: ISuperObject;
+  begin
+    Result := '';
+    Row := GridHosts.GetNodeSOData(HostNode);
+    if Row = nil then
+      Exit;
+    Value := Row['uuid'];
+    if Value <> nil then
+      if Value.DataType = stString then
+        Result := UTF8Encode(Value.AsString);
+  end;
+
 begin
   if AppLoading then
     Exit;
@@ -4434,20 +4452,71 @@ begin
     if (soresult<>Nil) and (soresult.B['success']) then
     begin
       hosts := soresult['result'];
-      GridHosts.Data := hosts;
       if (hosts <> nil) and (hosts.AsArray <> nil) then
       begin
-        HostsCount := hosts.AsArray.Length;
-        {$ifdef ENTERPRISE}
-        {$include ..\waptenterprise\includes\uwaptconsole.searchhost.check_count.inc}
-        {$endif}
-        LabelComputersNumber.Caption := IntToStr(HostsCount);
+        SelectedUUIDs := TSuperObject.Create(stArray);
+        Node := GridHosts.GetFirstSelected;
+        while Node <> nil do
+        begin
+          UUID := HostUUID(Node);
+          if UUID <> '' then
+            SelectedUUIDs.AsArray.Add(UUID);
+          Node := GridHosts.GetNextSelected(Node);
+        end;
+        FocusedUUID := HostUUID(GridHosts.FocusedNode);
+
         if PollTasksThread <> Nil then
         begin
           PollTasksThread.Terminate;
           PollTasksThread := Nil;
         end;
-      end;
+
+        FocusNode := nil;
+        FirstSelectedNode := nil;
+        GridHosts.BeginUpdate;
+        try
+          GridHosts.Data := hosts;
+          if (FocusedUUID <> '') or (SelectedUUIDs.AsArray.Length > 0) then
+          begin
+            Node := GridHosts.GetFirst;
+            while Node <> nil do
+            begin
+              UUID := HostUUID(Node);
+              if UUID <> '' then
+              begin
+                if UUID = FocusedUUID then
+                  FocusNode := Node;
+                if StrIn(UUID, SelectedUUIDs) then
+                begin
+                  GridHosts.Selected[Node] := True;
+                  if FirstSelectedNode = nil then
+                    FirstSelectedNode := Node;
+                end;
+              end;
+              Node := GridHosts.GetNext(Node);
+            end;
+            if FocusNode = nil then
+              FocusNode := FirstSelectedNode;
+            if FocusNode <> nil then
+              GridHosts.FocusedNode := FocusNode;
+          end;
+        finally
+          GridHosts.EndUpdate;
+        end;
+        if GridHosts.FocusedNode <> nil then
+          GridHosts.ScrollIntoView(GridHosts.FocusedNode, False);
+
+        HostsCount := hosts.AsArray.Length;
+        {$ifdef ENTERPRISE}
+        {$include ..\waptenterprise\includes\uwaptconsole.searchhost.check_count.inc}
+        {$endif}
+        if GridHosts.SelectedCount > 0 then
+          LabelComputersNumber.Caption := Format(rsHostsSelectedTotal,[GridHosts.SelectedCount,HostsCount])
+        else
+          LabelComputersNumber.Caption := IntToStr(HostsCount);
+      end
+      else
+        GridHosts.Data := hosts;
     end
     else
     begin
