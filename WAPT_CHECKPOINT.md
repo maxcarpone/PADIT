@@ -2490,3 +2490,34 @@ Preparer les tests d'installation sans ecraser RC1/RC2.
 ### Suite
 - Reprendre les autres points ouverts de W109-88.
 - Ne pas refaire les validations acquises.
+
+## W109-88D - Correction SOGrid DoNewText (2026-11-20)
+
+### Correctif
+- Trois substitutions dans TSOGrid.DoNewText.
+- Remplacement de SO(...) par TSuperObject.Create(UTF8Decode(AText)).
+- Conservation des guillemets, antislashs et textes Unicode.
+- Correctifs precedents CSV, collage et W33 preserves.
+
+### Commits publies
+- SOGrid feature/padit-sogrid-paste : c65abdf
+- PADIT release/1.8.3 : 83b29296
+- Gitlink SOGrid : aa58bda -> c65abdf
+
+### Validations
+- SuperObject 9220760 : constructeur chaine compatible.
+- Compilation SOGrid et console Windows x86 : PASS.
+- Signature Authenticode : PASS.
+- VM107 : saisie de Test "Nord" : PASS.
+- VM107 : chemins C:\logs\test.exe et C:\temp\test "QA" : PASS.
+- VM107 : persistance apres enregistrement et reouverture : PASS.
+- Entree de test supprimee apres validation.
+
+### Point historique distinct
+- Edition des cellules Outils externes parfois lente a reagir.
+- Comportement egalement constate sous WAPT 1.8.2.
+- Aucune correction ergonomique dans ce chantier.
+
+### Suite
+- Poursuivre les points ouverts de W109-88.
+- Ne pas refaire les validations acquises.
