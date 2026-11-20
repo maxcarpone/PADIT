@@ -2170,7 +2170,7 @@ def host_data():
                 WsusUpdates.installation_impact,
                 WsusUpdates.uninstallation_impact,
                 ]
-            result = list(local_status.select(*fields).join(WsusUpdates,'RIGHT OUTER').where(local_status.host == uuid).order_by(WsusUpdates.changetime).dicts()) # pylint: disable=no-member
+            result = list(local_status.select(*fields).join(WsusUpdates,JOIN.RIGHT_OUTER).where(local_status.host == uuid).order_by(WsusUpdates.changetime).dicts()) # pylint: disable=no-member
         else:
             data = Hosts\
                 .select(Hosts.uuid, Hosts.computer_fqdn, Hosts.fieldbyname(field))\
@@ -2241,7 +2241,7 @@ def hosts_for_package():
             )
             .where(
                 HostPackagesStatus.package.in_(packages))
-                .join(Hosts,'RIGHT OUTER')
+                .join(Hosts,JOIN.RIGHT_OUTER)
                 .limit(limit)
                 .dicts())
 
@@ -2309,7 +2309,7 @@ def packages_for_hosts():
 
     result = list(
             query.where(where)
-            .join(Hosts,'RIGHT OUTER')
+            .join(Hosts,JOIN.RIGHT_OUTER)
             .group_by(SQL(','.join([str(i) for i in range(1,len(fields)-1)])))  # 1,2,3,4
             .limit(limit)
             .dicts())
