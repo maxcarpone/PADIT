@@ -1494,6 +1494,7 @@ object VisEditPackage: TVisEditPackage
     top = 220
     object MenuItem4: TMenuItem
       Action = ActEditRemoveDepends
+      ShortCut = 16430
     end
   end
   object PopupMenu1: TPopupMenu
@@ -1519,6 +1520,7 @@ object VisEditPackage: TVisEditPackage
     top = 232
     object MenuItem5: TMenuItem
       Action = ActEditRemoveConflicts
+      ShortCut = 16430
     end
   end
   object ActionsImages: TImageList
