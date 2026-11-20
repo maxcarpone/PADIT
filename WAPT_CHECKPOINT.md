@@ -2427,3 +2427,35 @@ Reprise PADIT W109-86.
 Chaine Windows x86 01/02/03 validee sur VM109.
 Build Community 1.8.3.7735 non signe disponible.
 Preparer les tests d'installation sans ecraser RC1/RC2.
+
+## W109-88B14 — SOGrid / Editeur de groupes — CLOTURE PASS (2026-11-20)
+
+### Correctifs
+- SOGrid : restauration de Coller / Ctrl+V pour les grilles avec OnBeforePaste.
+- Editeur de groupes : Ctrl+Suppr associe aux actions existantes de retrait des dependances et conflits.
+- Suppression generique Delete selected rows volontairement non restauree.
+- Correctif W33 des menus Win32 preserve.
+
+### Commits publies
+- PADIT release/1.8.3 : 2eb476de
+- SOGrid feature/padit-sogrid-paste : 2ac5f19
+- Gitlink SOGrid : e65c40fe -> 2ac5f19
+
+### Validations
+- Lazarus 4.8 / FPC 3.2.2 Windows x86 : PASS.
+- Authenticode Thouet Software Code Signing : PASS.
+- VM107 : affichage Coller / Ctrl+V : PASS.
+- VM107 : copier/coller entre groupes de paquets : PASS.
+- VM107 : menu contextuel sans exception W33 : PASS.
+- VM107 : affichage Enlever / Ctrl+Suppr : PASS.
+
+### Incident de compilation resolu
+- Le profil Lazarus partage reference initialement SOGrid dans Worktree-Product-W109.
+- Lien SOGrid repointe vers le depot Maintenance.
+- Paquet SOGrid recompile, puis console reconstruite et signee.
+- Aucun nouveau worktree necessaire.
+
+### Suite
+- Reprendre les autres points ouverts de l'audit W109-88.
+- Ne pas refaire les validations acquises.
+- Conserver les branches SOGrid existantes en attendant une revue Git dediee.
