@@ -55,7 +55,7 @@ Source: "{#wapt_base_dir}templates\*"; DestDir: "{app}\templates"; Flags: create
 
 ; for openssl get dll in path
 ; Select OpenSSL generation from the staged product tree.
-#if FileExists(AddBackslash(SourcePath) + "..\libcrypto-3.dll")
+#if FileExists(AddBackslash(wapt_base_dir) + "libcrypto-3.dll") && FileExists(AddBackslash(wapt_base_dir) + "libssl-3.dll")
 Source: "{#wapt_base_dir}libcrypto-3.dll"; DestDir: "{app}";
 Source: "{#wapt_base_dir}libssl-3.dll"; DestDir: "{app}";
 Source: "{#wapt_base_dir}openssl.cnf"; DestDir: "{app}";
