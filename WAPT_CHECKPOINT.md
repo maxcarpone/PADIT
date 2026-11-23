@@ -2564,3 +2564,50 @@ Statut : audits et organisation Git valides ; synchronisation des VMs a effectue
 - Conserver les SHA des gitlinks PADIT.
 - Synchroniser les references Git des VMs par fetch sans reset, pull automatique ni modification des branches de travail.
 - L'etat local de chaque VM reste a verifier avant toute integration.
+
+## W109-97 — Windows x86 RC1
+Date : 2026-11-23
+Statut : candidat Windows x86 compile, signe et valide fonctionnellement.
+
+### Construction
+- Source PADIT : release/1.8.3, commit f7c2e592.
+- Version produit : 1.8.3.7749.
+- Cible : Windows x86.
+- Compilateur : Lazarus 4.8 / FPC 3.2.2.
+- Runtime Windows et BuildKit existants reutilises.
+- Constructeur : tools/03-build-windows-product.ps1.
+- Signature : Thouet-Software Code Signing.
+- Compilation signee : PASS.
+- Validation finale de l'installateur : PASS.
+
+### Artefact signe
+- Original : C:\padit-04-product\waptsetup\waptsetup.exe
+- Archive : C:\Users\Maintenance\PADIT\Release-assets\PADIT-Community-1.8.3.7749-RC1-win32.exe
+- Taille : 38450600 octets.
+- SHA256 : 9347C7E474B2ACE25E0D83895817B97CC0C3254EA97AC089FD84E00592D5569F
+- Artefact conserve comme candidat RC1 ; publication non encore effectuee.
+
+### Validation fonctionnelle VM107
+- Installation Windows : PASS.
+- Enregistrement dans Programmes et fonctionnalites / Applications installees : PASS.
+- Demarrage et utilisation de la console : PASS.
+- Selection et affichage des postes : PASS.
+- Ancienne erreur SOGrid : non reproduite.
+- Generation d'un agent Windows : PASS.
+- Deploiement de paquets sur les postes : PASS.
+
+### Gel Windows
+- Ne pas reconstruire le runtime ni relancer les validations acquises.
+- Conserver les gitlinks et les versions de dependances valides.
+- Aucun correctif amont supplementaire avant RC1 sans defaut bloquant demontre.
+- Backlog cosmetique : icone PADIT pour l'entree de desinstallation Windows.
+- Les corrections candidates issues des audits W109-89 restent reportees.
+
+### Prochaine phase : Debian 12 Bookworm
+- Construire les paquets serveur PADIT Community 1.8.3.
+- Cible RC1 : Debian 12 uniquement pour le serveur.
+- Agent Unix exclu du perimetre RC1.
+- Migration prise en charge : Debian 10 vers Debian 12 uniquement.
+- Reutiliser les validations runtime Bookworm deja acquises.
+- Reprendre depuis le checkpoint et les scripts Debian existants.
+- Ne pas reprendre les validations Windows acquises.
