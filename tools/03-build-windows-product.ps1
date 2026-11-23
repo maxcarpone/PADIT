@@ -395,6 +395,40 @@ $CommunitySubmodules = @(
     'submodules\pltis_visualcontrols'
 )
 
+$MissingCommunitySubmodules = @(
+    foreach ($submodule in $CommunitySubmodules) {
+        $submodulePath = Join-Path $Worktree $submodule
+        if (Test-Path -LiteralPath (Join-Path $submodulePath '.git')) {
+            continue
+        }
+
+        if (Test-Path -LiteralPath $submodulePath) {
+            $attributes = [IO.File]::GetAttributes($submodulePath)
+            if (($attributes -band [IO.FileAttributes]::ReparsePoint) -or
+                -not ($attributes -band [IO.FileAttributes]::Directory) -or
+                @(Get-ChildItem -LiteralPath $submodulePath -Force).Count -ne 0) {
+                throw "Refusing to initialize Community submodule at a non-empty or unsafe path: $submodule"
+            }
+        }
+
+        $submodule -replace '\\', '/'
+    }
+)
+
+if ($MissingCommunitySubmodules.Count -gt 0) {
+    # Git submodule update uses the index, which must match the source commit.
+    & git -C $Worktree diff --cached --quiet $SourceCommit -- @MissingCommunitySubmodules
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Unable to confirm that Community submodule gitlinks in the index match the source commit.'
+    }
+
+    Write-Host "Initializing missing Community submodules..."
+    & git -C $Worktree -c submodule.recurse=false submodule update --init --checkout -- @MissingCommunitySubmodules
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Community submodule initialization failed.'
+    }
+}
+
 Write-Host ""
 Write-Host "Verifying Community submodule gitlinks..."
 
