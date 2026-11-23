@@ -23,10 +23,10 @@ if (-not $SourceRoot) {
 
 if (-not $Worktree) { $Worktree = $SourceRoot }
 if ([IO.Path]::GetFullPath($Worktree) -ine [IO.Path]::GetFullPath($SourceRoot)) {
-    throw 'SourceRoot must identify the existing experimental worktree; no new worktree is created.'
+    throw 'SourceRoot and Worktree must identify the same existing source directory.'
 }
-if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot '.git') -PathType Leaf)) {
-    throw 'Product compilation requires an existing linked experimental worktree, not the main repository.'
+if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot '.git'))) {
+    throw 'Product compilation requires a .git file or directory at SourceRoot.'
 }
 $ErrorActionPreference = 'Stop'
 $env:Path = (Join-Path $ToolsRoot 'Git\cmd') + ';' + $env:Path
