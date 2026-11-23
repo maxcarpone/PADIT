@@ -2521,3 +2521,46 @@ Preparer les tests d'installation sans ecraser RC1/RC2.
 ### Suite
 - Poursuivre les points ouverts de W109-88.
 - Ne pas refaire les validations acquises.
+
+## W109-90 — Consolidation Git des sous-modules et du BuildKit
+Date : 2026-11-23
+Statut : audits et organisation Git valides ; synchronisation des VMs a effectuer.
+
+### Organisation des depots
+- PADIT : release/1.8.3.
+- PADIT-BuildKit : branche principale renommee release/1.8.3.
+- BuildKit v1.0.0 : archive et SHA256 deja valides et publies ; aucune reconstruction necessaire.
+- 16 sous-modules Community : branch-1.8.3 reste la reference active.
+- Les gitlinks PADIT restent epingles ; aucune mise a jour globale des sous-modules.
+- Suppression des anciennes branches master devenues redondantes, apres preservation des historiques divergents.
+- Suppression des anciennes branches de compatibilite devenues inutiles.
+- Trois branches redondantes supplementaires supprimees dans SuperObject et Utils.
+- Sept anciens tags WAPT supprimes (SuperObject 3, Python4Delphi 2, Utils 2), apres verification des commits accessibles et de l'absence de GitHub Releases.
+
+### Convention historique
+- branch-1.8.3 : version active PADIT.
+- branch-1.8.2 : ancienne reference conservee sur les depots ou ce nom a ete accepte.
+- legacy-branch-1.8.2 : ancien etat WAPT/PADIT 1.8.2 pour LuiPack et SOGrid.
+- legacy-branch-1.5.1 : lignée independante Python4Delphi.
+- upstream-historical-2015 : archive historique SuperObject.
+- upstream-historical-2022 : archives divergentes LuiPack, SOGrid et VirtualTrees.
+- upstream-wapt-2.x : archive des evolutions amont plus recentes, sans presumer une compatibilite avec WAPT 2.x.
+- Aucun tag nouveau cree pour remplacer les branches historiques.
+
+### Audits techniques W109-89H1 a W109-89H14
+- Lazarus Exception Logger : cinq commits audites. Garde WidgetSet=nil retenue pour correctif isole apres RC1 ; modifications d'optimisation et de symboles reportees.
+- LuiPack : huit commits exclusifs audites. Currency, UniqueInstance et adaptations Lazarus examines ; aucune integration immediate. Trois branches historiques justifiees.
+- Python4Delphi : 29 commits audites. Migration amont Python 3 incompatible avec la chaine Python 2.7 actuelle. Gestion de SystemExit et liberation des references Python retenues pour etude apres RC1.
+- VirtualTrees : 30 commits audites. Migration du composant et changements d'interfaces reportes ; aucun bloqueur RC1 demontre.
+- VirtualTreesExtra : cinq commits audites. Corrections DPI de l'inspecteur JSON reportees sauf defaut bloquant reproductible ; validations SOGrid deja acquises conservees.
+- SuperObject : 16 commits amont audites. Gardes nil des operations de tri candidates apres RC1. Collage Unicode/CSV a evaluer separement pour proteger les cellules litterales.
+- Utils : 101 commits amont audites. Corrections ciblees candidates apres RC1 : compteur CompareVersion, verification des echecs wget, dimensionnement du tampon GetUserNameW. RunTask, parsing des guillemets et migration ZIP reportes.
+- Pour tous ces audits : aucun bloqueur RC1 demontre, aucune integration globale et aucun test fonctionnel nouveau revendique.
+
+### Regles de reprise
+- Ne pas fusionner systematiquement les historiques amont.
+- Valider chaque correctif retenu avec des tests fonctionnels adaptes avant integration.
+- Ne pas rouvrir les tests SOGrid, DPI ou OpenSSL deja valides sans nouvel element.
+- Conserver les SHA des gitlinks PADIT.
+- Synchroniser les references Git des VMs par fetch sans reset, pull automatique ni modification des branches de travail.
+- L'etat local de chaque VM reste a verifier avant toute integration.
