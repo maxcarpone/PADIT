@@ -2611,3 +2611,115 @@ Statut : candidat Windows x86 compile, signe et valide fonctionnellement.
 - Reutiliser les validations runtime Bookworm deja acquises.
 - Reprendre depuis le checkpoint et les scripts Debian existants.
 - Ne pas reprendre les validations Windows acquises.
+
+---
+
+## W109-117 — Transition des agents WAPT / PADIT
+**Date :** 2026-11-24
+**État :** SPÉCIFICATION FONCTIONNELLE GELÉE — implémentation différée
+
+### Objectif
+Permettre la migration progressive des agents vers un nouveau serveur
+PADIT, sans obligation de réattribuer l'adresse IP de l'ancien serveur.
+
+Cas de production initial :
+- Serveur source : SCRAB, WAPT 1.8.2, IP 172.20.127.81.
+- Serveur cible : PADIT Community 1.8.3.xxxx, Debian 12.
+- FQDN cible : padit.genevoix-signoret-vinci.fr.lan.
+
+### Scénarios pris en charge
+1. WAPT 1.8.2 vers PADIT 1.8.3.xxxx.
+2. PADIT 1.8.3.xxxx vers PADIT 1.8.3.xxxx.
+
+La transition désigne un changement de serveur de gestion,
+pas nécessairement un changement de version de l'agent.
+
+### Console PADIT
+Décisions validées :
+- Menu Outils : « Générer un paquet de transition… »
+- Colonne dans la grille des machines : « Transition »
+- Filtre : « Migrés »
+- Le statut Transition est indépendant du statut Connectés.
+- Pas d'historique complexe des transitions successives.
+
+États fonctionnels :
+- À migrer : poste historique sans confirmation sur la cible.
+- En cours : transition engagée, confirmation incomplète.
+- Migré : prise en charge par la cible effectivement confirmée.
+- Natif : nouveau poste installé directement sur PADIT.
+- À vérifier : échec ou incohérence nécessitant une intervention.
+
+La déconnexion d'un poste ne lui fait pas perdre son état Migré.
+
+### Génération et distribution du paquet
+WAPT 1.8.2 vers PADIT :
+- Génération depuis la nouvelle console PADIT.
+- Format classique .wapt compatible avec les anciens agents.
+- Importation manuelle dans la console WAPT historique.
+- Signature ou re-signature avec une clé approuvée par les
+  agents sources, puis publication sur le serveur source.
+- Déploiement progressif, en commençant par un poste pilote.
+
+PADIT vers PADIT :
+- Génération, signature et publication prévues depuis
+  la console PADIT du serveur source.
+
+Le paquet configure les URL du serveur cible et du dépôt,
+préserve les autres dépôts et prépare les nouvelles
+relations de confiance si nécessaire.
+
+### Certificats de signature des paquets
+Six cas fonctionnels identifiés :
+
+Sans restauration :
+1. WAPT XYZ -> PADIT XYZ
+2. WAPT XYZ -> PADIT ABC
+3. PADIT ABC -> PADIT DCE
+
+Avec restauration :
+1. WAPT XYZ -> PADIT XYZ
+2. WAPT XYZ -> PADIT XYZ + ABC
+3. PADIT ABC -> PADIT ABC + DCE
+
+Règle fondamentale :
+- Le paquet de transition doit être accepté par l'agent source.
+- Si la clé de signature change, ajouter d'abord la confiance
+  envers le nouveau certificat public.
+- Ne pas supprimer automatiquement les anciens certificats.
+- Ne jamais transférer de clé privée de signature aux agents.
+- Distinguer signature des paquets et confiance HTTPS.
+- La restauration ne prouve pas à elle seule la confiance
+  effective de tous les agents envers un nouveau certificat.
+
+### Validation de la migration
+- Une fiche importée par restauration n'est pas une preuve.
+- Une installation réussie du paquet n'est pas une preuve suffisante.
+- Confirmation nécessaire par une nouvelle communication
+  effective de l'agent avec le serveur PADIT cible.
+- Une vérification complémentaire doit confirmer que l'agent
+  utilise durablement la configuration du nouveau serveur.
+- Identification des postes historiques à partir d'un
+  inventaire initial figé.
+- Aucun accès permanent à l'ancien serveur n'est requis
+  pour afficher le suivi de transition.
+- Les nouveaux postes sont classés « Natif ».
+- Une nouvelle transition peut réinitialiser le suivi courant.
+
+### Points techniques restant à étudier
+- Génération du .wapt et compatibilité Python 2.7 / WAPT 1.8.2.
+- Importation et re-signature dans l'ancienne console.
+- Installation des nouveaux certificats publics approuvés.
+- Validation HTTPS du nouveau FQDN.
+- Rechargement fiable de la configuration de l'agent.
+- Confirmation côté serveur après restauration de la base.
+- Stockage minimal et persistant des états de transition.
+- Intégration dans la grille Lazarus et ses filtres.
+- Gestion des erreurs, répétitions et retours arrière.
+
+### Périmètre et priorité
+- Aucune modification immédiate de la RC1 Windows validée.
+- Aucune modification immédiate du schéma PostgreSQL.
+- Aucune intervention sur les agents de production SCRAB.
+- Étude technique Codex en lecture seule avant développement.
+- Priorité actuelle : qualification des paquets Debian 12 RC1.
+- Le chantier W109-115 --fetch reste indépendant.
