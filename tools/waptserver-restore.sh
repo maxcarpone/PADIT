@@ -8,7 +8,7 @@ warn() { echo "[WARN] $*" >&2; }
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 
 create_target_safety_backup() {
-    SAFETY_ROOT="/var/www/wapt-backups"
+    SAFETY_ROOT="/var/www/padit-backups"
     SAFETY_STAMP="$(date +%Y%m%d-%H%M%S)"
     SAFETY_NAME="wapt-target-safety-${HOSTNAME:-unknown}-${SAFETY_STAMP}"
     SAFETY_WORK="$(mktemp -d "${SAFETY_ROOT}/.${SAFETY_NAME}.XXXXXX")" || \
@@ -507,7 +507,6 @@ restore_target_repository() {
             -exec rm -rf -- {} + || fail "Unable to clear target repository payload"
 
         COPY_FIFO="$WORKDIR/repository-copy.fifo"
-        mkfifo "$COPY_FIFO" || fail "Unable to create repository copy FIFO"
 
         (
             cd "$TARGET_REPO" || exit 1
@@ -732,18 +731,130 @@ validate_and_start_services() {
     warn "TLS certificate renewal must be planned before: $TLS_NOT_AFTER"
 }
 
+fetch_backup() (
+    local host="${1:-}" user="${2:-}" remote_path="${3:-}"
+    local backup_root="/var/www/padit-transfer"
+    local archive remote destination owner permissions expected actual tool
+
+    if [ -z "$host" ]; then
+        [ -t 0 ] && IFS= read -r -p "Source SSH host: " host || fail "Missing source SSH host"
+    fi
+    if [ -z "$user" ]; then
+        [ -t 0 ] && IFS= read -r -p "SSH user: " user || fail "Missing SSH user"
+    fi
+    if [ -z "$remote_path" ]; then
+        [ -t 0 ] && IFS= read -r -p "Absolute remote .tar path: " remote_path || fail "Missing remote archive path"
+    fi
+
+    # Bracket IPv6 for SCP's user@host:path syntax.
+    if [[ "$host" == *:* ]]; then
+        [[ "$host" =~ ^[0-9a-fA-F:.]+(%[a-zA-Z0-9_.-]+)?$ ]] || fail "Invalid SSH host"
+        host="[$host]"
+    else
+        [[ "$host" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9.])?$ ]] || fail "Invalid SSH host"
+    fi
+    [[ "$user" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ ]] || fail "Invalid SSH user"
+    [[ "$remote_path" =~ ^(/[a-zA-Z0-9_.-]+)+\.tar$ ]] || fail "Unsafe remote archive path"
+    case "$remote_path/" in
+        */../*|*/./*) fail "Unsafe remote archive path" ;;
+    esac
+    archive="${remote_path##*/}"
+    [[ "$archive" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]*\.tar$ ]] || fail "Unsafe archive name"
+    remote="${user}@${host}:${remote_path}"
+    destination="fetch-${archive%.tar}"
+
+    for tool in scp sha256sum awk realpath stat id mkdir chmod rm rmdir; do
+        command -v "$tool" >/dev/null 2>&1 || fail "Required tool missing: $tool"
+    done
+
+    umask 077
+    [ "$(realpath -m -- "$backup_root")" = "$backup_root" ] || fail "Unsafe backup root: $backup_root"
+    if [ ! -d "$backup_root" ]; then
+        mkdir -m 0700 -- "$backup_root" || fail "Cannot create backup root: $backup_root"
+    fi
+    cd -P -- "$backup_root" || fail "Cannot enter backup root: $backup_root"
+    [ "$PWD" = "$backup_root" ] || fail "Unsafe backup root: $backup_root"
+    owner="$(stat -c %u -- .)" || fail "Cannot inspect backup root owner"
+    permissions="$(stat -c %a -- .)" || fail "Cannot inspect backup root permissions"
+    [ "$owner" = "$(id -u)" ] && (( (8#$permissions & 0022) == 0 )) || \
+        fail "Backup root must be owned by the invoking user and protected from group/other writes"
+
+    # Reserve the destination atomically. Keep transfers tied to the reserved directory.
+    mkdir -m 0700 -- "$destination" || fail "Cannot reserve staging destination (already exists or cannot be created): $backup_root/$destination"
+    cd -P -- "$destination" || fail "Cannot enter reserved staging directory"
+    trap '
+        rm -f -- "./$archive" "./$archive.sha256"
+        if [[ "../$destination" -ef . ]]; then
+            rmdir -- "../$destination"
+        fi
+    ' EXIT
+    trap 'fail "Remote fetch interrupted"' HUP INT TERM
+
+    local -a scp_options=(-o StrictHostKeyChecking=yes -o NoHostAuthenticationForLocalhost=no -o ControlPath=none -o ConnectTimeout=15)
+    scp "${scp_options[@]}" -- "$remote.sha256" "./$archive.sha256" || \
+        fail "SHA256 sidecar transfer failed (missing or unreadable sidecar, SSH error, or local write failure)"
+    expected="$(awk 'NF {print $1; exit}' "./$archive.sha256")" || fail "Cannot read SHA256 sidecar"
+    [[ "$expected" =~ ^[[:xdigit:]]{64}$ ]] || fail "Invalid SHA256 sidecar"
+
+    scp "${scp_options[@]}" -- "$remote" "./$archive" || \
+        fail "Archive transfer failed (SSH error, incomplete transfer, or local write failure such as insufficient space)"
+    [ -s "./$archive" ] || fail "Transferred archive is missing or empty"
+    actual="$(sha256sum -- "./$archive")" || fail "Cannot calculate transferred archive SHA256"
+    actual="${actual%% *}"
+    [ "${actual,,}" = "${expected,,}" ] || fail "Transferred archive SHA256 mismatch"
+    chmod 0600 -- "./$archive" "./$archive.sha256" || fail "Cannot secure transferred files"
+
+    [[ "$backup_root/$destination" -ef . ]] || fail "Staging destination changed during transfer"
+    trap - EXIT HUP INT TERM
+    ok "Remote archive SHA256 verified"
+    printf 'Archive retained: %s/%s/%s\n' "$backup_root" "$destination" "$archive"
+    printf 'To validate the backup: %q --check %q\n' "$0" "$backup_root/$destination/$archive"
+)
+
 usage() {
-    echo "Usage: $0 {--check|--restore} /path/to/wapt-dr-*.tar"
+    echo "Usage: $0 {--check|--restore} [--work-dir /absolute/path] /path/to/wapt-dr-*.tar"
+    echo "       $0 {--check|--restore} /path/to/wapt-dr-*.tar [--work-dir /absolute/path]"
+    echo "The work directory defaults to /var/www and is prompted for on a terminal when omitted."
+    echo "If /var/www is unsafe, select an existing directory such as /var/tmp."
+    echo "       $0 --fetch [HOST [SSH_USER [/absolute/path/to/archive.tar]]]"
+    echo "       $0 --fetch scrab backupuser /var/www/wapt-backups/wapt-dr-example.tar"
+    echo "Missing fetch arguments are prompted for on a terminal. SSH handles authentication."
+    echo "The host key must already be trusted by the invoking account, which must own the backup root."
+    echo "Fetch retains a verified archive for a separate --check."
     exit 2
 }
 
-[ "$#" -eq 2 ] || usage
+if [ "${1:-}" = "--fetch" ]; then
+    shift
+    [ "$#" -le 3 ] || usage
+    fetch_backup "$@"
+    exit $?
+fi
 
-MODE="$1"
-ARCHIVE="$2"
+MODE="${1:-}"
 
 case "$MODE" in
     --check|--restore) ;;
+    *) usage ;;
+esac
+
+WORK_PARENT="/var/www"
+case "$#" in
+    2)
+        [ "$2" != "--work-dir" ] || usage
+        ARCHIVE="$2"
+        ;;
+    4)
+        if [ "$2" = "--work-dir" ]; then
+            WORK_PARENT="$3"
+            ARCHIVE="$4"
+        elif [ "$3" = "--work-dir" ]; then
+            ARCHIVE="$2"
+            WORK_PARENT="$4"
+        else
+            usage
+        fi
+        ;;
     *) usage ;;
 esac
 
@@ -805,11 +916,96 @@ ROOT_COUNT="$(printf '%s\n' "$BUNDLE_ROOT" | awk 'NF {n++} END {print n+0}')"
 [ "$ROOT_COUNT" -eq 1 ] || fail "Archive must contain exactly one top-level bundle root"
 ok "Single bundle root found: $BUNDLE_ROOT"
 
+if [ "$#" -eq 2 ] && [ -t 0 ]; then
+    printf 'Temporary work directory [%s] (enter /var/tmp if /var/www is unsafe): ' \
+        "$WORK_PARENT" >&2
+    IFS= read -r selected_parent || fail "Unable to read work directory choice"
+    WORK_PARENT="${selected_parent:-$WORK_PARENT}"
+fi
+
+validate_work_parent() {
+    local remaining component path="" owner mode
+    case "$WORK_PARENT" in
+        /*) ;;
+        *) fail "Work directory must be an absolute path: $WORK_PARENT" ;;
+    esac
+    remaining="${WORK_PARENT#/}"
+
+    # Check each directory before traversing it. A trusted sticky directory
+    # (such as /tmp) also protects trusted children from being renamed.
+    while :; do
+        path="${path:-/}"
+        [ ! -L "$path" ] || fail "Work directory path contains a symbolic link: $path"
+        [ -d "$path" ] || fail "Work directory path is not a directory: $path"
+        [ -x "$path" ] || fail "Work directory path is not searchable: $path"
+        read -r owner mode <<< "$(stat -c '%u %a' -- "$path")"
+        [[ "$owner" =~ ^[0-9]+$ && "$mode" =~ ^[0-7]{3,4}$ ]] || \
+            fail "Unable to inspect work directory permissions: $path"
+        if (( owner != 0 && owner != EUID )); then
+            fail "Unsafe work directory component $path (owner UID $owner): its owner can rename entries. Retry with --work-dir /var/tmp or another existing trusted directory."
+        fi
+        if (( (8#$mode & 0022) && !(8#$mode & 01000) )); then
+            fail "Work directory path has unsafe ownership or permissions: $path"
+        fi
+        if [ "$MODE" = "--restore" ] && [[ "$path" -ef /var/www/wapt ]]; then
+            fail "Work directory must be outside the target WAPT repository: $path"
+        fi
+
+        [ -n "$remaining" ] || break
+        component="${remaining%%/*}"
+        if [[ "$remaining" = */* ]]; then
+            remaining="${remaining#*/}"
+        else
+            remaining=""
+        fi
+        case "$component" in
+            '') ;;
+            .|..) fail "Work directory path cannot contain . or .. components: $WORK_PARENT" ;;
+            *) path="${path%/}/$component" ;;
+        esac
+    done
+    [ -w "$path" ] || fail "Work directory is not writable: $path"
+    WORK_PARENT="$path"
+}
+validate_work_parent
+
+ARCHIVE_BYTES="$(stat -Lc '%s' -- "$ARCHIVE")" || fail "Unable to determine archive size"
+FREE_BYTES="$(LC_ALL=C df -PB1 -- "$WORK_PARENT")" || \
+    fail "Unable to determine free space on $WORK_PARENT"
+FREE_BYTES="$(awk 'END {print $4}' <<< "$FREE_BYTES")"
+[[ "$FREE_BYTES" =~ ^[0-9]+$ ]] || fail "Invalid free-space measurement on $WORK_PARENT"
+SAFETY_BYTES=$((2 * 1024 * 1024 * 1024))
+REQUIRED_BYTES=$((ARCHIVE_BYTES + SAFETY_BYTES))
+
+echo
+echo "Restore check work filesystem: $WORK_PARENT"
+echo "Archive size: $ARCHIVE_BYTES bytes"
+echo "Free space:   $FREE_BYTES bytes"
+echo "Required:     $REQUIRED_BYTES bytes (archive size + 2 GiB safety margin)"
+
+[ "$FREE_BYTES" -ge "$REQUIRED_BYTES" ] || \
+    fail "Insufficient free space on $WORK_PARENT for safe archive extraction"
+ok "Free-space preflight passed"
+
+WORKDIR=""
+cleanup() {
+    if [ -n "$WORKDIR" ] && [ -d "$WORKDIR" ] && [ ! -L "$WORKDIR" ]; then
+        rm -rf -- "$WORKDIR"
+    fi
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+WORKDIR="$(mktemp -d -- "${WORK_PARENT%/}/.wapt-dr-restore-check.XXXXXX")" || \
+    fail "Unable to create restore check work directory under $WORK_PARENT"
+chmod 0700 -- "$WORKDIR" || fail "Unable to secure restore check work directory"
+[ "$(stat -c '%u:%a' -- "$WORKDIR")" = "$EUID:700" ] || fail "Work filesystem did not enforce private directory permissions"
+
 # Validate the backup contract BEFORE extracting the potentially large repository.
 MANIFEST_MEMBER="${BUNDLE_ROOT}/manifest.ini"
-MANIFEST_PRECHECK="$(mktemp)" || fail "Unable to create temporary manifest file"
-cleanup_manifest() { rm -f -- "${MANIFEST_PRECHECK:-}"; }
-trap cleanup_manifest EXIT INT TERM HUP
+MANIFEST_PRECHECK="$WORKDIR/.manifest-precheck"
 
 tar -xOf "$ARCHIVE" "$MANIFEST_MEMBER" > "$MANIFEST_PRECHECK" 2>/dev/null || \
     fail "Unable to read manifest.ini directly from archive"
@@ -841,44 +1037,15 @@ PRE_REPO_MANIFEST="$(ini_get_file "$MANIFEST_PRECHECK" repository manifest_file)
     fail "Unsupported repository manifest path: ${PRE_REPO_MANIFEST:-missing}"
 
 ok "Manifest contract precheck passed before full extraction"
-rm -f -- "$MANIFEST_PRECHECK"
-MANIFEST_PRECHECK=""
-trap - EXIT INT TERM HUP
+rm -f -- "$MANIFEST_PRECHECK" || fail "Unable to remove temporary manifest file"
 
-# IMPORTANT: large DR extraction MUST live on /var/www, never /tmp.
-WORK_PARENT="/var/www"
-[ -d "$WORK_PARENT" ] || fail "Restore work parent does not exist: $WORK_PARENT"
-[ -w "$WORK_PARENT" ] || fail "Restore work parent is not writable: $WORK_PARENT"
-
-ARCHIVE_BYTES="$(stat -c '%s' "$ARCHIVE")"
-FREE_BYTES="$(df -PB1 "$WORK_PARENT" | awk 'NR==2 {print $4}')"
-SAFETY_BYTES=$((2 * 1024 * 1024 * 1024))
-REQUIRED_BYTES=$((ARCHIVE_BYTES + SAFETY_BYTES))
-
-echo
-echo "Restore check work filesystem: $WORK_PARENT"
-echo "Archive size: $ARCHIVE_BYTES bytes"
-echo "Free space:   $FREE_BYTES bytes"
-echo "Required:     $REQUIRED_BYTES bytes (archive size + 2 GiB safety margin)"
-
-[ "$FREE_BYTES" -ge "$REQUIRED_BYTES" ] || \
-    fail "Insufficient free space on $WORK_PARENT for safe archive extraction"
-ok "Free-space preflight passed"
-
-WORKDIR="$(mktemp -d "${WORK_PARENT}/.wapt-dr-restore-check.XXXXXX")" || \
-    fail "Unable to create restore check work directory under $WORK_PARENT"
-
-cleanup() {
-    if [ -n "${WORKDIR:-}" ] && [ -d "$WORKDIR" ]; then
-        rm -rf -- "$WORKDIR"
-    fi
-}
-trap cleanup EXIT INT TERM HUP
-
+# Keep the private staging directory outside the tar extraction namespace.
+EXTRACT_DIR="$WORKDIR/extracted"
+mkdir -- "$EXTRACT_DIR" || fail "Unable to create bundle extraction directory"
 echo "Extracting bundle for validation under $WORK_PARENT..."
-tar -xf "$ARCHIVE" -C "$WORKDIR" || fail "Archive extraction failed"
+tar -xf "$ARCHIVE" -C "$EXTRACT_DIR" || fail "Archive extraction failed"
 
-BUNDLE="$WORKDIR/$BUNDLE_ROOT"
+BUNDLE="$EXTRACT_DIR/$BUNDLE_ROOT"
 [ -d "$BUNDLE" ] || fail "Extracted bundle root not found"
 ok "Bundle extracted under $WORK_PARENT"
 
@@ -996,6 +1163,7 @@ ok "Database dump is readable by pg_restore"
 if [ "$MODE" = "--restore" ]; then
     echo
     echo "Validating restore target..."
+    mkfifo "$WORKDIR/repository-copy.fifo" || fail "Work filesystem cannot create the repository copy FIFO"
 
     for tool in dpkg-query pg_lsclusters psql pg_dump pg_restore dropdb createdb runuser systemctl; do
         command -v "$tool" >/dev/null 2>&1 || fail "Required restore tool missing: $tool"
@@ -1134,8 +1302,8 @@ else
     echo "RESTORE PRECHECK PASSED"
     echo
     [ "$(id -u)" -eq 0 ] || fail "Root privileges are required to create the target safety backup"
-    [ -d /var/www/wapt-backups ] || mkdir -p /var/www/wapt-backups
-    chmod 0700 /var/www/wapt-backups || fail "Unable to secure /var/www/wapt-backups"
+    [ -d /var/www/padit-backups ] || mkdir -p /var/www/padit-backups
+    chmod 0700 /var/www/padit-backups || fail "Unable to secure /var/www/padit-backups"
 
     create_target_safety_backup
 

@@ -2723,3 +2723,21 @@ Règle fondamentale :
 - Étude technique Codex en lecture seule avant développement.
 - Priorité actuelle : qualification des paquets Debian 12 RC1.
 - Le chantier W109-115 --fetch reste indépendant.
+
+### W109-116 — Outils DR PADIT Debian 12 (2026-11-24)
+
+- `tools/waptserver-restore.sh` : ajout de `--fetch` SSH/SCP avec validation SHA256, permissions privées et nettoyage des transferts incomplets.
+- `--check` et `--restore` : ajout de `--work-dir /chemin`, avant ou après l'archive, avec choix interactif, contrôles des permissions et de l'espace disponible.
+- Sous-répertoire temporaire privé `0700` et nettoyage limité à ce répertoire.
+- Sauvegardes locales et sauvegardes de sécurité : `/var/www/padit-backups`.
+- Récupérations SSH/SCP : `/var/www/padit-transfer`.
+- Chemins historiques WAPT conservés, sans déplacement des anciennes archives.
+- Test Debian 12 : refus sécurisé de `/var/www` appartenant à `www-data` — PASS.
+- Test `--check --work-dir /var/tmp` sur sauvegarde DR réelle de waptworm — PASS (SHA256, manifeste, dépôt, dump PostgreSQL).
+- Nettoyage du répertoire temporaire après `--check` — PASS.
+- Transfert SCP depuis SCRAB, archive factice de 10 Ko et SHA256 — PASS.
+- Test `--fetch` vers `/var/www/padit-transfer` — PASS, fichiers `0600`.
+- `waptserver-backup.sh precheck` sur Debian 12 — PASS.
+- `bash -n` et `git diff --check` — PASS.
+- À valider ultérieurement : création effective d'une nouvelle archive dans `/var/www/padit-backups` et restauration sur une cible dédiée.
+- Ne pas ajouter les fichiers non suivis présents dans `waptsetup/deb/`.

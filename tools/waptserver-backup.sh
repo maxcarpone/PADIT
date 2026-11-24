@@ -8,7 +8,7 @@ SUPPORTED_DEBIAN_MAJORS="10 11 12"
 WAPT_CONFIG="/opt/wapt/conf/waptserver.ini"
 NGINX_CONFIG="/etc/nginx/sites-available/wapt.conf"
 WAPT_REPOSITORY="/var/www/wapt"
-BACKUP_ROOT="/var/www/wapt-backups"
+BACKUP_ROOT="/var/www/padit-backups"
 
 ok()    { echo "[ OK ] $*"; }
 warn()  { echo "[WARN] $*"; }
