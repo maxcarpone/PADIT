@@ -61,8 +61,8 @@ run('mkdir -p /var/www/wapt-host')
 run('mkdir -p /var/www/wapt')
 run('mkdir -p /var/www/waptwua')
 
-# fix ownership bug of /var/www, need to find where it is screwed up
-run('chown www-data:www-data /var/www')
+# Preserve the system administrator's ownership of /var/www.
+# WAPT manages permissions only on its own repository directories.
 run('chmod 755 /var/www')
 
 run('chown -R wapt:www-data /var/www/wapt*')
