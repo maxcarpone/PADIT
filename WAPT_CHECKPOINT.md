@@ -2959,3 +2959,76 @@ Répertoire temporaire conservé : /tmp/padit-pgtest.szqI6F1M.
   conservés et exclus du commit.
 - Validation technique du correctif : PASS.
 - Qualification opérationnelle avant RC1 : PENDING.
+
+## W109-124 — Reconstruction et qualification serveur 1.8.3.7759
+
+Date : 2026-11-25.
+Branche : release/1.8.3.
+Commit source : 7538c6a9.
+Statut : PASS en préproduction.
+
+### Construction serveur
+
+- Debian 12 Bookworm amd64.
+- Runtime serveur existant réutilisé.
+- Constructeur : waptserver/deb/createdeb.py.
+- Version : 1.8.3.7759-7538c6a9-debian-12-amd64.
+- Paquet interne : tis-waptserver.
+- Artefact :
+  padit-waptserver-1.8.3.7759-7538c6a9-debian-12-amd64.deb
+- Taille : 42 Mio.
+- SHA256 :
+  f64b6de0eea473908c96719b0671e08bfdb38cbb2062e3b80fd818a29ba475ce
+- Construction, transfert et integrite SHA256 : PASS.
+- Correctifs W109-123 embarques.
+
+### Mise a niveau PADIT
+
+- Serveur : padit.genevoix-signoret-vinci.fr.lan.
+- Mise a niveau 1.8.3.7753 vers 1.8.3.7759 : PASS.
+- Configuration waptserver.ini preservee a l'identique.
+- PostgreSQL, nginx, waptserver et wapttasks actifs.
+- HTTPS : HTTP 200.
+- Aucune execution de postconf.sh.
+- Aucune nouvelle restauration DR.
+- 676 machines presentes.
+- 104982 logiciels inventories.
+- 23044 lignes hostpackagesstatus.
+- 192 fichiers .wapt dans le depot principal.
+- Les 1082 packages du checkpoint precedent correspondent
+  a une metrique restant a distinguer de hostpackagesstatus.
+- Executables Agent, Setup et Deploy preserves.
+
+### Qualification reelle VM101
+
+- Agent Windows x86 1.8.3.7749.
+- WAPTService actif.
+- update-status execute en administrateur : PASS.
+- Code retour : 0.
+- Reponse serveur : success True.
+- Temps de traitement serveur : environ 162 ms.
+- 11 empreintes retournees et retrouvees en base : PASS.
+- Connexions PostgreSQL avant et apres inventaire : 1 idle.
+- Aucune augmentation observee du nombre de connexions.
+- Console, depot, inventaires materiel et logiciel : PASS.
+- Deploiement du paquet waptupgrade : PASS selon test operateur.
+- Fermeture et reouverture de la console : PASS.
+- Erreur SQLite initiale expliquee par un PowerShell non eleve.
+- Aucune modification des permissions Windows necessaire.
+
+### Limites
+
+- Qualification operationnelle acquise avec VM101.
+- Stabilite sous charge d'un parc complet non demontree.
+- Journalisation applicative sur fichier non qualifiee.
+- Confiance HTTPS definitive restant a finaliser.
+- Aucune intervention sur SCRAB.
+- Aucun deploiement general sur les clients historiques.
+
+### Suite
+
+- Finaliser la politique de confiance HTTPS.
+- Developper la transition controlee SCRAB vers PADIT.
+- Generateur de paquet de transition dans la console.
+- Colonne Transition et filtre Migres.
+- Qualification progressive avant publication RC1.
