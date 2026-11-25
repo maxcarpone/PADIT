@@ -290,6 +290,32 @@ wapt_ini_value() {
     sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)$/\\1/p" "$file" | head -n 1
 }
 
+https_file_fingerprint() {
+    local digest metadata
+    [ -f "$1" ] || return 1
+    digest="$(sha256sum < "$1")" || return 1
+    metadata="$(stat -Lc '%d:%i:%a:%u:%g' -- "$1")" || return 1
+    printf '%s %s\n' "$digest" "$metadata"
+}
+
+record_target_https_identity() {
+    TARGET_NGINX_CONF="/etc/nginx/sites-available/wapt.conf"
+    [ -f "$TARGET_NGINX_CONF" ] || fail "Target nginx WAPT configuration is missing: $TARGET_NGINX_CONF"
+    TARGET_TLS_CERT="$(sed -n -E 's/^[[:space:]]*ssl_certificate[[:space:]]+"?([^";]+)"?;.*/\1/p' "$TARGET_NGINX_CONF" | head -n 1)"
+    TARGET_TLS_KEY="$(sed -n -E 's/^[[:space:]]*ssl_certificate_key[[:space:]]+"?([^";]+)"?;.*/\1/p' "$TARGET_NGINX_CONF" | head -n 1)"
+    [ -n "$TARGET_TLS_CERT" ] || fail "Unable to determine target nginx TLS certificate path"
+    [ -n "$TARGET_TLS_KEY" ] || fail "Unable to determine target nginx TLS key path"
+    TARGET_NGINX_BEFORE="$(https_file_fingerprint "$TARGET_NGINX_CONF")" || fail "Unable to fingerprint target nginx configuration"
+    TARGET_TLS_CERT_BEFORE="$(https_file_fingerprint "$TARGET_TLS_CERT")" || fail "Unable to fingerprint target TLS certificate"
+    TARGET_TLS_KEY_BEFORE="$(https_file_fingerprint "$TARGET_TLS_KEY")" || fail "Unable to fingerprint target TLS key"
+}
+
+verify_target_https_identity() {
+    [ "$(https_file_fingerprint "$TARGET_NGINX_CONF")" = "$TARGET_NGINX_BEFORE" ] || fail "Target nginx configuration changed"
+    [ "$(https_file_fingerprint "$TARGET_TLS_CERT")" = "$TARGET_TLS_CERT_BEFORE" ] || fail "Target TLS certificate changed"
+    [ "$(https_file_fingerprint "$TARGET_TLS_KEY")" = "$TARGET_TLS_KEY_BEFORE" ] || fail "Target TLS key changed"
+}
+
 restore_target_configuration_identity() {
     echo
     echo "=================================================="
@@ -353,25 +379,16 @@ restore_target_configuration_identity() {
     case "$MERGED_CA_KEY" in /opt/wapt/conf/*) ;; *) fail "Refusing client signing key path outside /opt/wapt/conf: $MERGED_CA_KEY" ;; esac
     case "$MERGED_CA_CERT" in /opt/wapt/conf/*) ;; *) fail "Refusing client signing certificate path outside /opt/wapt/conf: $MERGED_CA_CERT" ;; esac
 
-    TARGET_NGINX_CONF="/etc/nginx/sites-available/wapt.conf"
-    [ -f "$TARGET_NGINX_CONF" ] || fail "Target nginx WAPT configuration is missing: $TARGET_NGINX_CONF"
-    TARGET_TLS_CERT="$(sed -n -E 's/^[[:space:]]*ssl_certificate[[:space:]]+"?([^";]+)"?;.*/\1/p' "$TARGET_NGINX_CONF" | head -n 1)"
-    TARGET_TLS_KEY="$(sed -n -E 's/^[[:space:]]*ssl_certificate_key[[:space:]]+"?([^";]+)"?;.*/\1/p' "$TARGET_NGINX_CONF" | head -n 1)"
-    [ -n "$TARGET_TLS_CERT" ] || fail "Unable to determine target nginx TLS certificate path"
-    [ -n "$TARGET_TLS_KEY" ] || fail "Unable to determine target nginx TLS key path"
-    case "$TARGET_TLS_CERT" in /opt/wapt/waptserver/ssl/*) ;; *) fail "Refusing TLS certificate path outside /opt/wapt/waptserver/ssl: $TARGET_TLS_CERT" ;; esac
-    case "$TARGET_TLS_KEY" in /opt/wapt/waptserver/ssl/*) ;; *) fail "Refusing TLS key path outside /opt/wapt/waptserver/ssl: $TARGET_TLS_KEY" ;; esac
-
-    SOURCE_TLS_CERT="$BUNDLE/certificates/server-tls/$(basename "$TLS_CERT")"
-    SOURCE_TLS_KEY="$BUNDLE/certificates/server-tls/$(basename "$TLS_KEY")"
+    for destination in "$TARGET_INI" "$MERGED_CA_KEY" "$MERGED_CA_CERT"; do
+        if [[ "$destination" -ef "$TARGET_NGINX_CONF" || "$destination" -ef "$TARGET_TLS_CERT" || "$destination" -ef "$TARGET_TLS_KEY" ]]; then
+            fail "WAPT identity destination aliases a protected HTTPS file: $destination"
+        fi
+    done
 
     install -d -o wapt -g root -m 0750 /opt/wapt/conf || fail "Unable to secure /opt/wapt/conf"
-    install -d -o root -g root -m 0750 /opt/wapt/waptserver/ssl || fail "Unable to secure target TLS directory"
 
     install -o wapt -g root -m 0640 "$SOURCE_CA_KEY" "$MERGED_CA_KEY" || fail "Unable to restore client signing key"
     install -o wapt -g root -m 0644 "$SOURCE_CA_CERT" "$MERGED_CA_CERT" || fail "Unable to restore client signing certificate"
-    install -o root -g root -m 0644 "$SOURCE_TLS_CERT" "$TARGET_TLS_CERT" || fail "Unable to restore server TLS certificate"
-    install -o root -g root -m 0600 "$SOURCE_TLS_KEY" "$TARGET_TLS_KEY" || fail "Unable to restore server TLS key"
 
     install -o wapt -g root -m 0640 "$MERGED_INI" "$TARGET_INI" || fail "Unable to install merged waptserver.ini"
     rm -f -- "$MERGED_INI"
@@ -384,14 +401,13 @@ restore_target_configuration_identity() {
 
     cmp -s "$SOURCE_CA_KEY" "$MERGED_CA_KEY" || fail "Restored client signing key content mismatch"
     cmp -s "$SOURCE_CA_CERT" "$MERGED_CA_CERT" || fail "Restored client signing certificate content mismatch"
-    cmp -s "$SOURCE_TLS_CERT" "$TARGET_TLS_CERT" || fail "Restored TLS certificate content mismatch"
-    cmp -s "$SOURCE_TLS_KEY" "$TARGET_TLS_KEY" || fail "Restored TLS key content mismatch"
 
     [ "$(stat -c '%a|%U|%G' "$TARGET_INI")" = "640|wapt|root" ] || fail "Unexpected waptserver.ini permissions"
     [ "$(stat -c '%a|%U|%G' "$MERGED_CA_KEY")" = "640|wapt|root" ] || fail "Unexpected client signing key permissions"
     [ "$(stat -c '%a|%U|%G' "$MERGED_CA_CERT")" = "644|wapt|root" ] || fail "Unexpected client signing certificate permissions"
-    [ "$(stat -c '%a|%U|%G' "$TARGET_TLS_KEY")" = "600|root|root" ] || fail "Unexpected TLS key permissions"
-    [ "$(stat -c '%a|%U|%G' "$TARGET_TLS_CERT")" = "644|root|root" ] || fail "Unexpected TLS certificate permissions"
+
+    verify_target_https_identity
+    ok "Target nginx configuration and TLS files preserved"
 
     systemctl is-active --quiet waptserver && fail "waptserver unexpectedly active after configuration/identity restore"
     systemctl is-active --quiet postgresql || fail "PostgreSQL unexpectedly inactive after configuration/identity restore"
@@ -590,37 +606,31 @@ validate_and_start_services() {
     echo "SERVICE / FQDN / TLS VALIDATION PHASE"
     echo "=================================================="
 
-    TARGET_NGINX_CONF="/etc/nginx/sites-available/wapt.conf"
-    [ -f "$TARGET_NGINX_CONF" ] || fail "Target nginx WAPT configuration is missing: $TARGET_NGINX_CONF"
-
-    TARGET_TLS_CERT="$(sed -n -E 's/^[[:space:]]*ssl_certificate[[:space:]]+"?([^";]+)"?;.*/\1/p' "$TARGET_NGINX_CONF" | head -n 1)"
-    TARGET_TLS_KEY="$(sed -n -E 's/^[[:space:]]*ssl_certificate_key[[:space:]]+"?([^";]+)"?;.*/\1/p' "$TARGET_NGINX_CONF" | head -n 1)"
-    [ -f "$TARGET_TLS_CERT" ] || fail "Target TLS certificate is missing: ${TARGET_TLS_CERT:-unknown}"
-    [ -f "$TARGET_TLS_KEY" ] || fail "Target TLS key is missing: ${TARGET_TLS_KEY:-unknown}"
+    verify_target_https_identity
 
     TLS_PUB_CERT="$(openssl x509 -in "$TARGET_TLS_CERT" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform pem 2>/dev/null)" || \
-        fail "Unable to read public key from restored TLS certificate"
+        fail "Unable to read public key from target TLS certificate"
     TLS_PUB_KEY="$(openssl pkey -in "$TARGET_TLS_KEY" -pubout -outform pem 2>/dev/null)" || \
-        fail "Unable to read public key from restored TLS private key"
-    [ "$TLS_PUB_CERT" = "$TLS_PUB_KEY" ] || fail "Restored TLS certificate/private key do not match"
-    ok "Restored TLS certificate/private key match"
+        fail "Unable to read public key from target TLS private key"
+    [ "$TLS_PUB_CERT" = "$TLS_PUB_KEY" ] || fail "Target TLS certificate/private key do not match"
+    ok "Target TLS certificate/private key match"
 
     WAPT_SERVICE_FQDN="$(openssl x509 -in "$TARGET_TLS_CERT" -noout -subject -nameopt RFC2253 2>/dev/null | \
         sed -n -E 's/^subject=.*CN=([^,]+).*$/\1/p' | head -n 1)"
-    [ -n "$WAPT_SERVICE_FQDN" ] || fail "Unable to derive historical WAPT service FQDN from restored TLS certificate CN"
+    [ -n "$WAPT_SERVICE_FQDN" ] || fail "Unable to derive target WAPT service FQDN from target TLS certificate CN"
     case "$WAPT_SERVICE_FQDN" in
         *.*) ;;
-        *) fail "Restored TLS certificate CN does not look like a FQDN: $WAPT_SERVICE_FQDN" ;;
+        *) fail "Target TLS certificate CN does not look like a FQDN: $WAPT_SERVICE_FQDN" ;;
     esac
     case "$WAPT_SERVICE_FQDN" in
-        *[!A-Za-z0-9.-]*) fail "Restored TLS certificate CN contains unsupported FQDN characters: $WAPT_SERVICE_FQDN" ;;
+        *[!A-Za-z0-9.-]*) fail "Target TLS certificate CN contains unsupported FQDN characters: $WAPT_SERVICE_FQDN" ;;
     esac
 
     TLS_NOT_AFTER="$(openssl x509 -in "$TARGET_TLS_CERT" -noout -enddate 2>/dev/null | sed 's/^notAfter=//')" || \
-        fail "Unable to read restored TLS certificate expiry"
+        fail "Unable to read target TLS certificate expiry"
     openssl x509 -in "$TARGET_TLS_CERT" -noout -checkend 0 >/dev/null 2>&1 || \
-        fail "Restored TLS certificate is already expired"
-    ok "Restored TLS certificate is currently valid"
+        fail "Target TLS certificate is already expired"
+    ok "Target TLS certificate is currently valid"
 
     TARGET_OS_FQDN="$(hostname -f 2>/dev/null || hostname)"
     echo
@@ -638,7 +648,7 @@ validate_and_start_services() {
         warn "DNS result is informational only; this restore does not change DNS or authorize production-client reconnection"
     else
         echo "Current DNS IPv4:     <not resolved from this target>"
-        warn "Historical WAPT service FQDN does not currently resolve here; this is acceptable for an isolated DR validation"
+        warn "Target WAPT service FQDN does not currently resolve here; this is acceptable for an isolated DR validation"
     fi
 
     command -v nginx >/dev/null 2>&1 || fail "nginx command is unavailable"
@@ -707,16 +717,17 @@ validate_and_start_services() {
     done
     [ "$HTTPS_READY" = "yes" ] || \
         fail "Local WAPT HTTPS endpoint did not become ready within 30 seconds (last status: ${LOCAL_HTTPS_CODE:-none})"
+    verify_target_https_identity
     ok "Local HTTPS validation passed with HTTP status $LOCAL_HTTPS_CODE"
 
     echo
     echo "SERVICE / FQDN / TLS VALIDATION PASSED"
-    echo "The restored WAPT service is running locally with the historical TLS identity."
+    echo "The restored WAPT service is running locally with the preserved target TLS identity."
     echo
     echo "=================================================="
     echo "PRE-PRODUCTION CUTOVER BARRIER"
     echo "=================================================="
-    echo "Historical WAPT service FQDN: $WAPT_SERVICE_FQDN"
+    echo "Target WAPT service FQDN:     $WAPT_SERVICE_FQDN"
     echo "Current target OS FQDN:       $TARGET_OS_FQDN"
     echo "Current DNS IPv4:             ${DNS_RESULT:-<not resolved>}"
     echo
@@ -725,7 +736,7 @@ validate_and_start_services() {
     echo "Before production cutover, explicitly validate that:"
     echo "  1. $WAPT_SERVICE_FQDN resolves to the intended restored production server;"
     echo "  2. network/firewall/ACL rules permit the intended client traffic;"
-    echo "  3. the TLS identity presented for $WAPT_SERVICE_FQDN is the intended restored/renewed certificate;"
+    echo "  3. the TLS identity presented for $WAPT_SERVICE_FQDN is the intended target certificate;"
     echo "  4. the WAPT console is used to regenerate waptagent.exe with the intended authorized certificate(s)."
     echo
     warn "TLS certificate renewal must be planned before: $TLS_NOT_AFTER"
@@ -916,13 +927,6 @@ ROOT_COUNT="$(printf '%s\n' "$BUNDLE_ROOT" | awk 'NF {n++} END {print n+0}')"
 [ "$ROOT_COUNT" -eq 1 ] || fail "Archive must contain exactly one top-level bundle root"
 ok "Single bundle root found: $BUNDLE_ROOT"
 
-if [ "$#" -eq 2 ] && [ -t 0 ]; then
-    printf 'Temporary work directory [%s] (enter /var/tmp if /var/www is unsafe): ' \
-        "$WORK_PARENT" >&2
-    IFS= read -r selected_parent || fail "Unable to read work directory choice"
-    WORK_PARENT="${selected_parent:-$WORK_PARENT}"
-fi
-
 validate_work_parent() {
     local remaining component path="" owner mode
     case "$WORK_PARENT" in
@@ -967,24 +971,49 @@ validate_work_parent() {
     [ -w "$path" ] || fail "Work directory is not writable: $path"
     WORK_PARENT="$path"
 }
-validate_work_parent
+work_free_bytes() {
+    local report available
+    report="$(LC_ALL=C df -PB1 -- "$1")" || return 1
+    available="$(awk 'END {print $4}' <<< "$report")"
+    [[ "$available" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$available"
+}
 
 ARCHIVE_BYTES="$(stat -Lc '%s' -- "$ARCHIVE")" || fail "Unable to determine archive size"
-FREE_BYTES="$(LC_ALL=C df -PB1 -- "$WORK_PARENT")" || \
-    fail "Unable to determine free space on $WORK_PARENT"
-FREE_BYTES="$(awk 'END {print $4}' <<< "$FREE_BYTES")"
-[[ "$FREE_BYTES" =~ ^[0-9]+$ ]] || fail "Invalid free-space measurement on $WORK_PARENT"
 SAFETY_BYTES=$((2 * 1024 * 1024 * 1024))
 REQUIRED_BYTES=$((ARCHIVE_BYTES + SAFETY_BYTES))
+
+if [ "$#" -eq 2 ] && [ -t 0 ]; then
+    echo >&2
+    printf 'Archive size: %s bytes\n' "$ARCHIVE_BYTES" >&2
+    printf 'Extraction budget: %s bytes (archive size + 2 GiB, extraction only)\n' "$REQUIRED_BYTES" >&2
+    if PROPOSED_FREE="$(work_free_bytes "$WORK_PARENT" 2>/dev/null)"; then
+        printf 'Available on proposed volume (%s): %s bytes\n' "$WORK_PARENT" "$PROPOSED_FREE" >&2
+        if [ "$PROPOSED_FREE" -lt "$REQUIRED_BYTES" ]; then
+            warn "Space: insufficient for the extraction budget on $WORK_PARENT"
+        fi
+    else
+        warn "Space: unable to measure the proposed volume for $WORK_PARENT"
+    fi
+    if ! PARENT_ERROR="$(validate_work_parent 2>&1)"; then
+        warn "Security/permissions: $PARENT_ERROR"
+    fi
+    printf 'Temporary work directory [%s] (Enter to accept, or enter another absolute path): ' "$WORK_PARENT" >&2
+    IFS= read -r selected_parent || fail "Unable to read work directory choice"
+    WORK_PARENT="${selected_parent:-$WORK_PARENT}"
+fi
+
+validate_work_parent
+FREE_BYTES="$(work_free_bytes "$WORK_PARENT")" || fail "Unable to measure free space on $WORK_PARENT"
 
 echo
 echo "Restore check work filesystem: $WORK_PARENT"
 echo "Archive size: $ARCHIVE_BYTES bytes"
 echo "Free space:   $FREE_BYTES bytes"
-echo "Required:     $REQUIRED_BYTES bytes (archive size + 2 GiB safety margin)"
+echo "Required:     $REQUIRED_BYTES bytes (archive size + 2 GiB, extraction only)"
 
 [ "$FREE_BYTES" -ge "$REQUIRED_BYTES" ] || \
-    fail "Insufficient free space on $WORK_PARENT for safe archive extraction"
+    fail "Insufficient free space on $WORK_PARENT for the extraction budget"
 ok "Free-space preflight passed"
 
 WORKDIR=""
@@ -1291,6 +1320,7 @@ EOF
     echo "Target DB marker:       $TARGET_DB_MARKER"
     echo "Restore state:          $RESTORE_STATE"
     echo
+    record_target_https_identity
     ok "Restore target precheck passed"
 fi
 
