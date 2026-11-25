@@ -2741,3 +2741,109 @@ Règle fondamentale :
 - `bash -n` et `git diff --check` — PASS.
 - À valider ultérieurement : création effective d'une nouvelle archive dans `/var/www/padit-backups` et restauration sur une cible dédiée.
 - Ne pas ajouter les fichiers non suivis présents dans `waptsetup/deb/`.
+
+### W109-122 — Migration SCRAB vers PADIT RC1 (2026-11-25)
+
+#### Références
+- Branche : release/1.8.3
+- HEAD publié : 96f590ed
+- Serveur cible : padit.genevoix-signoret-vinci.fr.lan
+- Serveur source : scrab.genevoix-signoret-vinci.fr.lan
+- Migration : Debian 10 / WAPT 1.8.2.7393 vers Debian 12 / PADIT 1.8.3.7753.
+- PostgreSQL : 9.6 vers 15.
+- Moteur DR : v1.1.0 (format archive DR v1 inchangé).
+
+#### Sauvegarde SCRAB
+- Archive : wapt-dr-scrab-20261125-084802.tar
+- Taille : 15 786 147 840 octets.
+- SHA256 : 0e9fe79d1c589322efa64325dc4041b198405891913c96a2c19f6495e1731725
+- Transfert SSH/SCP vers PADIT : PASS.
+- --check complet : PASS, 871 fichiers valides.
+- Dump PostgreSQL reconnu par pg_restore : PASS.
+- Durée du contrôle : 11 min 16 s.
+- Aucun nouveau contrôle intégral nécessaire sur cette archive validée.
+
+#### Moteur DR v1.1.0
+- Préservation du certificat HTTPS, de la clé TLS et du nginx de PADIT.
+- Restauration sélective de l'identité WAPT historique.
+- Préservation des exécutables Setup/Deploy et de la racine de signature PADIT.
+- Préparation et validation SHA256 du dépôt avant remplacement de PostgreSQL.
+- Suppression de la copie intermédiaire complète du dépôt.
+- Bascule atomique renameat2(RENAME_EXCHANGE) sur ext4 : PASS réel.
+- Ancien dépôt conservé pour récupération.
+- Calcul d'espace et reprises sur interruption : tests simulés PASS.
+- Reprise après coupure brutale : non validée en conditions réelles.
+- Commit moteur DR : fd8362e4.
+- Commit version v1.1.0 : 060f360d.
+
+#### Restauration réelle sur PADIT
+- Restauration SCRAB : PASS.
+- Durée : 7 min 49,584 s.
+- Code retour : 3, attendu (barrière de bascule préproduction).
+- PostgreSQL restauré et validé.
+- Hôtes : 676.
+- Packages en base : 1082.
+- Logiciels inventoriés : 104982.
+- Dépôt restauré : environ 15 Go, 872 fichiers avant correction agent.
+- Ancien dépôt conservé sous /var/www/.wapt-dr-repository/.
+- PostgreSQL, nginx, waptserver et wapttasks : actifs.
+- HTTPS local : HTTP 200.
+- Certificat HTTPS et FQDN PADIT : préservés.
+- Espace disponible après restauration : environ 45 Go sur /var/www.
+- Connexions TCP établies observées : SSH uniquement.
+- Aucune bascule DNS de SCRAB ni reconnexion générale des clients.
+- L'absence absolue d'interférence réseau n'est pas démontrée
+  par ce seul contrôle ponctuel.
+
+#### W109-121R — Défaut agent généré
+- Défaut découvert : la restauration réintroduisait le
+  waptagent.exe historique 1.8.2.7393 de SCRAB.
+- Correction : exclure waptagent.exe du dépôt final restauré,
+  tout en vérifiant son empreinte SHA256 historique.
+- Préserver les trois artefacts PADIT protégés.
+- Commit : 96f590ed, publié sur release/1.8.3.
+- Correction applicable aux futures restaurations.
+- Ne pas relancer la restauration actuelle uniquement pour ce correctif.
+- Nouvel agent PADIT 1.8.3.7749 généré depuis la console et publié : PASS.
+
+#### W109-121S — Validation Windows VM101
+- Windows 11 Professionnel x64.
+- Mise à niveau depuis WAPT 1.8.2.7393.
+- PADIT Setup et agent Windows x86 1.8.3.7749 : PASS.
+- WAPTService actif, démarrage automatique.
+- Dépôt et serveur configurés sur le FQDN PADIT : PASS.
+- Console PADIT 1.8.3.7749 : opérationnelle.
+- Accès au dépôt et au serveur : PASS.
+- 676 machines historiques visibles en console.
+- VM101 affichée OK et joignable.
+- Certificat historique de signature des paquets 0790007d réutilisé.
+- Confiance TLS HTTPS autosignée non finalisée pour production.
+- Commande wapt-get register non nécessaire pour le test retenu.
+- Aucun déploiement général sur les machines SCRAB.
+
+#### Benchmark compression
+- zstd -1, un thread, sur SCRAB : PASS.
+- Taille TAR : 15 786 147 840 octets.
+- Taille TAR.zst : 15 765 506 189 octets.
+- Gain : 20 641 651 octets, environ 0,13 %.
+- Durée : 200,819 s.
+- Conclusion : conserver TAR non compressé ; aucun intérêt
+  à rendre zstd obligatoire dans le moteur DR RC1.
+
+#### Chantier ultérieur — Robustesse serveur
+Priorité : bloquant RC1 si les défauts sont toujours présents.
+- Examiner et corriger la libération des connexions dans WaptDB.__exit__().
+- Fiabiliser la journalisation des exceptions Unicode.
+- Traiter les caractères NUL dans les données d'inventaire.
+- Ajouter des tests de non-régression reproduisant l'incident
+  réel observé en production.
+- Ne pas confondre ces défauts avec la validation DR déjà acquise.
+
+#### Travaux restants
+- Qualifier la robustesse PostgreSQL / Unicode.
+- Finaliser la politique de confiance HTTPS avant production.
+- Développer et tester la transition contrôlée des agents SCRAB.
+- Vérifier les reprises DR après interruptions réelles.
+- Ne pas supprimer les sauvegardes, snapshots ou dépôts retenus.
+- Ne pas intervenir globalement sur les clients SCRAB sans
+  décision explicite de bascule.
