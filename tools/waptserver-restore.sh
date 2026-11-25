@@ -421,184 +421,486 @@ restore_target_configuration_identity() {
 }
 
 
-restore_target_repository() {
-    echo
-    echo "=================================================="
-    echo "REPOSITORY PHASE"
-    echo "=================================================="
+restore_repository_tool() {
+    python3 - "$@" <<'PY'
+import ctypes
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import sys
+import tarfile
+from pathlib import Path
 
-    [ "$REPO_INCLUDED" = "yes" ] || fail "Source backup does not contain repository payload"
+ARTIFACTS = ("waptsetup-tis.exe", "waptdeploy.exe", "Thouet-Software-Signing-Root-CA.cer")
+REPOSITORY = "repository/wapt"
+MARGIN = 2 * 1024**3
 
-    SOURCE_REPO="$BUNDLE/repository/wapt"
-    TARGET_REPO="/var/www/wapt"
-    [ -d "$SOURCE_REPO" ] || fail "Source repository is missing from extracted bundle"
-    [ -d "$TARGET_REPO" ] || fail "Target repository is missing: $TARGET_REPO"
 
-    PRESERVE_SETUP="$TARGET_REPO/waptsetup-tis.exe"
-    PRESERVE_DEPLOY="$TARGET_REPO/waptdeploy.exe"
-    PRESERVE_SIGNING_ROOT="$TARGET_REPO/Thouet-Software-Signing-Root-CA.cer"
-    [ -f "$PRESERVE_SETUP" ] || fail "Target waptsetup-tis.exe is missing; refusing repository replacement"
-    [ -f "$PRESERVE_DEPLOY" ] || fail "Target waptdeploy.exe is missing; refusing repository replacement"
-    [ -f "$PRESERVE_SIGNING_ROOT" ] || fail "Target signing Root CA is missing; refusing repository replacement"
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
 
-    SETUP_SHA_BEFORE="$(sha256sum "$PRESERVE_SETUP" | awk '{print $1}')"
-    DEPLOY_SHA_BEFORE="$(sha256sum "$PRESERVE_DEPLOY" | awk '{print $1}')"
-    SIGNING_ROOT_SHA_BEFORE="$(sha256sum "$PRESERVE_SIGNING_ROOT" | awk '{print $1}')"
 
-    FILTERED_REPO_MANIFEST="$WORKDIR/repository-manifest.final.sha256"
-    awk '
-        {
-            path=$NF
-            sub(/^\*/, "", path)
-            sub(/^\.\//, "", path)
-            if (path != "waptsetup-tis.exe" && path != "waptdeploy.exe" && path != "Thouet-Software-Signing-Root-CA.cer")
-                print $0
-        }
-    ' "$REPO_MANIFEST" > "$FILTERED_REPO_MANIFEST" || \
-        fail "Unable to build final repository validation manifest"
+def member_path(name):
+    if name.startswith("./"):
+        name = name[2:]
+    parts = name.split("/")
+    require(all(part and part not in (".", "..") for part in parts), "Unsafe TAR or manifest path")
+    return name
 
-    SOURCE_SETUP_ENTRIES="$(awk '
-        {
-            path=$NF
-            sub(/^\*/, "", path)
-            sub(/^\.\//, "", path)
-            if (path == "waptsetup-tis.exe")
-                n++
-        }
-        END { print n+0 }
-    ' "$REPO_MANIFEST")"
-    SOURCE_DEPLOY_ENTRIES="$(awk '
-        {
-            path=$NF
-            sub(/^\*/, "", path)
-            sub(/^\.\//, "", path)
-            if (path == "waptdeploy.exe")
-                n++
-        }
-        END { print n+0 }
-    ' "$REPO_MANIFEST")"
-    SOURCE_SIGNING_ROOT_ENTRIES="$(awk '
-        {
-            path=$NF
-            sub(/^\*/, "", path)
-            sub(/^\.\//, "", path)
-            if (path == "Thouet-Software-Signing-Root-CA.cer")
-                n++
-        }
-        END { print n+0 }
-    ' "$REPO_MANIFEST")"
 
-    [ "$SOURCE_SETUP_ENTRIES" = "1" ] || \
-        fail "Expected exactly one waptsetup-tis.exe entry in source repository manifest, got $SOURCE_SETUP_ENTRIES"
-    [ "$SOURCE_DEPLOY_ENTRIES" = "1" ] || \
-        fail "Expected exactly one waptdeploy.exe entry in source repository manifest, got $SOURCE_DEPLOY_ENTRIES"
-    [ "$SOURCE_SIGNING_ROOT_ENTRIES" -le 1 ] || \
-        fail "Expected at most one signing Root CA entry in source repository manifest, got $SOURCE_SIGNING_ROOT_ENTRIES"
+def inventory(archive):
+    members = {}
+    root = None
+    for member in archive:
+        name = member_path(member.name.rstrip("/") if member.isdir() else member.name)
+        head, _, relative = name.partition("/")
+        if root is None:
+            root = head
+        require(root == head and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", root),
+                "Expected one named DR bundle root")
+        require(relative not in members and (relative or member.isdir()), "Duplicate or invalid TAR member")
+        require(member.isdir() or (member.type in (tarfile.REGTYPE, tarfile.AREGTYPE)
+                                    and member.sparse is None),
+                f"TAR links, sparse files and special files are forbidden: {name!r}")
+        require(not relative.startswith("repository/") or relative == REPOSITORY
+                or relative.startswith(REPOSITORY + "/"), "Unexpected repository path in bundle")
+        members[relative] = member
+    require(root is not None, "Empty DR archive")
+    for name in members:
+        parent = name.rpartition("/")[0]
+        while parent:
+            require(parent not in members or members[parent].isdir(), "TAR file used as directory")
+            parent = parent.rpartition("/")[0]
+    return root, members
 
-    SOURCE_PRESERVED_ENTRIES=$((SOURCE_SETUP_ENTRIES + SOURCE_DEPLOY_ENTRIES + SOURCE_SIGNING_ROOT_ENTRIES))
 
-    echo "Preserved waptsetup-tis.exe SHA256: $SETUP_SHA_BEFORE"
-    echo "Preserved waptdeploy.exe SHA256:    $DEPLOY_SHA_BEFORE"
-    echo "Preserved signing Root CA SHA256:   $SIGNING_ROOT_SHA_BEFORE"
+def digest(path):
+    with path.open("rb") as stream:
+        checksum = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            checksum.update(chunk)
+        return checksum.hexdigest()
 
-    REPOSITORY_ALREADY_RESTORED="no"
-    if (
-        cd "$TARGET_REPO" || exit 1
-        sha256sum -c "$FILTERED_REPO_MANIFEST"
-    ) >/dev/null 2>&1; then
-        REPOSITORY_ALREADY_RESTORED="yes"
-        warn "Repository payload already matches the source backup except for the two intentionally preserved target executables"
-        ok "Repository resume state accepted; 13 GB payload copy will be skipped"
-    fi
 
-    if [ "$REPOSITORY_ALREADY_RESTORED" = "no" ]; then
-        echo "Replacing historical repository payload while preserving target 7402 setup/deploy executables..."
+def checksums(path):
+    result = {}
+    with path.open("rb") as stream:
+        for line in stream:
+            line = line.removesuffix(b"\n")
+            escaped = line.startswith(b"\\")
+            if escaped:
+                line = line[1:]
+            match = re.fullmatch(rb"([0-9a-fA-F]{64}) [ *](.+)", line)
+            require(match is not None, "Invalid SHA256 manifest entry")
+            checksum, name = match.groups()
+            if escaped:
+                require(not re.search(rb"\\(?![\\nr])", name), "Invalid SHA256 filename escape")
+                name = re.sub(rb"\\([\\nr])", lambda m: {b"\\": b"\\", b"n": b"\n", b"r": b"\r"}[m[1]], name)
+            name = member_path(os.fsdecode(name))
+            require(name not in result, "Duplicate SHA256 manifest entry")
+            result[name] = checksum.decode("ascii").lower()
+    return result
 
-        # Keep the validated target executables physically in place. Everything else
-        # is recreated from the already-validated source repository.
-        find "$TARGET_REPO" -mindepth 1 -maxdepth 1 \
-            ! -name 'waptsetup-tis.exe' \
-            ! -name 'waptdeploy.exe' \
-            ! -name 'Thouet-Software-Signing-Root-CA.cer' \
-            -exec rm -rf -- {} + || fail "Unable to clear target repository payload"
 
-        COPY_FIFO="$WORKDIR/repository-copy.fifo"
+def extract_member(archive, member, destination):
+    if member.isdir():
+        destination.mkdir(mode=0o700, parents=True, exist_ok=True)
+    else:
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        with archive.extractfile(member) as source, destination.open("xb") as output:
+            shutil.copyfileobj(source, output, 1024 * 1024)
 
-        (
-            cd "$TARGET_REPO" || exit 1
-            tar -xf "$COPY_FIFO"
-        ) &
-        REPO_EXTRACT_PID=$!
 
-        (
-            cd "$SOURCE_REPO" || exit 1
-            tar \
-                --exclude='./waptsetup-tis.exe' \
-                --exclude='./waptdeploy.exe' \
-                --exclude='./Thouet-Software-Signing-Root-CA.cer' \
-                -cf "$COPY_FIFO" .
-        )
-        REPO_CREATE_RC=$?
+def repository_member(name):
+    return name == REPOSITORY or name.startswith(REPOSITORY + "/")
 
-        wait "$REPO_EXTRACT_PID"
-        REPO_EXTRACT_RC=$?
-        rm -f -- "$COPY_FIFO"
 
-        [ "$REPO_CREATE_RC" -eq 0 ] || fail "Unable to read source repository payload"
-        [ "$REPO_EXTRACT_RC" -eq 0 ] || fail "Unable to extract repository payload into target"
-    fi
+def verify_metadata(members, bundle):
+    sums = checksums(bundle / "SHA256SUMS")
+    files = {name for name, member in members.items() if member.isfile() and name != "SHA256SUMS"}
+    require(files == sums.keys(), "SHA256SUMS does not cover every bundle file exactly once")
+    for name, checksum in sums.items():
+        if not repository_member(name):
+            require(digest(bundle / name) == checksum, f"Bundle SHA256 mismatch: {name!r}")
+    return sums
 
-    [ -f "$PRESERVE_SETUP" ] || fail "Preserved waptsetup-tis.exe disappeared during repository restore"
-    [ -f "$PRESERVE_DEPLOY" ] || fail "Preserved waptdeploy.exe disappeared during repository restore"
-    [ -f "$PRESERVE_SIGNING_ROOT" ] || fail "Preserved signing Root CA disappeared during repository restore"
 
-    SETUP_SHA_AFTER="$(sha256sum "$PRESERVE_SETUP" | awk '{print $1}')"
-    DEPLOY_SHA_AFTER="$(sha256sum "$PRESERVE_DEPLOY" | awk '{print $1}')"
-    SIGNING_ROOT_SHA_AFTER="$(sha256sum "$PRESERVE_SIGNING_ROOT" | awk '{print $1}')"
-    [ "$SETUP_SHA_AFTER" = "$SETUP_SHA_BEFORE" ] || fail "waptsetup-tis.exe changed during repository restore"
-    [ "$DEPLOY_SHA_AFTER" = "$DEPLOY_SHA_BEFORE" ] || fail "waptdeploy.exe changed during repository restore"
-    [ "$SIGNING_ROOT_SHA_AFTER" = "$SIGNING_ROOT_SHA_BEFORE" ] || fail "Signing Root CA changed during repository restore"
+def directory_id(path):
+    info = path.lstat()
+    require(stat.S_ISDIR(info.st_mode), f"Expected a directory without symlinks: {path}")
+    return [info.st_dev, info.st_ino]
 
-    chown -R wapt:www-data "$TARGET_REPO" || fail "Unable to set repository ownership"
-    find "$TARGET_REPO" -type d -exec chmod 0750 {} + || fail "Unable to set repository directory permissions"
-    find "$TARGET_REPO" -type f -exec chmod 0640 {} + || fail "Unable to set repository file permissions"
 
-    echo "Validating restored repository against source per-file SHA256 manifest..."
-    (
-        cd "$TARGET_REPO" || exit 1
-        sha256sum -c "$FILTERED_REPO_MANIFEST"
-    ) >/dev/null || fail "Final repository SHA256 validation failed"
+def layout(live, transaction, receipt):
+    current = directory_id(live)
+    other = directory_id(transaction / "repository")
+    if current == receipt["original"] and other == receipt["prepared"]:
+        return "prepared"
+    if current == receipt["prepared"] and other == receipt["original"]:
+        return "switched"
+    raise ValueError("Repository state changed since preparation; retained directories require review")
 
-    SETUP_SHA_FINAL="$(sha256sum "$PRESERVE_SETUP" | awk '{print $1}')"
-    DEPLOY_SHA_FINAL="$(sha256sum "$PRESERVE_DEPLOY" | awk '{print $1}')"
-    SIGNING_ROOT_SHA_FINAL="$(sha256sum "$PRESERVE_SIGNING_ROOT" | awk '{print $1}')"
-    [ "$SETUP_SHA_FINAL" = "$SETUP_SHA_BEFORE" ] || fail "Final waptsetup-tis.exe SHA256 mismatch"
-    [ "$DEPLOY_SHA_FINAL" = "$DEPLOY_SHA_BEFORE" ] || fail "Final waptdeploy.exe SHA256 mismatch"
-    [ "$SIGNING_ROOT_SHA_FINAL" = "$SIGNING_ROOT_SHA_BEFORE" ] || fail "Final signing Root CA SHA256 mismatch"
 
-    FINAL_REPO_FILES="$(find "$TARGET_REPO" -type f | wc -l)"
-    EXPECTED_FINAL_REPO_FILES=$((REPO_FILES - SOURCE_PRESERVED_ENTRIES + 3))
-    [ "$FINAL_REPO_FILES" = "$EXPECTED_FINAL_REPO_FILES" ] || \
-        fail "Final repository file count mismatch: expected $EXPECTED_FINAL_REPO_FILES, got $FINAL_REPO_FILES"
+def read_receipt(path, ready=False):
+    info = path.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1, "Ambiguous repository receipt type")
+    try:
+        receipt = json.loads(path.read_text(encoding="ascii"))
+    except (OSError, ValueError) as error:
+        raise ValueError("Unreadable repository receipt; staging retained") from error
+    fields = {"original", "prepared", "manifest", "artifacts"} if ready else {"original", "prepared"}
+    require(isinstance(receipt, dict) and receipt.keys() == fields, "Ambiguous repository receipt fields")
+    for key in ("original", "prepared"):
+        pair = receipt[key]
+        require(isinstance(pair, list) and len(pair) == 2 and
+                all(type(value) is int and value >= 0 for value in pair), "Ambiguous repository identity")
+    require(receipt["original"] != receipt["prepared"], "Repository receipt aliases the original")
+    if ready:
+        artifacts = receipt["artifacts"]
+        require(isinstance(artifacts, dict) and artifacts.keys() == set(ARTIFACTS) and
+                all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+                    for value in [receipt["manifest"], *artifacts.values()]), "Ambiguous repository receipt hashes")
+    return receipt
 
-    [ -f "$TARGET_REPO/Packages" ] || fail "Restored repository Packages index is missing"
-    PACKAGES_SHA="$(sha256sum "$TARGET_REPO/Packages" | awk '{print $1}')"
 
-    [ "$(stat -c '%a|%U|%G' "$TARGET_REPO")" = "750|wapt|www-data" ] || \
-        fail "Unexpected repository root permissions"
+def repository_state(live, transaction):
+    names = {entry.name for entry in transaction.iterdir()}
+    if not names:
+        return "empty", None
+    require("repository" in names and names <= {"repository", "building.json", "ready.json", "ready.pending"},
+            "Ambiguous repository transaction; staging retained")
+    building = read_receipt(transaction / "building.json") if "building.json" in names else None
+    if "ready.json" in names:
+        require("ready.pending" not in names, "Ambiguous pending ready receipt; staging retained")
+        receipt = read_receipt(transaction / "ready.json", ready=True)
+        require(building is None or all(receipt[key] == value for key, value in building.items()),
+                "Inconsistent repository receipts; staging retained")
+        return layout(live, transaction, receipt), receipt
+    require(building is not None and layout(live, transaction, building) == "prepared",
+            "Cannot prove staging is an incomplete preparation; staging retained")
+    if "ready.pending" in names:
+        pending = (transaction / "ready.pending").lstat()
+        require(stat.S_ISREG(pending.st_mode) and pending.st_nlink == 1,
+                "Unsafe pending receipt; staging retained")
+    return "building", building
 
-    systemctl is-active --quiet waptserver && fail "waptserver unexpectedly active after repository restore"
-    systemctl is-active --quiet postgresql || fail "PostgreSQL unexpectedly inactive after repository restore"
 
-    echo
-    echo "Repository files:             $FINAL_REPO_FILES"
-    echo "Packages SHA256:              $PACKAGES_SHA"
-    echo "Preserved waptsetup SHA256:   $SETUP_SHA_FINAL"
-    echo "Preserved waptdeploy SHA256:  $DEPLOY_SHA_FINAL"
-    echo "Preserved signing Root SHA256: $SIGNING_ROOT_SHA_FINAL"
-    ok "Historical repository restored and validated; target setup/deploy executables and signing Root CA preserved"
+def validate_no_mounts(staged):
+    root = os.fsencode(staged)
+    with open("/proc/self/mountinfo", "rb") as mounts:
+        for line in mounts:
+            name = line.split()[4]
+            name = re.sub(rb"\\([0-7]{3})", lambda match: bytes([int(match[1], 8)]), name)
+            require(name != root and not name.startswith(root + b"/"),
+                    "Mount inside repository staging; staging retained")
+
+
+def allocated_bytes(info):
+    return info.st_blocks * 512
+
+
+def reclaimable_bytes(staged):
+    validate_no_mounts(staged)
+    device = staged.lstat().st_dev
+    total = 0
+
+    def walk_error(error):
+        raise error
+
+    for parent, dirs, files in os.walk(staged, onerror=walk_error):
+        for name in dirs + files:
+            path = Path(parent) / name
+            info = path.lstat()
+            safe_type = stat.S_ISDIR(info.st_mode) if name in dirs else (
+                stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+            )
+            require(info.st_dev == device and safe_type, "Unsafe entry in incomplete staging; staging retained")
+            total += allocated_bytes(info)
+    return total
+
+
+def write_receipt(transaction, name, receipt):
+    pending = transaction / (name + ".pending")
+    with pending.open("x", encoding="ascii") as stream:
+        json.dump(receipt, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
+    pending.replace(transaction / (name + ".json"))
+    sync_directory(transaction)
+
+
+def package_hashes(repo):
+    result = {}
+    for name in ARTIFACTS:
+        path = repo / name
+        require(stat.S_ISREG(path.lstat().st_mode), f"PADIT artifact is not a regular file: {name}")
+        result[name] = digest(path)
+    return result
+
+
+def verify_repository(repo, expected):
+    actual = set()
+    for parent, dirs, files in os.walk(repo, onerror=lambda err: require(False, str(err))):
+        for name in dirs:
+            directory_id(Path(parent) / name)
+        for name in files:
+            path = Path(parent) / name
+            relative = path.relative_to(repo).as_posix()
+            require(stat.S_ISREG(path.lstat().st_mode), f"Unexpected repository entry: {relative!r}")
+            require(relative in expected and digest(path) == expected[relative],
+                    f"Repository SHA256 mismatch or unexpected file: {relative!r}")
+            actual.add(relative)
+    require(actual == expected.keys(), "Repository files are missing")
+
+
+def exchange(first, second):
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = libc.renameat2
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    if rename(-100, os.fsencode(first), -100, os.fsencode(second), 2) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+
+
+def sync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def estimate(entries):
+    volumes = {}
+    for path, amount in entries:
+        device = os.stat(path).st_dev
+        data = os.statvfs(path)
+        free = data.f_bavail * data.f_frsize
+        entry = volumes.setdefault(device, [MARGIN, free, []])
+        entry[0] += int(amount)
+        entry[1] = min(entry[1], free)
+        entry[2].append(str(path))
+    for required, free, paths in volumes.values():
+        label = ", ".join(paths)
+        print(f"Restore disk estimate for {label}: {required} bytes needed, {free} available", file=sys.stderr)
+        require(free >= required, f"Insufficient estimated disk space on volume for {label}")
+
+
+def prepare(archive, members, bundle, live, transaction, checks, manifest_count, uid, gid):
+    staged = transaction / "repository"
+    sums = verify_metadata(members, bundle)
+    source = checksums(checks)
+    prefix = REPOSITORY + "/"
+    require(source == {name[len(prefix):]: checksum for name, checksum in sums.items()
+                       if name.startswith(prefix)}, "Repository manifest and bundle SHA256SUMS disagree")
+    require(len(source) == int(manifest_count) and "Packages" in source
+            and all(name in source for name in ARTIFACTS[:2]), "Unexpected repository manifest contents")
+    manifest_id = digest(bundle / "SHA256SUMS")
+    state, receipt = repository_state(live, transaction)
+    if state in ("prepared", "switched"):
+        require(receipt["manifest"] == manifest_id, "Prepared repository belongs to a different bundle")
+        original, candidate = (live, staged) if state == "prepared" else (staged, live)
+        require(package_hashes(original) == receipt["artifacts"], "Original PADIT artifacts changed")
+        verify_repository(candidate, {**source, **receipt["artifacts"]})
+        return state
+
+    if state == "empty":
+        staged.mkdir(mode=0o700)
+        building = {"original": directory_id(live), "prepared": directory_id(staged)}
+        write_receipt(transaction, "building", building)
+    else:
+        require(not any(staged.iterdir()) and not (transaction / "ready.pending").exists(),
+                "Identified preparation must be cleared before extraction")
+        building = receipt
+    preserved = package_hashes(live)
+    for name, member in members.items():
+        if name.startswith(prefix):
+            extract_member(archive, member, staged / name[len(prefix):])
+    verify_repository(staged, source)
+    for name in ARTIFACTS:
+        shutil.copyfile(live / name, staged / name)
+        require(digest(staged / name) == preserved[name], f"PADIT artifact changed during staging: {name}")
+    for parent, _, files in os.walk(staged, onerror=lambda err: require(False, str(err))):
+        os.chown(parent, uid, gid)
+        os.chmod(parent, 0o750)
+        for name in files:
+            path = Path(parent) / name
+            os.chown(path, uid, gid)
+            os.chmod(path, 0o640)
+    require(layout(live, transaction, building) == "prepared", "Repository changed during preparation")
+    receipt = {**building, "manifest": manifest_id, "artifacts": preserved}
+    os.sync()
+    write_receipt(transaction, "ready", receipt)
+    return "prepared"
+
+
+def main(args):
+    action, *args = args
+    if action == "probe":
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory(dir=args[0]) as path:
+            first, second = Path(path) / "a", Path(path) / "b"
+            first.mkdir()
+            second.mkdir()
+            exchange(first, second)
+        return
+    if action == "space":
+        estimate(zip(args[::2], args[1::2]))
+        return
+    if action in ("reservation", "clear-incomplete"):
+        live, transaction = map(Path, args[:2])
+        state, receipt = repository_state(live, transaction)
+        staged = transaction / "repository"
+        reclaim = reclaimable_bytes(staged) if state == "building" else 0
+        if action == "reservation":
+            # Credit blocks already occupied by files that a controlled reset can reclaim.
+            print(0 if state in ("prepared", "switched") else int(args[2]) - reclaim)
+        elif state == "building":
+            require(layout(live, transaction, receipt) == "prepared", "Repository changed before reset")
+            for entry in staged.iterdir():
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            (transaction / "ready.pending").unlink(missing_ok=True)
+            sync_directory(staged)
+            sync_directory(transaction)
+            print("cleared")
+        return
+    if action == "switch":
+        live, transaction = map(Path, args)
+        state, receipt = repository_state(live, transaction)
+        require(state in ("prepared", "switched"), "Repository is not ready for activation")
+        staged = transaction / "repository"
+        if state == "prepared":
+            require(package_hashes(live) == receipt["artifacts"], "Live PADIT artifacts changed before switch")
+            exchange(live, staged)
+        require(layout(live, transaction, receipt) == "switched", "Repository exchange did not complete")
+        sync_directory(live.parent)
+        sync_directory(transaction)
+        print(f"Previous repository retained at {staged}")
+        return
+    filename, *args = args
+    with tarfile.open(filename, "r:") as archive:
+        root, members = inventory(archive)
+        if action == "scan":
+            work = sum(member.size + 4096 for name, member in members.items() if not repository_member(name))
+            repo = sum(member.size + 4096 for name, member in members.items() if repository_member(name))
+            print(root, work, repo)
+        elif action == "metadata":
+            bundle = Path(args[0])
+            bundle.mkdir(mode=0o700)
+            for name, member in members.items():
+                if name and not repository_member(name):
+                    extract_member(archive, member, bundle / name)
+            verify_metadata(members, bundle)
+        elif action == "prepare":
+            bundle, live, transaction, checks = map(Path, args[:4])
+            print(prepare(archive, members, bundle, live, transaction, checks,
+                          args[4], int(args[5]), int(args[6])))
+        else:
+            raise ValueError(f"Unknown DR repository action: {action}")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except (OSError, ValueError, AttributeError, KeyError, tarfile.TarError) as error:
+        sys.exit(f"[FAIL] DR {sys.argv[1]}: {error}")
+PY
 }
 
+open_restore_repository() {
+    TARGET_REPO="/var/www/wapt"
+    REPO_STATE_ROOT="/var/www/.wapt-dr-repository"
+    (
+        WORK_PARENT=/var/www
+        validate_work_parent
+    ) || fail "Unsafe target repository parent"
+    local owner_mode
+    owner_mode="$(stat -c '%u:%a' -- /var/www)" || fail "Unable to inspect target repository parent"
+    [[ "$owner_mode" =~ ^0:([0-7]{3,4})$ ]] &&
+        (( (8#${BASH_REMATCH[1]} & 0022) == 0 )) ||
+        fail "Target repository parent must be root-owned and protected from group/other writes"
+    [ -d "$TARGET_REPO" ] && [ ! -L "$TARGET_REPO" ] || fail "Unsafe or missing target repository"
+    local mount_status=0
+    mountpoint -q -- "$TARGET_REPO" || mount_status=$?
+    [ "$mount_status" -eq 32 ] || fail "Target repository must be a directory on its parent's volume, not a mount point"
+
+    if [ ! -e "$REPO_STATE_ROOT" ]; then
+        mkdir -m 0700 -- "$REPO_STATE_ROOT" || fail "Unable to create repository recovery directory"
+    fi
+    [ ! -L "$REPO_STATE_ROOT" ] && [ -d "$REPO_STATE_ROOT" ] &&
+        [ "$(stat -c '%u:%a:%d' -- "$REPO_STATE_ROOT")" = "0:700:$(stat -c %d -- "$TARGET_REPO")" ] ||
+        fail "Unsafe repository recovery directory or repository volume mismatch"
+    exec {REPO_LOCK_FD}< "$REPO_STATE_ROOT" || fail "Unable to open repository recovery directory"
+    flock -n "$REPO_LOCK_FD" || fail "Another repository restore is in progress"
+    restore_repository_tool probe "$REPO_STATE_ROOT" || fail "Repository volume does not support atomic directory exchange"
+
+    REPO_TRANSACTION="$REPO_STATE_ROOT/$RESTORE_ARCHIVE_SHA"
+    if [ ! -e "$REPO_TRANSACTION" ]; then
+        mkdir -m 0700 -- "$REPO_TRANSACTION" || fail "Unable to create repository preparation directory"
+    fi
+    [ ! -L "$REPO_TRANSACTION" ] && [ -d "$REPO_TRANSACTION" ] &&
+        [ "$(stat -c '%u:%a:%d' -- "$REPO_TRANSACTION")" = "0:700:$(stat -c %d -- "$TARGET_REPO")" ] ||
+        fail "Unsafe repository preparation directory"
+    if [ -e /var/www/padit-backups ] || [ -L /var/www/padit-backups ]; then
+        [ ! -L /var/www/padit-backups ] && [ -d /var/www/padit-backups ] &&
+            [ "$(stat -c '%u:%a' -- /var/www/padit-backups)" = "0:700" ] ||
+            fail "Unsafe target safety backup directory"
+    fi
+}
+
+prepare_restore_repository() {
+    local pg_disk pg_data pg_bytes dump_bytes artifact_bytes config_bytes safety_volume repo_bytes reset uid gid
+    local -a space_budget
+    pg_disk="$(cd / && runuser -u postgres -- psql -p "$TARGET_PG_PORT" -d wapt -Atq -F '|' \
+        -c "SELECT current_setting('data_directory'), pg_database_size(current_database());")" ||
+        fail "Unable to estimate PostgreSQL disk space"
+    IFS='|' read -r pg_data pg_bytes <<< "$pg_disk"
+    [[ "$pg_data" = /* && "$pg_bytes" =~ ^[0-9]+$ ]] || fail "Invalid PostgreSQL space estimate"
+    dump_bytes="$(stat -Lc %s -- "$BUNDLE/database/wapt.dump")" || fail "Unable to size PostgreSQL dump"
+    artifact_bytes="$(stat -Lc %s -- "$TARGET_REPO/"{waptsetup-tis.exe,waptdeploy.exe,Thouet-Software-Signing-Root-CA.cer} |
+        awk '{sum += $1} END {printf "%.0f\n", sum}')"
+    config_bytes="$(du -sb -- /opt/wapt/conf /opt/wapt/waptserver/ssl /etc/nginx/sites-available/wapt.conf 2>/dev/null |
+        awk '{sum += $1} END {printf "%.0f\n", sum}')"
+    safety_volume=/var/www
+    [ ! -d /var/www/padit-backups ] || safety_volume=/var/www/padit-backups
+    repo_bytes="$(restore_repository_tool reservation "$TARGET_REPO" "$REPO_TRANSACTION" "$((RESTORE_REPO_BYTES + artifact_bytes))")" ||
+        fail "Unable to estimate repository staging space"
+    space_budget=(
+        "$safety_volume" "$((2 * (pg_bytes + config_bytes + artifact_bytes)))"
+        "$pg_data" "$((2 * (pg_bytes > dump_bytes ? pg_bytes : dump_bytes)))"
+    )
+    restore_repository_tool space "$TARGET_REPO" "$repo_bytes" "${space_budget[@]}" ||
+        fail "Restore disk estimate failed before PostgreSQL changes"
+    reset="$(restore_repository_tool clear-incomplete "$TARGET_REPO" "$REPO_TRANSACTION")" ||
+        fail "Unable to reset the proven incomplete preparation before PostgreSQL changes"
+    if [ "$reset" = "cleared" ]; then
+        ok "Identified incomplete repository preparation cleared"
+        restore_repository_tool space "$TARGET_REPO" "$((RESTORE_REPO_BYTES + artifact_bytes))" "${space_budget[@]}" ||
+            fail "Actual free space after staging reset is insufficient before PostgreSQL changes"
+    fi
+    warn "Disk estimate groups shared volumes and uses current free space; PostgreSQL expansion, WAL and external tablespaces can require more space"
+    uid="$(id -u wapt)" || fail "Unable to determine wapt user ID"
+    gid="$(getent group www-data | cut -d: -f3)"
+    [[ "$gid" =~ ^[0-9]+$ ]] || fail "Unable to determine www-data group ID"
+    REPO_STAGE_STATE="$(restore_repository_tool prepare "$RESTORE_ARCHIVE" "$BUNDLE" "$TARGET_REPO" \
+        "$REPO_TRANSACTION" "$REPO_MANIFEST" "$REPO_FILES" "$uid" "$gid")" ||
+        fail "Repository preparation failed before PostgreSQL changes"
+    ok "Repository and PADIT artifacts validated ($REPO_STAGE_STATE)"
+}
+
+restore_target_repository() {
+    systemctl is-active --quiet waptserver && fail "waptserver must be stopped before repository activation"
+    systemctl is-active --quiet postgresql || fail "PostgreSQL unexpectedly inactive before repository activation"
+    restore_repository_tool switch "$TARGET_REPO" "$REPO_TRANSACTION" || fail "Unable to activate prepared repository"
+    ok "Validated repository active; previous repository retained"
+}
 
 validate_and_start_services() {
     echo
@@ -893,6 +1195,16 @@ ok "Archive found: $ARCHIVE"
 [ -s "$ARCHIVE" ] || fail "Archive is empty"
 ok "Archive is not empty"
 
+if [ "$MODE" = "--restore" ]; then
+    for tool in python3 flock mountpoint getent cut du; do
+        command -v "$tool" >/dev/null 2>&1 || fail "Required restore tool missing: $tool"
+    done
+    exec {RESTORE_ARCHIVE_FD}< "$ARCHIVE" || fail "Unable to open restore archive"
+    RESTORE_ARCHIVE="/proc/$$/fd/$RESTORE_ARCHIVE_FD"
+    RESTORE_ARCHIVE_SHA="$(sha256sum < "$RESTORE_ARCHIVE")" || fail "Unable to fingerprint restore archive"
+    RESTORE_ARCHIVE_SHA="${RESTORE_ARCHIVE_SHA%% *}"
+    [[ "$RESTORE_ARCHIVE_SHA" =~ ^[0-9a-f]{64}$ ]] || fail "Invalid restore archive fingerprint"
+fi
 SIDECAR="${ARCHIVE}.sha256"
 if [ -f "$SIDECAR" ]; then
     EXPECTED_ARCHIVE_SHA="$(awk 'NF {print $1; exit}' "$SIDECAR")"
@@ -900,13 +1212,22 @@ if [ -f "$SIDECAR" ]; then
         ''|*[!0-9a-fA-F]*) fail "Invalid archive SHA256 sidecar: $SIDECAR" ;;
     esac
     [ "${#EXPECTED_ARCHIVE_SHA}" -eq 64 ] || fail "Invalid SHA256 length in sidecar"
-    ACTUAL_ARCHIVE_SHA="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+    if [ "$MODE" = "--restore" ]; then
+        ACTUAL_ARCHIVE_SHA="$RESTORE_ARCHIVE_SHA"
+    else
+        ACTUAL_ARCHIVE_SHA="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+    fi
     [ "${ACTUAL_ARCHIVE_SHA,,}" = "${EXPECTED_ARCHIVE_SHA,,}" ] || fail "Archive SHA256 sidecar mismatch"
     ok "Archive SHA256 sidecar validated"
 else
     warn "Archive SHA256 sidecar not found: $SIDECAR"
 fi
 
+if [ "$MODE" = "--restore" ]; then
+    RESTORE_INVENTORY="$(restore_repository_tool scan "$RESTORE_ARCHIVE")" || fail "Invalid restore archive"
+    read -r BUNDLE_ROOT RESTORE_WORK_BYTES RESTORE_REPO_BYTES <<< "$RESTORE_INVENTORY"
+    ok "Single bundle root found: $BUNDLE_ROOT"
+else
 tar -tf "$ARCHIVE" >/dev/null || fail "Tar archive is not readable"
 ok "Tar archive is readable"
 
@@ -926,6 +1247,7 @@ BUNDLE_ROOT="$(tar -tf "$ARCHIVE" | sed 's#^\./##' | awk -F/ 'NF && $1!="" {prin
 ROOT_COUNT="$(printf '%s\n' "$BUNDLE_ROOT" | awk 'NF {n++} END {print n+0}')"
 [ "$ROOT_COUNT" -eq 1 ] || fail "Archive must contain exactly one top-level bundle root"
 ok "Single bundle root found: $BUNDLE_ROOT"
+fi
 
 validate_work_parent() {
     local remaining component path="" owner mode
@@ -981,12 +1303,17 @@ work_free_bytes() {
 
 ARCHIVE_BYTES="$(stat -Lc '%s' -- "$ARCHIVE")" || fail "Unable to determine archive size"
 SAFETY_BYTES=$((2 * 1024 * 1024 * 1024))
+BUDGET_LABEL="archive size + 2 GiB, extraction only"
 REQUIRED_BYTES=$((ARCHIVE_BYTES + SAFETY_BYTES))
+if [ "$MODE" = "--restore" ]; then
+    BUDGET_LABEL="metadata and PostgreSQL dump + 2 GiB, work volume only"
+    REQUIRED_BYTES=$((RESTORE_WORK_BYTES + SAFETY_BYTES))
+fi
 
 if [ "$#" -eq 2 ] && [ -t 0 ]; then
     echo >&2
     printf 'Archive size: %s bytes\n' "$ARCHIVE_BYTES" >&2
-    printf 'Extraction budget: %s bytes (archive size + 2 GiB, extraction only)\n' "$REQUIRED_BYTES" >&2
+    printf 'Extraction budget: %s bytes (%s)\n' "$REQUIRED_BYTES" "$BUDGET_LABEL" >&2
     if PROPOSED_FREE="$(work_free_bytes "$WORK_PARENT" 2>/dev/null)"; then
         printf 'Available on proposed volume (%s): %s bytes\n' "$WORK_PARENT" "$PROPOSED_FREE" >&2
         if [ "$PROPOSED_FREE" -lt "$REQUIRED_BYTES" ]; then
@@ -1010,11 +1337,18 @@ echo
 echo "Restore check work filesystem: $WORK_PARENT"
 echo "Archive size: $ARCHIVE_BYTES bytes"
 echo "Free space:   $FREE_BYTES bytes"
-echo "Required:     $REQUIRED_BYTES bytes (archive size + 2 GiB, extraction only)"
+echo "Required:     $REQUIRED_BYTES bytes ($BUDGET_LABEL)"
 
 [ "$FREE_BYTES" -ge "$REQUIRED_BYTES" ] || \
     fail "Insufficient free space on $WORK_PARENT for the extraction budget"
 ok "Free-space preflight passed"
+
+if [ "$MODE" = "--restore" ]; then
+    case "$WORK_PARENT/" in
+        /var/www/.wapt-dr-repository/*) fail "Work directory must be outside repository recovery state" ;;
+    esac
+    open_restore_repository
+fi
 
 WORKDIR=""
 cleanup() {
@@ -1032,6 +1366,16 @@ WORKDIR="$(mktemp -d -- "${WORK_PARENT%/}/.wapt-dr-restore-check.XXXXXX")" || \
 chmod 0700 -- "$WORKDIR" || fail "Unable to secure restore check work directory"
 [ "$(stat -c '%u:%a' -- "$WORKDIR")" = "$EUID:700" ] || fail "Work filesystem did not enforce private directory permissions"
 
+# Keep the private staging directory outside the TAR extraction namespace.
+EXTRACT_DIR="$WORKDIR/extracted"
+BUNDLE="$EXTRACT_DIR/$BUNDLE_ROOT"
+if [ "$MODE" = "--restore" ]; then
+    mkdir -- "$EXTRACT_DIR" || fail "Unable to create bundle extraction directory"
+    echo "Extracting metadata and PostgreSQL dump under $WORK_PARENT..."
+    restore_repository_tool metadata "$RESTORE_ARCHIVE" "$BUNDLE" ||
+        fail "Metadata and PostgreSQL dump extraction or SHA256 validation failed"
+    MANIFEST_PRECHECK="$BUNDLE/manifest.ini"
+else
 # Validate the backup contract BEFORE extracting the potentially large repository.
 MANIFEST_MEMBER="${BUNDLE_ROOT}/manifest.ini"
 MANIFEST_PRECHECK="$WORKDIR/.manifest-precheck"
@@ -1039,6 +1383,7 @@ MANIFEST_PRECHECK="$WORKDIR/.manifest-precheck"
 tar -xOf "$ARCHIVE" "$MANIFEST_MEMBER" > "$MANIFEST_PRECHECK" 2>/dev/null || \
     fail "Unable to read manifest.ini directly from archive"
 [ -s "$MANIFEST_PRECHECK" ] || fail "manifest.ini is empty"
+fi
 
 ini_get_file() {
     file="$1"
@@ -1065,18 +1410,17 @@ PRE_REPO_MANIFEST="$(ini_get_file "$MANIFEST_PRECHECK" repository manifest_file)
 [ "$PRE_REPO_MANIFEST" = "metadata/repository-manifest.sha256" ] || \
     fail "Unsupported repository manifest path: ${PRE_REPO_MANIFEST:-missing}"
 
-ok "Manifest contract precheck passed before full extraction"
-rm -f -- "$MANIFEST_PRECHECK" || fail "Unable to remove temporary manifest file"
-
-# Keep the private staging directory outside the tar extraction namespace.
-EXTRACT_DIR="$WORKDIR/extracted"
-mkdir -- "$EXTRACT_DIR" || fail "Unable to create bundle extraction directory"
-echo "Extracting bundle for validation under $WORK_PARENT..."
-tar -xf "$ARCHIVE" -C "$EXTRACT_DIR" || fail "Archive extraction failed"
-
-BUNDLE="$EXTRACT_DIR/$BUNDLE_ROOT"
-[ -d "$BUNDLE" ] || fail "Extracted bundle root not found"
-ok "Bundle extracted under $WORK_PARENT"
+if [ "$MODE" = "--check" ]; then
+    ok "Manifest contract precheck passed before full extraction"
+    rm -f -- "$MANIFEST_PRECHECK" || fail "Unable to remove temporary manifest file"
+    mkdir -- "$EXTRACT_DIR" || fail "Unable to create bundle extraction directory"
+    echo "Extracting bundle for validation under $WORK_PARENT..."
+    tar -xf "$ARCHIVE" -C "$EXTRACT_DIR" || fail "Archive extraction failed"
+    [ -d "$BUNDLE" ] || fail "Extracted bundle root not found"
+    ok "Bundle extracted under $WORK_PARENT"
+else
+    ok "Manifest contract precheck passed before repository extraction"
+fi
 
 for f in \
     manifest.ini \
@@ -1152,6 +1496,9 @@ ACTUAL_REPO_MANIFEST_SHA="$(sha256sum "$REPO_MANIFEST" | awk '{print $1}')"
     fail "Repository manifest SHA256 mismatch"
 ok "Repository manifest SHA256 validated"
 
+if [ "$MODE" = "--restore" ]; then
+    [ "$REPO_INCLUDED" = "yes" ] || fail "Source backup does not contain repository payload"
+else
 case "$REPO_INCLUDED" in
     yes)
         [ -d "$BUNDLE/repository/wapt" ] || \
@@ -1184,6 +1531,7 @@ echo "Validating bundle SHA256SUMS..."
     sha256sum -c SHA256SUMS
 ) >/dev/null || fail "Bundle SHA256SUMS validation failed"
 ok "Bundle SHA256SUMS validated"
+fi
 
 pg_restore -l "$BUNDLE/database/wapt.dump" >/dev/null 2>&1 || \
     fail "Database dump is not a valid pg_restore custom-format archive"
@@ -1192,7 +1540,6 @@ ok "Database dump is readable by pg_restore"
 if [ "$MODE" = "--restore" ]; then
     echo
     echo "Validating restore target..."
-    mkfifo "$WORKDIR/repository-copy.fifo" || fail "Work filesystem cannot create the repository copy FIFO"
 
     for tool in dpkg-query pg_lsclusters psql pg_dump pg_restore dropdb createdb runuser systemctl; do
         command -v "$tool" >/dev/null 2>&1 || fail "Required restore tool missing: $tool"
@@ -1321,6 +1668,15 @@ EOF
     echo "Restore state:          $RESTORE_STATE"
     echo
     record_target_https_identity
+    prepare_restore_repository
+    if [ "$REPO_STAGE_STATE" = "switched" ]; then
+        validate_post_database_state || fail "Repository is already switched but PostgreSQL does not match; retained repository requires review"
+        RESTORE_STATE="post-database"
+        if [ "$TARGET_WAPTSERVER_ACTIVE" = "yes" ]; then
+            validate_and_start_services
+            exit 3
+        fi
+    fi
     ok "Restore target precheck passed"
 fi
 
@@ -1368,7 +1724,7 @@ else
     echo
     echo "REPOSITORY RESTORE PASSED"
     echo "Historical repository payload and Packages index have been restored."
-    echo "Target waptsetup-tis.exe and waptdeploy.exe were preserved in place and SHA256-validated."
+    echo "Target waptsetup-tis.exe, waptdeploy.exe and signing Root CA were preserved and SHA256-validated."
     echo "waptserver/wapttasks remain stopped intentionally."
     echo "Target nginx configuration was preserved."
     echo "Safety backup retained at: $SAFETY_ARCHIVE"
