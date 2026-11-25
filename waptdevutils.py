@@ -472,6 +472,144 @@ def build_waptupgrade_package(wapt,mainrepo,sources_directory=None, target_direc
     return entry.as_dict()
 
 
+def build_transition_package(wapt, mainrepo, agent_path, source_server_url, target_server_url,
+        target_repo_url, https_certificate_path, package_certificate_path,
+        target_directory=None, key_password=None, sign_digests=None,
+        publish=False, wapt_server_user=None, wapt_server_passwd=None):
+    """Build a signed, non-deployable PADIT transition package.
+
+    The installer must already exist. The certificate inputs are PEM bundles
+    (or single DER certificates) for HTTPS and package trust, respectively.
+    URLs must be configuration values without credentials, queries or fragments.
+    The source server may use HTTP or HTTPS. Target URLs require HTTPS.
+    The caller owns the returned localpath.
+    """
+    import re
+    from ipaddress import IPv6Address
+    from urlparse import urlsplit
+
+    transition = {'schema_version': 1, 'deployable': False}
+    if publish and not transition['deployable']:
+        raise RuntimeError('Cannot publish a non-deployable PADIT transition package')
+
+    if not agent_path or not os.path.isfile(agent_path):
+        raise ValueError('An existing PADIT agent installer is required')
+    prefix = (wapt.config.get('global', 'default_package_prefix')
+              if wapt.config.has_option('global', 'default_package_prefix') else None)
+    if not prefix or not re.match(r'\A[a-zA-Z0-9][a-zA-Z0-9_-]*\Z', prefix):
+        raise ValueError('A valid console package prefix is required')
+    if not wapt.personal_certificate_path or not os.path.isfile(wapt.personal_certificate_path):
+        raise ValueError('A personal signing certificate is required')
+
+    for field, value, schemes in (('source_server_url', source_server_url, 'https?'),
+                                  ('target_server_url', target_server_url, 'https'),
+                                  ('target_repo_url', target_repo_url, 'https')):
+        pattern = (r'\A%s://(?:[a-zA-Z0-9.-]+|\[[a-fA-F0-9:.]+\])'
+                   r'(?::([0-9]+))?(?:/[a-zA-Z0-9._~/-]*)?\Z') % schemes
+        match = re.match(pattern, value) if isinstance(value, basestring) else None
+        if not match:
+            raise ValueError('%s must be a valid server URL without credentials, query or fragment' % field)
+        try:
+            url = urlsplit(value)
+            if url.netloc.startswith('['):
+                IPv6Address(ensure_unicode(url.hostname))
+            elif not re.match(r'\A[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?'
+                              r'(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.?\Z', url.hostname):
+                raise ValueError('Invalid host')
+            port = match.group(1)
+            if port is not None and not 0 < int(port) < 65536:
+                raise ValueError('Invalid port')
+        except ValueError:
+            raise ValueError('%s has an invalid host or port' % field)
+        transition[field] = value
+
+    deploy_path = makepath(wapt.wapt_base_dir, 'waptdeploy.exe')
+    if not os.path.isfile(deploy_path):
+        raise ValueError('waptdeploy.exe is required in the console directory')
+    certs = wapt.personal_certificate()
+    if not certs or not certs[0].is_code_signing:
+        raise ValueError('The personal certificate must allow code signing')
+    key = wapt.private_key(private_key_password=key_password)
+    if sign_digests is None:
+        sign_digests = wapt.sign_digests
+
+    target_directory = os.path.abspath(target_directory or tempfile.gettempdir())
+    build_directory = tempfile.mkdtemp(prefix='padit-transition-', dir=target_directory)
+    try:
+        sources = os.path.join(build_directory, 'sources')
+        os.makedirs(os.path.join(sources, 'patchs'))
+        os.mkdir(os.path.join(sources, 'certificates'))
+        agent_copy = os.path.join(sources, 'waptagent.exe')
+        shutil.copyfile(agent_path, agent_copy)
+        agent_version = get_file_properties(agent_copy).get('FileVersion')
+        if not agent_version or not re.match(r'\A1\.8\.3\.[0-9]+\Z', agent_version):
+            raise ValueError('The installer must have a PADIT 1.8.3 file version')
+        shutil.copyfile(deploy_path, os.path.join(sources, 'patchs', 'waptdeploy.exe'))
+        agent_sha256 = sha256_for_file(agent_copy)
+        with open(os.path.join(sources, 'waptagent.sha256'), 'wb') as output:
+            output.write('%s  waptagent.exe\n' % agent_sha256)
+        transition.update(agent_version=agent_version, agent_sha256=agent_sha256)
+
+        for field, path, filename in (
+                ('https_certificate', https_certificate_path, 'certificates/https.pem'),
+                ('package_certificate', package_certificate_path, 'certificates/packages.pem')):
+            if not path or not os.path.isfile(path):
+                raise ValueError('%s is required' % field)
+            with open(path, 'rb') as certificate_file:
+                certificate_data = certificate_file.read()
+            bundle = SSLCABundle().add_certificates_from_pem(pem_data=certificate_data)
+            if not bundle:
+                bundle = [SSLCertificate(crt_string=certificate_data)]
+                # Parse before opening the output file, including for empty inputs.
+                if not certificate_data:
+                    raise ValueError('%s must contain a public certificate' % field)
+            with open(os.path.join(sources, filename), 'wb') as output:
+                for cert in bundle:
+                    output.write(cert.as_pem())
+            transition[field] = filename
+
+        with open(os.path.join(sources, 'transition.json'), 'w') as output:
+            json.dump(transition, output, indent=2, sort_keys=True)
+            output.write('\n')
+        with open(os.path.join(sources, 'setup.py'), 'w') as output:
+            output.write("def install():\n"
+                         "    raise RuntimeError('PADIT transition package: not deployable')\n")
+
+        entry = PackageEntry(package='%s-padit-transition' % prefix,
+                             architecture='all', section='base', target_os='windows',
+                             min_wapt_version='1.8.2', impacted_process='waptconsole,waptself',
+                             description='PADIT transition package - NOT DEPLOYABLE')
+        entry.sourcespath = sources
+        mainrepo.update()
+        existing = mainrepo.packages_matching(PackageRequest(entry.package))
+        revision = sorted(existing)[-1].version.split('-')[-1] if existing else '0'
+        entry.version = '%s-%s' % (agent_version, revision)
+        entry.inc_build()
+        entry.save_control_to_wapt()
+        entry.build_package(target_directory=build_directory)
+        entry.sign_package(private_key=key, certificate=certs,
+                           private_key_password=key_password, mds=ensure_list(sign_digests))
+
+        destination = os.path.join(target_directory, entry.filename)
+        if os.path.exists(destination):
+            raise IOError('The target transition package already exists: %s' % destination)
+        if publish:
+            result = wapt.http_upload_package(entry.localpath, wapt_server_user=wapt_server_user,
+                                              wapt_server_passwd=wapt_server_passwd,
+                                              progress_hook=wapt.progress_hook)
+            if not result['success']:
+                raise RuntimeError(result['msg'])
+            mainrepo.update()
+        os.rename(entry.localpath, destination)
+        entry.localpath = destination
+        entry.sourcespath = None
+        result = entry.as_dict()
+        result['deployable'] = transition['deployable']
+        return result
+    finally:
+        shutil.rmtree(build_directory)
+
+
 def check_uac():
     res = uac_enabled()
     if res:

@@ -3032,3 +3032,34 @@ Statut : PASS en préproduction.
 - Generateur de paquet de transition dans la console.
 - Colonne Transition et filtre Migres.
 - Qualification progressive avant publication RC1.
+
+## W109-125 — Lot 1 — Générateur de paquet de transition PADIT
+
+Date : 2026-11-25.
+Branche : release/1.8.3.
+Revue indépendante de W109-125-lot1-rev2.diff : PASS. Lot 1 accepté.
+
+### Fonctionnalités livrées
+
+- Génération locale d'un paquet WAPT Windows signé, nommé selon le préfixe de la console. La version reprend la version PE 1.8.3 de l'installateur et incrémente la révision du paquet à partir du dépôt.
+- Inclusion de waptagent.exe, de patchs/waptdeploy.exe, des certificats publics de confiance HTTPS et WAPT, et du manifeste transition.json. Le SHA-256 est calculé sur la copie embarquée de l'installateur.
+- Signature WAPT avec le certificat personnel autorisé pour la signature de code. Le paquet généré ne contient ni identifiants ni clé privée.
+
+### Corrections après revue
+
+- Ajout de l'URL source obligatoire (HTTP ou HTTPS). Le serveur et le dépôt cibles exigent HTTPS. Validation des hôtes, dont IPv6, et des ports. Refus des identifiants intégrés, des requêtes et des fragments.
+- Ajout de waptagent.sha256 et des métadonnées de compatibilité (WAPT 1.8.2 minimum et processus waptconsole,waptself).
+- Génération initiale sans fichiers de projet PyScripter ou VS Code. Leur création reste prise en charge par le flux habituel d'édition.
+- Publication interdite à ce stade. Toute demande de publication est rejetée avant construction ou accès au dépôt.
+
+### Validation
+
+- 7/7 tests PASS sous Python 2.7.18 x86, hors ligne. Couverture : structure, empreinte et signature WAPT, absence de secrets, édition et reconstruction, préfixe et révision, paramètres et URL, refus de publication, nettoyage après échec de signature et non-régression de waptupgrade.
+- Lecture de version PE simulée pendant les tests.
+
+### Limites et suite
+
+- **Paquet de transition NON DÉPLOYABLE** (deployable=false). Le point d'entrée d'installation refuse l'exécution.
+- Qualification Authenticode, essais avec un installateur réel et qualification sur un agent historique encore à réaliser.
+- Aucun déploiement ni changement sur SCRAB.
+- Prochain chantier : moteur de transition sécurisé.
