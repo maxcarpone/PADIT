@@ -3063,3 +3063,26 @@ Revue indépendante de W109-125-lot1-rev2.diff : PASS. Lot 1 accepté.
 - Qualification Authenticode, essais avec un installateur réel et qualification sur un agent historique encore à réaliser.
 - Aucun déploiement ni changement sur SCRAB.
 - Prochain chantier : moteur de transition sécurisé.
+
+## W109-126 — Lot 2A — Exécutable natif de transition PADIT
+
+Revue indépendante de W109-126-lot2a-rev2.diff : PASS. Lot 2A accepté.
+
+### Fonctionnalités et validation
+
+- Création de wapttransition.exe, application console native Windows x86 avec manifeste requireAdministrator.
+- Compilation validée avec Lazarus 4.8 et FPC 3.2.2. Version de test 1.8.3.7761.
+- Autonomie de cette version minimale vérifiée hors du répertoire PADIT, sans dépendance à Python, OpenSSL ou PowerShell.
+- Commandes --help et --version validées avec un code de retour 0. Les arguments invalides renvoient 2. Aucune opération de migration dans ce lot.
+- Intégration au constructeur Windows validée après correction des listes : 10 projets, 10 artefacts et 8 EXE dans le circuit de signature et de vérification Authenticode.
+- Inclusion limitée à l'installateur Community contenant la console, vérifiée au prétraitement Inno Setup.
+- Exécutable sans compression UPX.
+
+### Limites et suite
+
+- Signature Authenticode réelle de wapttransition.exe encore à effectuer.
+- Constructeur Windows complet et installateur final encore à qualifier.
+- Test non intrusif prévu sous Windows Server 2012 R2.
+- Compatibilité Windows 7 SP1 non qualifiée et non bloquante pour ce lot.
+- Stratégie retenue pour la migration : sauvegarde locale complète et non compressée de l'installation historique, avec retour arrière à partir de cette sauvegarde.
+- Prochain lot 2B : précontrôles et état persistant.

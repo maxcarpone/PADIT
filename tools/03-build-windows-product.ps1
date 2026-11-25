@@ -622,6 +622,7 @@ $LazarusProjects = @(
     'wapt-get\waptget.lpi',
     'wapt-get\WaptGuiHelper.lpi',
     'waptdeploy\waptdeploy.lpi',
+    'wapttransition\wapttransition.lpi',
     'wapttray\wapttray.lpi',
     'waptconsole\waptconsole.lpi',
     'waptexit\waptexit.lpi',
@@ -630,15 +631,15 @@ $LazarusProjects = @(
     'waptsetup\waptsetuputil\waptsetuputil.lpi'
 )
 
-if ($LazarusProjects.Count -ne 9) {
-    throw "Unexpected Lazarus project count: expected 9, found $($LazarusProjects.Count)"
+if ($LazarusProjects.Count -ne 10) {
+    throw "Unexpected Lazarus project count: expected 10, found $($LazarusProjects.Count)"
 }
 
 foreach ($project in $LazarusProjects) {
     Assert-File (Join-Path $Worktree $project)
 }
 
-Write-Host "[PASS] Lazarus project files validated: 9/9"
+Write-Host "[PASS] Lazarus project files validated: 10/10"
 
 # ----------------------------------------------------------------------
 # Build Lazarus Community targets
@@ -780,7 +781,7 @@ foreach ($project in $LazarusProjects) {
 
 Write-Host "[PASS] Lazarus diagnostic summary: $LazarusLogRoot"
 
-Write-Host "[PASS] Lazarus Community builds completed: 9/9"
+Write-Host "[PASS] Lazarus Community builds completed: 10/10"
 
 # ----------------------------------------------------------------------
 # Validate Lazarus build artifacts
@@ -790,6 +791,7 @@ $LazarusArtifacts = @(
     'wapt-get.exe',
     'waptguihelper.pyd',
     'waptdeploy.exe',
+    'wapttransition.exe',
     'wapttray.exe',
     'waptconsole.exe',
     'waptexit.exe',
@@ -798,15 +800,15 @@ $LazarusArtifacts = @(
     'waptsetuputil.dll'
 )
 
-if ($LazarusArtifacts.Count -ne 9) {
-    throw "Unexpected Lazarus artifact count: expected 9, found $($LazarusArtifacts.Count)"
+if ($LazarusArtifacts.Count -ne 10) {
+    throw "Unexpected Lazarus artifact count: expected 10, found $($LazarusArtifacts.Count)"
 }
 
 foreach ($artifact in $LazarusArtifacts) {
     Assert-File (Join-Path $Worktree $artifact)
 }
 
-Write-Host "[PASS] Lazarus build artifacts validated: 9/9"
+Write-Host "[PASS] Lazarus build artifacts validated: 10/10"
 
 Write-Host ""
 Write-Host "Verifying Lazarus artifact metadata..."
@@ -832,7 +834,7 @@ foreach ($artifact in $LazarusArtifacts) {
     }
 }
 
-Write-Host "[PASS] Lazarus artifact metadata validated: 9/9"
+Write-Host "[PASS] Lazarus artifact metadata validated: 10/10"
 Write-Host "       FileVersion    : $ExpectedFileVersion"
 Write-Host "       ProductVersion : $ExpectedProductVersion"
 Write-Host "       ProductName    : $ExpectedProductName"
@@ -1200,14 +1202,15 @@ foreach ($artifact in $LazarusArtifacts) {
     }
 }
 
-Write-Host "[PASS] Fresh Lazarus artifacts installed: 9/9"
+Write-Host "[PASS] Fresh Lazarus artifacts installed: 10/10"
 # W32-H58-Q: Verify embedded Lazarus Authenticode signatures.
 # A signed installer must never embed unsigned Lazarus executables.
 $RequiredSignedExecutables = @(
     $LazarusArtifacts | Where-Object { $_ -like '*.exe' }
 )
 
-if ($RequiredSignedExecutables.Count -ne 7 -or
+if ($RequiredSignedExecutables.Count -ne 8 -or
+    $RequiredSignedExecutables -notcontains 'wapttransition.exe' -or
     $RequiredSignedExecutables -notcontains 'waptconsole.exe') {
     throw 'Unexpected mandatory Lazarus executable inventory'
 }

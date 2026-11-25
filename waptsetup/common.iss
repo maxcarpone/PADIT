@@ -42,6 +42,12 @@ Source: "{#wapt_base_dir}waptconsole.exe"; DestDir: "{app}"; Flags: ignoreversio
 Source: "{#wapt_base_dir}waptconsole.exe.manifest"; DestDir: "{app}";
 
 Source: "{#wapt_base_dir}waptdevutils.py"; DestDir: "{app}";
+
+#if edition == "waptsetup"
+#ifndef waptenterprise
+Source: "{#wapt_base_dir}wapttransition.exe"; DestDir: "{app}"; Flags: ignoreversion;
+#endif
+#endif
 #endif
 
 ; authorized public keys
