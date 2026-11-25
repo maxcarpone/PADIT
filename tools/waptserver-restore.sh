@@ -436,6 +436,7 @@ from pathlib import Path
 
 ARTIFACTS = ("waptsetup-tis.exe", "waptdeploy.exe", "Thouet-Software-Signing-Root-CA.cer")
 REPOSITORY = "repository/wapt"
+AGENT = "waptagent.exe"
 MARGIN = 2 * 1024**3
 
 
@@ -478,12 +479,16 @@ def inventory(archive):
     return root, members
 
 
+def stream_digest(stream):
+    checksum = hashlib.sha256()
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        checksum.update(chunk)
+    return checksum.hexdigest()
+
+
 def digest(path):
     with path.open("rb") as stream:
-        checksum = hashlib.sha256()
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            checksum.update(chunk)
-        return checksum.hexdigest()
+        return stream_digest(stream)
 
 
 def checksums(path):
@@ -642,7 +647,12 @@ def package_hashes(repo):
     return result
 
 
+def require_no_agent(repo):
+    require(not os.path.lexists(repo / AGENT), f"Final repository must exclude {AGENT}: {repo}")
+
+
 def verify_repository(repo, expected):
+    require_no_agent(repo)
     actual = set()
     for parent, dirs, files in os.walk(repo, onerror=lambda err: require(False, str(err))):
         for name in dirs:
@@ -699,13 +709,14 @@ def prepare(archive, members, bundle, live, transaction, checks, manifest_count,
                        if name.startswith(prefix)}, "Repository manifest and bundle SHA256SUMS disagree")
     require(len(source) == int(manifest_count) and "Packages" in source
             and all(name in source for name in ARTIFACTS[:2]), "Unexpected repository manifest contents")
+    final_source = {name: checksum for name, checksum in source.items() if name != AGENT}
     manifest_id = digest(bundle / "SHA256SUMS")
     state, receipt = repository_state(live, transaction)
     if state in ("prepared", "switched"):
         require(receipt["manifest"] == manifest_id, "Prepared repository belongs to a different bundle")
         original, candidate = (live, staged) if state == "prepared" else (staged, live)
         require(package_hashes(original) == receipt["artifacts"], "Original PADIT artifacts changed")
-        verify_repository(candidate, {**source, **receipt["artifacts"]})
+        verify_repository(candidate, {**final_source, **receipt["artifacts"]})
         return state
 
     if state == "empty":
@@ -718,12 +729,18 @@ def prepare(archive, members, bundle, live, transaction, checks, manifest_count,
         building = receipt
     preserved = package_hashes(live)
     for name, member in members.items():
-        if name.startswith(prefix):
-            extract_member(archive, member, staged / name[len(prefix):])
-    verify_repository(staged, source)
+        if not name.startswith(prefix):
+            continue
+        relative = name[len(prefix):]
+        if relative == AGENT or relative in preserved:
+            require(member.isfile(), f"Expected a regular historical repository file: {relative}")
+            with archive.extractfile(member) as stream:
+                require(stream_digest(stream) == source[relative], f"Historical SHA256 mismatch: {relative}")
+        else:
+            extract_member(archive, member, staged / relative)
     for name in ARTIFACTS:
         shutil.copyfile(live / name, staged / name)
-        require(digest(staged / name) == preserved[name], f"PADIT artifact changed during staging: {name}")
+    verify_repository(staged, {**final_source, **preserved})
     for parent, _, files in os.walk(staged, onerror=lambda err: require(False, str(err))):
         os.chown(parent, uid, gid)
         os.chmod(parent, 0o750)
@@ -778,8 +795,10 @@ def main(args):
         staged = transaction / "repository"
         if state == "prepared":
             require(package_hashes(live) == receipt["artifacts"], "Live PADIT artifacts changed before switch")
+            require_no_agent(staged)
             exchange(live, staged)
         require(layout(live, transaction, receipt) == "switched", "Repository exchange did not complete")
+        require_no_agent(live)
         sync_directory(live.parent)
         sync_directory(transaction)
         print(f"Previous repository retained at {staged}")
