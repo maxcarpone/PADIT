@@ -2847,3 +2847,115 @@ Priorité : bloquant RC1 si les défauts sont toujours présents.
 - Ne pas supprimer les sauvegardes, snapshots ou dépôts retenus.
 - Ne pas intervenir globalement sur les clients SCRAB sans
   décision explicite de bascule.
+
+## W109-123 — Robustesse serveur PostgreSQL et inventaires
+
+Date : 2026-11-25.
+Branche : release/1.8.3.
+Base de travail : f76f912d.
+Statut : développements et qualification technique PASS.
+
+### Incident réel observé sur SCRAB
+
+- Serveur Debian 10 / WAPT Community 1.8.2.7393.
+- Présence d'un caractère NUL dans un inventaire wapt_status.
+- Rejet du JSONB par PostgreSQL.
+- Exception PostgreSQL francophone contenant des caractères accentués.
+- UnicodeDecodeError secondaire dans WaptDB.__exit__().
+- Interruption du nettoyage des connexions PostgreSQL.
+- Accumulation des connexions jusqu'à saturation du pool : 90/90.
+- Redémarrage de waptserver : retour à environ 45 connexions.
+- Origine exacte du caractère NUL côté agent non identifiée.
+
+### G1 — Libération des connexions PostgreSQL
+
+- Nettoyage des connexions prioritaire sur la journalisation.
+- Préservation de l'exception originale.
+- Protection contre les erreurs secondaires de journalisation.
+- Éviction des connexions défectueuses.
+- Rollback et éviction des transactions abandonnées.
+- Réinitialisation de l'état local Peewee.
+- Préservation des connexions appartenant aux autres threads.
+- Isolation des connexions sous Eventlet : PASS.
+- 100 erreurs JSONB PostgreSQL francophones successives :
+  aucune fuite du pool dans le scénario testé.
+- Rétablissement des opérations SQL après erreur : PASS.
+
+### G2 — Traitement des caractères NUL
+
+- Normalisation récursive des structures Python avant stockage.
+- Remplacement des véritables NUL par des espaces dans les
+  données descriptives autorisées.
+- Conservation des séquences littérales antislash-u0000.
+- Conservation des types str/unicode et des caractères accentués.
+- Rejet des clés JSON contenant des NUL.
+- Mode strict pour les données fonctionnelles et cryptographiques.
+- Protection des principaux identifiants matériels WMI/DMI.
+- Validation des UUID et status_hashes avant transaction SQL.
+- Journalisation du nombre de NUL corrigés, du champ et de l'UUID.
+- Conservation des empreintes originales calculées par les agents.
+- Normalisation effectuée après vérification des signatures.
+- Harmonisation des traitements HostPackagesStatus et HostSoftwares.
+- Préservation des données originales dans les scénarios testés.
+- Conservation des inventaires précédents après rejet transactionnel.
+- Compatibilité avec les anciens agents recherchée côté serveur.
+- Aucune modification du code agent.
+
+### G3 — Acquittement transactionnel des inventaires
+
+- Isolation des empreintes de chaque transaction annexe.
+- Fusion des empreintes uniquement après réussite du bloc atomic().
+- Rollback automatique par le context manager Peewee.
+- Test réel d'erreur SQL après affectation d'une empreinte : PASS.
+- Conservation de l'ancienne empreinte après rollback : PASS.
+- Non-acquittement de l'inventaire rejeté : PASS.
+
+### Qualification technique
+
+Environnement :
+- Debian 12 Bookworm, waptworm.
+- Python 2.7.18.
+- PostgreSQL 15.20.
+- Peewee 3.14.10.
+- psycopg2 2.8.6.
+- Eventlet 0.33.3.
+- Instance PostgreSQL temporaire isolée, socket Unix, port 55432.
+
+Tests pérennes :
+- tests/test_waptserver_db_cleanup.py : 9/9 PASS.
+- tests/test_waptserver_db_integration.py : 4/4 PASS.
+- Même suite sous Eventlet : 4/4 PASS.
+- tests/test_waptserver_inventory_nuls.py : 37/37 PASS.
+- tests/test_waptserver_inventory_integration.py : 6/6 PASS.
+
+Total : 60/60 PASS.
+Qualification consolidée G3a : 59/59 PASS.
+Qualification finale G3e après correction transactionnelle : 6/6 PASS.
+git diff --check : PASS.
+Instance PostgreSQL temporaire arrêtée : PASS.
+Répertoire temporaire conservé : /tmp/padit-pgtest.szqI6F1M.
+
+### Limites et travaux restant avant RC1
+
+- Qualification du serveur complet avec de véritables agents.
+- Vérification de la compatibilité des inventaires historiques :
+  le mode strict peut rejeter certaines données autrefois acceptées.
+- Liste des identifiants matériels protégés non exhaustive.
+- Origine exacte du NUL de l'incident initial toujours inconnue.
+- Traitements internes WUA/Enterprise hors périmètre.
+- Encadrement transactionnel commun WUA modifié mais non qualifié
+  fonctionnellement en Enterprise.
+- Dépendance aux attributs internes de Peewee 3.14.10 :
+  requalification obligatoire lors d'une montée de version.
+- Robustesse non démontrée pour toutes les erreurs PostgreSQL possibles.
+
+### Périmètre et sécurité opérationnelle
+
+- Correctif serveur uniquement.
+- Aucun changement des services SCRAB ou PADIT installés.
+- Aucun déploiement sur les agents.
+- Aucune modification de la migration DR précédemment validée.
+- Trois artefacts non suivis préexistants dans waptsetup/deb/
+  conservés et exclus du commit.
+- Validation technique du correctif : PASS.
+- Qualification opérationnelle avant RC1 : PENDING.

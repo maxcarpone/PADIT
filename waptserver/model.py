@@ -103,18 +103,47 @@ def wapt_db_connect():
     return False
 
 def wapt_db_close():
-    if wapt_db and not wapt_db.is_closed():
-        if wapt_db.in_transaction():
+    if not wapt_db or wapt_db.is_closed():
+        return False
+
+    db = wapt_db
+    conn = db.connection()
+
+    def discard_connection():
+        # Peewee 3.14.10: manual_close() may fail when a
+        # transaction is still registered in the local state.
+        with db._lock:
+            db._in_use.pop(db.conn_key(conn), None)
             try:
-                logger.critical('Transaction is active, but DB must be closed. Rollbacking')
-                wapt_db.rollback()
-            except Exception as e:
-                logger.critical(u'Unable to rollback:\n%s' % repr(e))
-                logger.critical(traceback.format_exc())
-        logger.debug('Disconnecting from waptdb explicitely. Count: %s' % len(wapt_db._in_use))
-        wapt_db.close()
-        return True
-    return False
+                conn.close()
+            finally:
+                db._state.reset()
+
+    if db.in_transaction():
+        # An unfinished transaction must not return to the pool.
+        try:
+            db.rollback()
+        finally:
+            discard_connection()
+            try:
+                logger.warning(
+                    'Discarded DB connection with unfinished transaction')
+            except Exception:
+                pass
+    else:
+        try:
+            db.close()
+        except Exception:
+            discard_connection()
+            raise
+
+    try:
+        logger.debug('Disconnected from waptdb')
+    except Exception:
+        pass
+
+    return True
+
 
 class WaptDB:
     def __init__(self):
@@ -124,19 +153,32 @@ class WaptDB:
         self.must_close = wapt_db_connect()
 
     def __exit__(self, type, value, tb):
-        if self.must_close:
-            if not value:
-                #logger.debug(u'DB exit %i' % self.transaction_depth)
-                wapt_db_close()
-            else:
-                try:
-                    logger.debug(u'Error at DB exit %s, rollbacking\n%s' % (value,ensure_unicode(traceback.format_tb(tb))))
-                    if wapt_db.in_transaction():
-                        wapt_db.rollback()
-                    wapt_db_close()
-                except Exception as e:
-                    logger.critical(u'Unable to rollback or close DB:\n%s' % repr(e))
-                    logger.critical(traceback.format_exc())
+        if not self.must_close:
+            return False
+
+        if type is None:
+            wapt_db_close()
+            return False
+
+        try:
+            wapt_db_close()
+        except Exception as e:
+            try:
+                logger.critical(
+                    'Unable to rollback or close DB: %r', e)
+                logger.critical(traceback.format_exc())
+            except Exception:
+                pass
+
+        try:
+            logger.debug(
+                u'Error at DB exit: %s',
+                ensure_unicode(value))
+        except Exception:
+            pass
+
+        return False
+
 
 class WaptBaseModel(SignaledModel):
     """A base model that will use our Postgresql database"""
@@ -804,16 +846,137 @@ def dictgetpath(adict, pathstr):
     return result
 
 
+def sanitize_inventory_nuls(data, strict=False,
+                            protect_hardware_ids=False):
+    """Return sanitized inventory data and the number of NUL replacements.
+
+    Do not modify the original input.
+    Reject NUL characters in dictionary keys to avoid key collisions.
+    Preserve literal escaped sequences and valid Unicode characters.
+    In strict mode, reject NUL characters instead of replacing them.
+    """
+    if isinstance(data, basestring):
+        count = data.count('\x00')
+        if strict and count:
+            raise ValueError('NUL character in protected inventory value')
+        return data.replace('\x00', ' '), count
+
+    if isinstance(data, dict):
+        result = {}
+        count = 0
+
+        for key, value in data.iteritems():
+            if isinstance(key, basestring) and '\x00' in key:
+                raise ValueError('NUL character in inventory dictionary key')
+
+            protected = strict
+
+            if protect_hardware_ids and isinstance(key, basestring):
+                normalized_key = key.lower().replace('_', '')
+                protected = strict or normalized_key in (
+                    'uuid',
+                    'serialnumber',
+                    'serialnr',
+                    'deviceid',
+                    'pnpdeviceid',
+                    'identifyingnumber',
+                    'macaddress',
+                    'processorid',
+                    'systemuuid',
+                    'signature',
+                )
+
+            cleaned, replaced = sanitize_inventory_nuls(
+                value, strict=protected,
+                protect_hardware_ids=protect_hardware_ids)
+            result[key] = cleaned
+            count += replaced
+
+        return result, count
+
+    if isinstance(data, (list, tuple)):
+        result = []
+        count = 0
+
+        for value in data:
+            cleaned, replaced = sanitize_inventory_nuls(
+                value, strict=strict,
+                protect_hardware_ids=protect_hardware_ids)
+            result.append(cleaned)
+            count += replaced
+
+        if isinstance(data, tuple):
+            result = tuple(result)
+
+        return result, count
+
+    return data, 0
+
+
 def set_host_field(host, fieldname, data):
-    # awfull hack for data containing null char, not accepted by postgresql.
-    if fieldname in ('host_info', 'wmi', 'dmi'):
-        jsonrepr = ujson.dumps(data)
-        if '\u0000' in jsonrepr:
-            logger.warning('Workaround \\u0000 not handled by postgresql json for host %s field %s' % (getattr(host, 'uuid', '???'), fieldname))
-            data = ujson.loads(jsonrepr.replace('\u0000', ' '))
+    """Validate inventory data before storing it in PostgreSQL."""
+    count = 0
+
+    descriptive_fields_by_inventory = {
+        'wapt_status': (
+            'wapt-get-version',
+            'wapt-version-full',
+            'waptutils-version',
+            'authorized_certificates_cn',
+            'pending_reboot_reasons',
+        ),
+        'host_info': (
+            'description',
+            'system_manufacturer',
+            'system_productname',
+            'registered_organization',
+            'registered_owner',
+            'os_name',
+            'cpu_name',
+        ),
+    }
+
+    if fieldname in descriptive_fields_by_inventory and isinstance(data, dict):
+        cleaned = {}
+        descriptive_fields = descriptive_fields_by_inventory[fieldname]
+
+        for key, value in data.iteritems():
+            sanitize_inventory_nuls(key, strict=True)
+
+            cleaned[key], replaced = sanitize_inventory_nuls(
+                value, strict=(key not in descriptive_fields))
+
+            count += replaced
+
+        data = cleaned
+
+    elif fieldname in ('wmi', 'dmi'):
+        data, count = sanitize_inventory_nuls(
+            data, protect_hardware_ids=True)
+
+    elif fieldname in (
+            'host_info',
+            'wapt_status',
+            'host_capabilities',
+            'host_metrics',
+            'last_update_status',
+            'wuauserv_status',
+            'waptwua_status',
+            'waptwua_rules',
+            'status_hashes'):
+        data, count = sanitize_inventory_nuls(data, strict=True)
+
+    if count:
+        try:
+            logger.warning(
+                'Normalized %d NUL character(s) for host %s field %s',
+                count, getattr(host, 'uuid', '???'), fieldname)
+        except Exception:
+            pass
 
     setattr(host, fieldname, data)
     return host
+
 
 def package_version_from_prequest(prequest):
     """Split package and version from  "package(=version)"
@@ -850,10 +1013,26 @@ def update_installed_packages(uuid, data, applied_status_hashes):
         return {k:rec[k] for k in rec}
     #old_installed = HostPackagesStatus.select().where(HostPackagesStatus.host == uuid).dicts()
 
-    def encode_value(value):
-        if isinstance(value,unicode):
-            value = value.replace(u'\x00', ' ')
-        return value
+    def encode_value(key, value):
+        descriptive_fields = (
+            'name',
+            'description',
+            'install_output',
+            'last_audit_output',
+        )
+
+        cleaned, count = sanitize_inventory_nuls(
+            value, strict=(key not in descriptive_fields))
+
+        if count:
+            try:
+                logger.warning(
+                    'Normalized %d NUL character(s) for host %s package field %s',
+                    count, uuid, key)
+            except Exception:
+                pass
+
+        return cleaned
 
     def _get_uninstallkeylist(uninstall_key_str):
         """Decode uninstallkey list from db field
@@ -906,6 +1085,11 @@ def update_installed_packages(uuid, data, applied_status_hashes):
         HostPackagesStatus.delete().where(HostPackagesStatus.host == uuid).execute()
         packages = []
         for package in installed_packages:
+            package = dict(package)
+
+            for key in package:
+                sanitize_inventory_nuls(key, strict=True)
+
             # 'id' is the global primary key for HostPackagesStatus table
             if 'id' in package:
                 package['install_id'] = package['id']
@@ -942,7 +1126,7 @@ def update_installed_packages(uuid, data, applied_status_hashes):
                 package['install_status'] = 'NEED-REMOVE'
 
             # filter out all unknown fields from json data for the SQL insert
-            packages.append(dict([(k, encode_value(v)) for k, v in package.iteritems() if k in HostPackagesStatus._meta.fields]))
+            packages.append(dict([(k, encode_value(k, v)) for k, v in package.iteritems() if k in HostPackagesStatus._meta.fields]))
 
 
         if packages:
@@ -996,16 +1180,32 @@ def update_installed_softwares(uuid, data,applied_status_hashes):
         HostSoftwares.delete().where(HostSoftwares.host == uuid).execute()
         softwares = []
 
-        def encode_value(value):
-            if isinstance(value,unicode):
-                value = value.replace(u'\x00', ' ')
-            return value
+        def encode_value(key, value):
+            descriptive_fields = ('name', 'publisher')
+
+            cleaned, count = sanitize_inventory_nuls(
+                value, strict=(key not in descriptive_fields))
+
+            if count:
+                try:
+                    logger.warning(
+                        'Normalized %d NUL character(s) for host %s software field %s',
+                        count, uuid, key)
+                except Exception:
+                    pass
+
+            return cleaned
 
         for software in installed_softwares:
+            software = dict(software)
+
+            for key in software:
+                sanitize_inventory_nuls(key, strict=True)
+
             software['host'] = uuid
             software['created_on'] = datetime.datetime.utcnow()
             # filter out all unknown fields from json data for the SQL insert
-            softwares.append(dict([(k,encode_value(v)) for k, v in software.iteritems() if k in HostSoftwares._meta.fields]))
+            softwares.append(dict([(k,encode_value(k, v)) for k, v in software.iteritems() if k in HostSoftwares._meta.fields]))
 
         if softwares:
             HostSoftwares.insert_many(softwares).execute() # pylint: disable=no-value-for-parameter
@@ -1142,15 +1342,22 @@ def update_host_data(data,server_conf=None):
     }
 
     uuid = data['uuid']
+
+    # Validate protected metadata before starting database operations.
+    # Preserve the original agent hashes without recalculating them.
+    sanitize_inventory_nuls(uuid, strict=True)
+
+    supplied_hashes = data.get('status_hashes', {})
+    sanitize_inventory_nuls(supplied_hashes, strict=True)
+
     with wapt_db.atomic() as trans:
         try:
-            supplied_hashes = data.get('status_hashes',{})
             applied_status_hashes = {}
             existing = Hosts.select(Hosts.uuid, Hosts.computer_fqdn,Hosts.status_hashes).where(Hosts.uuid == uuid).first()
             if not existing:
                 logger.debug('Inserting new host %s with fields %s' % (uuid, list(data.keys())))
                 # wapt update_status packages softwares host
-                updhost = Hosts()
+                updhost = Hosts(uuid=uuid)
 
                 for k in data.keys():
                     # manage field renaming between 1.3 and >= 1.4
@@ -1182,33 +1389,28 @@ def update_host_data(data,server_conf=None):
                 updhost.status_hashes.update(applied_status_hashes)
                 updhost.save()
 
-            # separate tables
-            # we are tolerant on errors here as we don't know exactly if client send good encoded data
-            # but we still want to get host in table
-            with wapt_db.atomic() as translocal:
-                try:
-                    update_installed_softwares(uuid, data,applied_status_hashes)
-                except Exception as e:
-                    # be tolerant
-                    translocal.rollback()
-                    logger.critical(u'Unable to update installed_softwares for %s: %s' % (uuid,ensure_unicode(e)))
+            # Separate inventory transactions.
+            # Acknowledge hashes only after successful transaction completion.
+            for updater, section in (
+                    (update_installed_softwares, 'installed_softwares'),
+                    (update_installed_packages, 'installed_packages'),
+                    (update_waptwua, 'waptwua_status')):
 
-            with wapt_db.atomic() as translocal:
-                try:
-                    update_installed_packages(uuid, data,applied_status_hashes)
-                except Exception as e:
-                    # be tolerant
-                    translocal.rollback()
-                    logger.critical(u'Unable to update installed_packages for %s: %s' % (uuid,ensure_unicode(e)))
+                local_hashes = {}
 
-            with wapt_db.atomic() as translocal:
                 try:
-                    # update waptwua state tables
-                    update_waptwua(uuid,data,applied_status_hashes)
+                    with wapt_db.atomic():
+                        updater(uuid, data, local_hashes)
                 except Exception as e:
-                    # be tolerant
-                    translocal.rollback()
-                    logger.critical(u'Unable to update wuauserv_status or waptwua_status for %s: %s' % (uuid,ensure_unicode(e)))
+                    # The atomic context has rolled back the failed operation.
+                    try:
+                        logger.critical(
+                            u'Unable to update %s for %s: %s',
+                            section, uuid, ensure_unicode(e))
+                    except Exception:
+                        pass
+                else:
+                    applied_status_hashes.update(local_hashes)
 
             # extract X509 certificates PEM and store them in repo wapt/ssl
             if update_known_ssl_certificates(data,server_conf):
