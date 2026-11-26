@@ -11,8 +11,9 @@ type
   ELocalPrecheck = class(Exception);
 
 procedure CheckTaskStatus(const JSON: UTF8String; PreparationTask: Integer = 0);
+function HistoricalCommunityVersion(const AgentPath, RegisteredEdition: UnicodeString): UTF8String;
 function InspectLocalAgent(const InstallDir, ConfigPath, WorkingDir,
-  PackageDir, Hostname: UnicodeString; ServiceState: DWORD;
+  PackageDir: UnicodeString; ServiceState: DWORD;
   BackupFree, InstallFree: QWord; SharedVolume: Boolean;
   const Snapshot: UTF8String; const RegisteredEdition: UnicodeString): TLocalMetadata;
 // The future orchestrator must recheck the queue and process list after the
@@ -397,8 +398,23 @@ end;
 
 procedure CheckCommandLineAgent(PreparationPID: Integer); forward;
 
+function HistoricalCommunityVersion(const AgentPath, RegisteredEdition: UnicodeString): UTF8String;
+var
+  Community: Boolean;
+begin
+  Result := AgentVersion(AgentPath, Community);
+  Require(Community and
+    ((RegisteredEdition = 'WAPTAgent Community ' + UnicodeString(Result)) or
+     (Pos('WAPT Community ', RegisteredEdition) = 1) or
+     (Pos('PADIT Community ', RegisteredEdition) = 1) or
+     (Pos('PADITAgent Community ', RegisteredEdition) = 1) or
+     (Pos('PADITSetup Community ', RegisteredEdition) = 1)) and
+    ((Pos('1.8.2.', Result) = 1) or (Pos('1.8.3.', Result) = 1)),
+    'Unsupported historical WAPT edition or version');
+end;
+
 function InspectLocalAgent(const InstallDir, ConfigPath, WorkingDir,
-  PackageDir, Hostname: UnicodeString; ServiceState: DWORD;
+  PackageDir: UnicodeString; ServiceState: DWORD;
   BackupFree, InstallFree: QWord; SharedVolume: Boolean;
   const Snapshot: UTF8String; const RegisteredEdition: UnicodeString): TLocalMetadata;
 const
@@ -408,9 +424,9 @@ var
   Ini: TMemIniFile;
   Config: TStringList;
   Manifest, Historical: TJSONObject;
-  Source, Target, TargetVersion, RecordedUUID, ModeValue: UTF8String;
+  Source, Target, TargetVersion, RecordedUUID, ModeValue, FakeHostname: UTF8String;
   PrivateDir, PersistentDir, DbPath, KeyPath, CertPath, Child, Package: UnicodeString;
-  Community, UnusedCommunity: Boolean;
+  UnusedCommunity: Boolean;
   BackupSize, InstallSize, PayloadSize: QWord;
   Port, PreparationTask, PreparationPID: Integer;
   C: AnsiChar;
@@ -428,14 +444,8 @@ begin
   Require(not FileExists(IncludeTrailingPathDelimiter(InstallDir) + 'conf\waptserver.ini') and
     not DirectoryExists(IncludeTrailingPathDelimiter(InstallDir) + 'waptserver'),
     'A local WAPT Server installation was detected');
-  Result.SourceVersion := AgentVersion(IncludeTrailingPathDelimiter(InstallDir) + 'wapt-get.exe', Community);
-  Require(Community and
-    ((Pos('WAPT Community ', RegisteredEdition) = 1) or
-     (Pos('PADIT Community ', RegisteredEdition) = 1) or
-     (Pos('PADITAgent Community ', RegisteredEdition) = 1) or
-     (Pos('PADITSetup Community ', RegisteredEdition) = 1)) and
-    ((Pos('1.8.2.', Result.SourceVersion) = 1) or
-    (Pos('1.8.3.', Result.SourceVersion) = 1)), 'Unsupported historical WAPT edition or version');
+  Result.SourceVersion := HistoricalCommunityVersion(IncludeTrailingPathDelimiter(InstallDir) +
+    'wapt-get.exe', RegisteredEdition);
   Package := IncludeTrailingPathDelimiter(PackageDir);
   Manifest := ParseObject(ReadDocument(Package + 'transition.json'), 'Invalid transition manifest');
   try
@@ -472,6 +482,12 @@ begin
     DbPath := ConfiguredPath('dbpath', 'db\waptdb.sqlite');
     Result.UUID := UTF8String(Ini.ReadString('global', 'uuid', ''));
     ModeValue := LowerCase(Ini.ReadString('global', 'use_fqdn_as_uuid', '0'));
+    FakeHostname := Ini.ReadString('global', 'fake_hostname', '');
+    if Ini.ValueExists('global', 'fake_hostname') then
+    begin
+      Require(FakeHostname <> '', 'Invalid configured WAPT test hostname');
+      ModeValue := '1';
+    end;
     Require((ModeValue = '0') or (ModeValue = '1') or (ModeValue = 'true') or
       (ModeValue = 'false') or (ModeValue = 'yes') or (ModeValue = 'no') or
       (ModeValue = 'on') or (ModeValue = 'off'), 'Invalid WAPT identification mode');
@@ -483,17 +499,18 @@ begin
     Config.Free;
   end;
   FileSizeRequired(DbPath, 'Missing WAPT SQLite database');
-  Result.Hostname := UTF8Encode(UnicodeLowerCase(Hostname));
-  Require(Result.Hostname <> '', 'Cannot determine the local hostname');
   Historical := ParseObject(Snapshot, 'Invalid historical WAPT snapshot');
   try
     Require((Historical.Count = 9) and
       (Historical.Find('schema_version', jtNumber) <> nil) and
       (Historical.Find('schema_version').AsJSON = '1'), 'Unsupported historical snapshot format');
     Require(UnicodeSameText(UTF8Decode(RequiredString(Historical, 'config_path')), ConfigPath) and
-      UnicodeSameText(UTF8Decode(RequiredString(Historical, 'database_path')), DbPath) and
-      (RequiredString(Historical, 'hostname') = Result.Hostname),
+      UnicodeSameText(UTF8Decode(RequiredString(Historical, 'database_path')), DbPath),
       'Historical snapshot does not match this installation');
+    // WAPT may derive its FQDN through DNS instead of the Windows primary suffix.
+    Result.Hostname := RequiredString(Historical, 'hostname');
+    Require((FakeHostname = '') or (FakeHostname = Result.Hostname),
+      'Snapshot disagrees with the configured WAPT test hostname');
     RecordedUUID := OptionalString(Historical, 'registered_uuid');
     ModeValue := LowerCase(ModeValue);
     Result.IdentificationMode := RequiredString(Historical, 'identification_mode');
@@ -595,11 +612,10 @@ end;
 function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString;
   out Metadata: TLocalMetadata): Boolean;
 var
-  InstallDir, ConfigPath, WorkingDir, Temp, Args, Hostname, BackupVolume, InstallVolume: UnicodeString;
+  InstallDir, ConfigPath, WorkingDir, Temp, Args, BackupVolume, InstallVolume: UnicodeString;
   Arguments: PPWideChar;
   RegisteredEdition, RegistryKey, SnapshotPath: UnicodeString;
   Count, I: Integer;
-  NameSize: DWORD;
   Buffer: array[0..MAX_PATH] of WideChar;
   BackupFree, InstallFree, Total, Free: Int64;
 
@@ -660,10 +676,7 @@ begin
         LocalFree(HLOCAL(Arguments));
       end;
     end;
-    NameSize := Length(Buffer);
-    if not GetComputerNameExW(ComputerNameDnsFullyQualified, @Buffer[0], @NameSize) then
-      RaiseLastOSError;
-    Hostname := PWideChar(@Buffer[0]);
+
     Temp := Store.RootDirectory;
     if not GetVolumePathNameW(PWideChar(Temp), @Buffer[0], System.Length(Buffer)) then RaiseLastOSError;
     BackupVolume := PWideChar(@Buffer[0]);
@@ -674,7 +687,7 @@ begin
     Require(not Below(PackageDir, InstallDir), 'Transition payload must be outside the historical installation');
     SnapshotPath := Store.RootDirectory + 'staging\historical.json';
     CheckStorageFile(SnapshotPath);
-    Metadata := InspectLocalAgent(InstallDir, ConfigPath, WorkingDir, PackageDir, Hostname,
+    Metadata := InspectLocalAgent(InstallDir, ConfigPath, WorkingDir, PackageDir,
       Service, BackupFree, InstallFree, UnicodeSameText(BackupVolume, InstallVolume),
       ReadDocument(SnapshotPath), RegisteredEdition);
   except

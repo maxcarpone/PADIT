@@ -3160,3 +3160,30 @@ Revue indépendante de W109-126-lot2b3-rev2.diff : PASS. Lot 2B.3 accepté.
 - Répéter les contrôles d'intégrité et d'Authenticode sur le fichier protégé et verrouillé immédiatement avant la future installation.
 - Qualifier les formats de clés historiques autres que le PEM RSA traditionnel.
 - Paquet toujours NON DÉPLOYABLE. Publication interdite.
+
+### Agent historique de référence sur VM109
+
+- Un agent WAPT Community 1.8.2.7393 est déjà installé sur VM109 dans C:\Program Files (x86)\wapt. Il constitue une référence réelle pour les qualifications restantes des prochains lots, en complément des fixtures. Sa disponibilité ne vaut pas qualification.
+- Les vérifications non destructives en lecture seule sont autorisées sur les binaires et leurs métadonnées PE, le runtime Python et SQLite, la configuration, l'inscription dans le registre et les services.
+- Toute modification de la configuration ou de la base SQLite, régénération de l'identité, opération d'arrêt ou de redémarrage des services, exécution d'une tâche WAPT, installation de PADIT par-dessus l'agent ou intervention sur le serveur de rattachement exige une autorisation explicite.
+- Aucune donnée confidentielle ne doit être exportée ni journalisée.
+
+## W109-126 — F8/F9 — Qualification de l'agent WAPT historique
+
+Revue indépendante de W109-126-f9.diff : PASS. F8/F9 accepté.
+
+### Qualification initiale F8 sur VM109
+
+- Référence réelle : WAPT Community 1.8.2.7393 dans C:\Program Files (x86)\wapt.
+- Sept contrôles initialement PASS : découverte par le registre et le gestionnaire de services, compatibilité du collecteur avec Python 2.7.18 x86 et SQLite 3.28.0 historiques, lecture SQLite non destructive, découverte des chemins, correspondance RSA et concordance CN/UUID, consultation locale des tâches WAPT, estimation du volume hors cache.
+- La lecture SQLite a laissé inchangés les octets de la base, sa date de modification et la présence des fichiers auxiliaires. Volume indicatif à sauvegarder hors cache : 154 Mio.
+- Deux incompatibilités initiales : rejet du libellé de désinstallation WAPTAgent Community et rejet de l'identité, dont l'UUID était stocké comme chaîne JSON avec ptype=json.
+- Le suffixe du nom historique enregistré correspond au suffixe DHCP d'une interface. Le nom Windows lu hors réseau est sans suffixe. En l'absence de domaine principal dans le registre, WAPT utilisait socket.getfqdn(). Cette résolution DNS historique n'a pas été rejouée.
+
+### Corrections et requalification F9
+
+- Reconnaissance du libellé historique WAPTAgent Community suivi de la version, sous réserve de concordance avec les métadonnées PE et la version de l'agent.
+- Décodage des paramètres SQLite d'identité selon ptype. Respect de la priorité WAPT : UUID forcé, FQDN, puis UUID matériel. Le repli sur l'identité enregistrée exige un hostname identique. En mode matériel, l'UUID décodé doit correspondre à l'UUID WMI, même si les suffixes de hostname diffèrent.
+- Les deux contrôles requalifiés sur VM109 sont PASS. Un instantané valide a été produit en mémoire avec le runtime historique, le nom Windows lu hors réseau et l'UUID WMI local. Les tests de non-régression ciblés sont PASS.
+- Aucune modification de l'agent historique, aucune migration ni communication avec SCRAB. Paquet toujours NON DÉPLOYABLE.
+- Prochain chantier : lot 2C, sauvegarde et restauration.

@@ -36,6 +36,27 @@ def _rollback_database_guard(database_path):
         yield
 
 
+def _identity_parameter(value, ptype):
+    """Decode text identity fields using WaptDB.get_param semantics."""
+    if value is None:
+        return ''
+    if ptype in ('json', 'bool'):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            raise RuntimeError('Invalid JSON in historical identity parameter')
+    elif ptype == 'bytes':
+        # WAPT on Python 2 converts SQLite TEXT to bytes for this type.
+        value = bytes(value)
+    elif ptype in ('int', 'float', 'datetime'):
+        raise RuntimeError('Historical identity parameter must contain text')
+    if value is None:
+        return ''
+    if not isinstance(value, basestring):
+        raise RuntimeError('Historical identity parameter must contain text')
+    return value.decode('utf-8') if isinstance(value, str) else value
+
+
 def _historical_database(database_path, preparation_row_id, preparation_package):
     """Query a single SQLite read transaction using the historical Python DLL."""
     import _sqlite3
@@ -65,7 +86,8 @@ def _historical_database(database_path, preparation_row_id, preparation_package)
             ('open_v2', [ctypes.c_char_p, ctypes.POINTER(pointer), ctypes.c_int, ctypes.c_char_p], ctypes.c_int),
             ('prepare_v2', [pointer, ctypes.c_char_p, ctypes.c_int, ctypes.POINTER(pointer), pointer], ctypes.c_int),
             ('step', [pointer], ctypes.c_int),
-            ('column_text', [pointer, ctypes.c_int], ctypes.c_char_p),
+            ('column_text', [pointer, ctypes.c_int], pointer),
+            ('column_bytes', [pointer, ctypes.c_int], ctypes.c_int),
             ('bind_int64', [pointer, ctypes.c_int, ctypes.c_longlong], ctypes.c_int),
             ('finalize', [pointer], ctypes.c_int),
             ('close', [pointer], ctypes.c_int)):
@@ -87,8 +109,12 @@ def _historical_database(database_path, preparation_row_id, preparation_package)
                     return rows
                 if status != 100:  # SQLITE_ROW
                     raise RuntimeError('Historical SQLite read failed or database is busy')
-                rows.append(tuple((sqlite.sqlite3_column_text(statement, index) or '').decode('utf-8')
-                                  for index in range(columns)))
+                row = []
+                for index in range(columns):
+                    text = sqlite.sqlite3_column_text(statement, index)
+                    row.append(ctypes.string_at(text, sqlite.sqlite3_column_bytes(statement, index))
+                               .decode('utf-8') if text else None)
+                rows.append(tuple(row))
         finally:
             if statement:
                 sqlite.sqlite3_finalize(statement)
@@ -100,9 +126,12 @@ def _historical_database(database_path, preparation_row_id, preparation_package)
             if sqlite.sqlite3_open_v2(database_path.encode('utf-8'), ctypes.byref(db), 1, None) != 0:
                 raise RuntimeError('Cannot open historical SQLite read-only')
             query('BEGIN')
-            params = dict(query(
-                "SELECT name, value FROM wapt_params WHERE name IN ('uuid', 'hostname') "
-                "ORDER BY create_date ASC", 2))
+            params = {}
+            for name in ('uuid', 'hostname'):
+                rows = query("SELECT value, ptype FROM wapt_params WHERE name='%s' "
+                             "ORDER BY create_date DESC LIMIT 1" % name, 2)
+                if rows:
+                    params[name] = _identity_parameter(*rows[0])
             if preparation_row_id is not None:
                 own = query("SELECT package, process_id FROM wapt_localstatus WHERE id = ? "
                             "AND install_status IN ('INIT','DOWNLOAD','RUNNING')", 2, preparation_row_id)
@@ -146,27 +175,29 @@ def collect_historical_snapshot(config_path, install_dir, working_dir,
     else:
         database_path = os.path.join(install_dir, u'db', u'waptdb.sqlite')
     params = _historical_database(database_path, preparation_row_id, preparation_package)
-    hostname = setuphelpers.get_hostname().lower()
+    fake_hostname = config.has_option('global', 'fake_hostname')
+    hostname = (config.get('global', 'fake_hostname').decode('utf-8') if fake_hostname
+                else setuphelpers.get_hostname())
     registered_uuid = params.get('uuid', '')
     registered_hostname = params.get('hostname', '')
     forced = config.get('global', 'uuid').decode('utf-8') if config.has_option('global', 'uuid') else ''
     if forced:
         uuid, mode = forced, 'configured'
-    elif config.has_option('global', 'use_fqdn_as_uuid') and config.getboolean('global', 'use_fqdn_as_uuid'):
+    elif fake_hostname or (config.has_option('global', 'use_fqdn_as_uuid') and
+                           config.getboolean('global', 'use_fqdn_as_uuid')):
         uuid, mode = hostname, 'fqdn'
     else:
         try:
             uuid = setuphelpers.wmi_info_basic()['System_Information']['UUID']
         except Exception:
-            if not registered_uuid or registered_hostname.lower() != hostname:
+            if not registered_uuid or registered_hostname != hostname:
                 raise RuntimeError('Historical UUID fallback is unavailable')
             uuid, mode = registered_uuid, 'stored'
         else:
             mode = 'hardware'
     if (not hostname or not uuid or not re.match(r'\A[a-zA-Z0-9_.{}-]{1,255}\Z', uuid) or
             uuid in ('.', '..') or
-            (registered_uuid and registered_uuid != uuid) or
-            (registered_hostname and registered_hostname.lower() != hostname)):
+            (registered_uuid and registered_uuid != uuid)):
         raise RuntimeError('Current and recorded WAPT identity do not agree')
     return json.dumps(dict(schema_version=1, config_path=config_path,
         database_path=database_path, hostname=hostname, uuid=uuid,

@@ -26,7 +26,7 @@ var
   function Inspect(const Ini: UnicodeString; Free: QWord): TLocalMetadata;
   begin
     Result := InspectLocalAgent(Agent, Ini, Agent, PackageDir,
-      'fixture.example.test', SERVICE_STOPPED, Free, Free, True, Snapshot.AsJSON,
+      SERVICE_STOPPED, Free, Free, True, Snapshot.AsJSON,
       'WAPT Community 1.8.3');
   end;
 
@@ -74,7 +74,7 @@ begin
     ExpectFailure(Config, Enough, 'Recorded and effective WAPT UUIDs differ');
     Snapshot.Strings['registered_uuid'] := 'fixture-id';
     try
-      InspectLocalAgent(Agent, Config, Agent, PackageDir, 'fixture.example.test',
+      InspectLocalAgent(Agent, Config, Agent, PackageDir,
         SERVICE_STOPPED, Enough, Enough, True, Snapshot.AsJSON, 'WAPT Enterprise 1.8.3');
       raise Exception.Create('Conflicting edition was accepted');
     except
@@ -189,8 +189,32 @@ begin
   end;
 end;
 
+procedure TestHistoricalCommunity(const AgentPath: UnicodeString; const Version: UTF8String);
+begin
+  Check(HistoricalCommunityVersion(AgentPath,
+    'WAPTAgent Community ' + UnicodeString(Version)) = Version, 'Historical Community label rejected');
+  try
+    HistoricalCommunityVersion(AgentPath, 'WAPTAgent Community 1.8.2.0');
+    raise Exception.Create('Inconsistent historical registry version accepted');
+  except
+    on E: ELocalPrecheck do Check(Pos('Unsupported historical WAPT', E.Message) > 0, E.Message);
+  end;
+  try
+    HistoricalCommunityVersion(AgentPath, 'WAPTAgent Enterprise ' + UnicodeString(Version));
+    raise Exception.Create('Historical Enterprise label accepted');
+  except
+    on E: ELocalPrecheck do Check(Pos('Unsupported historical WAPT', E.Message) > 0, E.Message);
+  end;
+end;
+
 begin
   try
+    if (ParamCount = 3) and (ParamStr(1) = 'edition') then
+    begin
+      TestHistoricalCommunity(UnicodeString(ParamStr(2)), UTF8String(ParamStr(3)));
+      WriteLn('PASS historical Community edition');
+      Halt(0);
+    end;
     Check(ParamCount = 1, 'Expected the isolated fixture directory');
     TestPrecheck(UnicodeString(ParamStr(1)));
     WriteLn('PASS local prechecks');

@@ -21,10 +21,10 @@ class HistoricalSnapshotTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root)
         self.ini = os.path.join(self.root, u'config \u6f22.ini')
         self.db = os.path.join(self.root, u'db \u6f22.sqlite')
-        self.sql('CREATE TABLE wapt_params(name,value,create_date)')
+        self.sql('CREATE TABLE wapt_params(name,value,create_date,ptype)')
         self.sql('CREATE TABLE wapt_localstatus(id INTEGER PRIMARY KEY,package,process_id,install_status)')
-        self.sql("INSERT INTO wapt_params VALUES ('uuid','fixture-id','2026')")
-        self.sql("INSERT INTO wapt_params VALUES ('hostname','fixture.example.test','2026')")
+        self.sql("INSERT INTO wapt_params VALUES ('uuid','fixture-id','2026',NULL)")
+        self.sql("INSERT INTO wapt_params VALUES ('hostname','fixture.example.test','2026','bytes')")
         self.hardware = 'fixture-id'
         old = sys.modules.get('setuphelpers')
         self.addCleanup(self.restore_helpers, old)
@@ -80,6 +80,27 @@ class HistoricalSnapshotTest(unittest.TestCase):
         self.hardware = None
         self.sql("UPDATE wapt_params SET value='different.example.test' WHERE name='hostname'")
         self.assertRaises(RuntimeError, self.collect)
+
+    def test_historical_typed_identity_with_different_host_suffix(self):
+        self.sql("UPDATE wapt_params SET value=?, ptype='json' WHERE name='uuid'",
+                 (json.dumps(self.hardware),))
+        self.sql("UPDATE wapt_params SET value='fixture.legacy.test' WHERE name='hostname'")
+        snapshot = self.collect()
+        self.assertEqual(snapshot['uuid'], self.hardware)
+        self.assertEqual(snapshot['registered_uuid'], self.hardware)
+        self.assertEqual(snapshot['identification_mode'], 'hardware')
+        self.assertEqual(self.collect('uuid = fixture-id')['identification_mode'], 'configured')
+        self.hardware = None
+        self.assertRaisesRegexp(RuntimeError, 'fallback is unavailable', self.collect)
+        self.sql("UPDATE wapt_params SET value='fixture.example.test' WHERE name='hostname'")
+        self.assertEqual(self.collect()['identification_mode'], 'stored')
+
+    def test_fqdn_and_invalid_typed_identity_fail_closed(self):
+        self.sql("UPDATE wapt_params SET value=?, ptype='json' WHERE name='uuid'",
+                 (json.dumps('fixture.legacy.test'),))
+        self.assertRaisesRegexp(RuntimeError, 'do not agree', self.collect, 'use_fqdn_as_uuid = 1')
+        self.sql("UPDATE wapt_params SET value='invalid JSON' WHERE name='uuid'")
+        self.assertRaisesRegexp(RuntimeError, 'Invalid JSON', self.collect)
 
     def test_preparation_exemption_checks_exact_row_package_and_pid(self):
         self.sql("INSERT INTO wapt_localstatus VALUES (17,'fixture-padit-transition',?,'RUNNING')",
