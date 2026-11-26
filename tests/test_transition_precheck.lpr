@@ -151,6 +151,7 @@ var
   Store: TTransitionStore;
   Handle: THandle;
   Marker: UnicodeString;
+  Metadata: TLocalMetadata;
 
   procedure ExpectUnsafe(const Path, Diagnostic: UnicodeString);
   begin
@@ -176,7 +177,7 @@ begin
     Check(Handle <> INVALID_HANDLE_VALUE, 'Cannot create backup fixture');
     CloseHandle(Handle);
     try
-      RunLocalPrecheck(Store, Root + '\payload');
+      RunLocalPrecheck(Store, Root + '\payload', Metadata);
       raise Exception.Create('Existing backup did not block precheck');
     except
       on E: ELocalPrecheck do Check(Pos('backup exists', E.Message) > 0, E.Message);

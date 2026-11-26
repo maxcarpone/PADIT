@@ -5,7 +5,7 @@ unit transitionstate;
 interface
 
 uses
-  SysUtils, Windows, fpjson, transitionstorage;
+  SysUtils, Windows, fpjson, transitionstorage, transitionsecurity;
 
 type
   TTransitionState = (tsPrecheck, tsPrecheckFailed, tsPrepared,
@@ -30,6 +30,7 @@ type
     function TryLog(const MessageText: string): Boolean;
     function Load: TJSONObject;
     procedure Save(Data: TJSONObject);
+    function CommitState(Next: TTransitionState; const Diagnostic: string = ''): Boolean;
   public
     constructor Create(const Root: UnicodeString = '');
     destructor Destroy; override;
@@ -39,6 +40,8 @@ type
     // Same result as Initialize. Before recording ABORTED, the orchestrator must
     // restore normal operation of the historical agent if necessary.
     function Advance(Next: TTransitionState): Boolean;
+    // Policy must come from trusted configuration, never the transition package.
+    function RunFullPrecheck(const Policy: TTransitionSignerPolicy): Boolean;
     // Persist local results without advancing. Only the future orchestrator may
     // enter PREPARED after all local, network and cryptographic checks pass.
     function RecordLocalMetadata(const Metadata: TLocalMetadata): Boolean;
@@ -55,7 +58,7 @@ function IsSafeServerURL(const Value: string): Boolean;
 implementation
 
 uses
-  Classes, DateUtils, URIParser, jsonparser, jsonscanner;
+  Classes, DateUtils, URIParser, jsonparser, jsonscanner, transitionprecheck;
 
 const
   SchemaVersion = 1;
@@ -246,7 +249,15 @@ begin
     ['url', 'agent_version'], True, 2);
   ValidateMetadata(TJSONObject(Field(Data, 'backup', jtObject)),
     ['verified', 'manifest'], False, 2);
-  if IsFailure(Current) then
+  if Current = tsPrecheckFailed then
+  begin
+    Identifier := Field(Data, 'last_error', jtString).AsString;
+    if (Identifier = '') or (Length(Identifier) > 512) or
+       (Pos(#0, Identifier) > 0) or (Pos(#10, Identifier) > 0) or
+       (Pos(#13, Identifier) > 0) then
+      raise ETransitionState.Create('Invalid precheck diagnostic');
+  end
+  else if Current = tsRecoveryRequired then
   begin
     if Field(Data, 'last_error', jtString).AsString <> StateNames[Current] then
       raise ETransitionState.Create('Invalid last_error');
@@ -284,8 +295,7 @@ end;
 
 procedure TTransitionStore.RecordPrecheckFailure(const Diagnostic: string);
 begin
-  Advance(tsPrecheckFailed);
-  TryLog('ERROR PRECHECK: ' + Diagnostic);
+  CommitState(tsPrecheckFailed, Diagnostic);
 end;
 
 destructor TTransitionStore.Destroy;
@@ -540,6 +550,45 @@ begin
 end;
 
 function TTransitionStore.Advance(Next: TTransitionState): Boolean;
+begin
+  if Next = tsPrepared then
+    raise ETransitionState.Create('PREPARED requires successful full prechecks');
+  Result := CommitState(Next);
+end;
+
+function TTransitionStore.RunFullPrecheck(const Policy: TTransitionSignerPolicy): Boolean;
+var
+  Metadata: TLocalMetadata;
+  PackagePath: UnicodeString;
+  LocalJournal, FinalJournal: Boolean;
+begin
+  if ReadState <> tsPrecheck then
+    raise ETransitionState.Create('A pending PRECHECK state is required');
+  PackagePath := FRoot + 'staging\payload';
+  try
+    CheckStorageTree(PackagePath);
+  except
+    RecordPrecheckFailure('Cannot validate protected transition payload directory');
+    raise;
+  end;
+  LocalJournal := RunLocalPrecheck(Self, PackagePath, Metadata);
+  try
+    CheckTransitionSecurity(PackagePath, Metadata, Policy);
+  except
+    on E: Exception do
+    begin
+      if (E is ESecurityPrecheck) or (E is ELocalPrecheck) then
+        RecordPrecheckFailure(E.Message)
+      else
+        RecordPrecheckFailure('Cryptographic or HTTPS precheck failed');
+      raise;
+    end;
+  end;
+  FinalJournal := CommitState(tsPrepared);
+  Result := LocalJournal and FinalJournal;
+end;
+
+function TTransitionStore.CommitState(Next: TTransitionState; const Diagnostic: string): Boolean;
 var
   Data: TJSONObject;
   Current: TTransitionState;
@@ -561,6 +610,11 @@ begin
         Data.Strings['updated_at'] := Stamp;
       if IsFailure(Next) then
         Data.Strings['last_error'] := StateNames[Next];
+      if (Next = tsPrecheckFailed) and (Diagnostic <> '') then
+      begin
+        Data.Strings['last_error'] := Diagnostic;
+        EventText := EventText + ' (' + Diagnostic + ')';
+      end;
       Save(Data);
     finally
       Data.Free;

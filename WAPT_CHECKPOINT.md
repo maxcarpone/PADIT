@@ -3133,3 +3133,30 @@ Revue indépendante de W109-126-lot2b2-rev2.diff : PASS. Lot 2B.2 accepté.
 - Raccorder le collecteur Python à StageHistoricalSnapshot() dans le futur orchestrateur.
 - Refaire un contrôle d'inactivité sans dérogation avant toute sauvegarde et toute bascule.
 - Prochain lot 2B.3 : précontrôles cryptographiques et réseau.
+
+## W109-126 — Lot 2B.3 — Précontrôles cryptographiques et HTTPS natifs
+
+Revue indépendante de W109-126-lot2b3-rev2.diff : PASS. Lot 2B.3 accepté.
+
+### Fonctionnalités et validation
+
+- CryptoAPI vérifie le SHA-256 de l'installateur et sa concordance avec le manifeste et le fichier d'empreinte. Le moteur contrôle également la version PE et la cohérence des métadonnées.
+- CryptoAPI valide l'identité RSA historique : correspondance entre le certificat et la clé privée, opération RSA de contrôle et concordance du CN avec l'UUID enregistré.
+- WinVerifyTrust vérifie l'Authenticode de l'installateur et du moteur. Les empreintes SHA-256 des certificats signataires doivent correspondre à la politique autorisée.
+- Schannel utilise des magasins de confiance isolés en mémoire. Les CA privées et les certificats serveurs autosignés explicitement approuvés sont pris en charge. La chaîne, le nom DNS, les dates et l'usage serveur sont vérifiés avant tout envoi HTTP.
+- TLS 1.2 et sondes HEAD sur /ping et sur l'index Packages du dépôt cible. Délais de connexion et de lecture bornés, taille des en-têtes bornée et redirections refusées. WinHTTP reste utilisé pour la consultation des tâches WAPT locales.
+- Le passage à PREPARED est réservé à la réussite de tous les précontrôles locaux, cryptographiques et réseau. Un échec de contrôle conserve un diagnostic dans state.json.
+- Tests TLS réels sur serveurs locaux isolés : 8/8 PASS. Tests cryptographiques, Authenticode sur binaire Microsoft signé et non-régression du magasin, du verrou et des commandes publiques : PASS.
+- Compilation Windows x86 avec Lazarus 4.8 et FPC 3.2.2 : PASS, version de test 1.8.3.7764.
+- Aucune bibliothèque tierce supplémentaire dans le moteur. Aucun changement des magasins de certificats Windows ni des paramètres TLS globaux.
+
+### Qualifications et travaux restants
+
+- Qualifier Windows 7 SP1 et Windows Server 2012 R2.
+- Qualifier Authenticode avec les binaires PADIT signés en session Maintenance.
+- Alimenter la politique des signataires depuis une source de confiance indépendante du paquet. Prévoir un chevauchement N/N-1 par rôle pendant le renouvellement.
+- Définir et qualifier la politique de révocation des certificats TLS.
+- Qualifier le parcours nominal complet sur PADIT jusqu'à PREPARED.
+- Répéter les contrôles d'intégrité et d'Authenticode sur le fichier protégé et verrouillé immédiatement avant la future installation.
+- Qualifier les formats de clés historiques autres que le PEM RSA traditionnel.
+- Paquet toujours NON DÉPLOYABLE. Publication interdite.

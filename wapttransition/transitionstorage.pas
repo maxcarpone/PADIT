@@ -390,6 +390,7 @@ end;
 
 procedure CheckStorageTree(const Path: UnicodeString);
 begin
+  VerifySecurity(Path, True, False);
   ScanDirectory(Path, True);
 end;
 

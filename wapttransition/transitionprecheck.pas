@@ -5,7 +5,7 @@ unit transitionprecheck;
 
 interface
 
-uses SysUtils, Windows, transitionstate;
+uses SysUtils, Windows, transitionstate, transitionsecurity;
 
 type
   ELocalPrecheck = class(Exception);
@@ -18,7 +18,12 @@ function InspectLocalAgent(const InstallDir, ConfigPath, WorkingDir,
 // The future orchestrator must recheck the queue and process list after the
 // preparation task exits, and obtain a fresh database check with no exemption.
 procedure RequireWaptIdle(Port: Integer; ServiceState: DWORD);
-function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString): Boolean;
+function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString;
+  out Metadata: TLocalMetadata): Boolean;
+procedure CheckPayload(const PackageDir: UnicodeString; Installer: THandle;
+  const Metadata: TLocalMetadata; out RepositoryURL: UTF8String; out Bundle: RawByteString);
+procedure CheckTransitionSecurity(const PackageDir: UnicodeString;
+  const Metadata: TLocalMetadata; const Policy: TTransitionSignerPolicy);
 
 implementation
 
@@ -587,7 +592,8 @@ begin
     CheckRunningService(Port, 0);
 end;
 
-function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString): Boolean;
+function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString;
+  out Metadata: TLocalMetadata): Boolean;
 var
   InstallDir, ConfigPath, WorkingDir, Temp, Args, Hostname, BackupVolume, InstallVolume: UnicodeString;
   Arguments: PPWideChar;
@@ -596,7 +602,7 @@ var
   NameSize: DWORD;
   Buffer: array[0..MAX_PATH] of WideChar;
   BackupFree, InstallFree, Total, Free: Int64;
-  Metadata: TLocalMetadata;
+
   Service: DWORD;
 begin
   Require(Store.ReadState = tsPrecheck, 'A pending PRECHECK state is required');
@@ -682,6 +688,98 @@ begin
     end;
   end;
   Result := Store.RecordLocalMetadata(Metadata);
+end;
+
+procedure CheckPayload(const PackageDir: UnicodeString; Installer: THandle;
+  const Metadata: TLocalMetadata; out RepositoryURL: UTF8String; out Bundle: RawByteString);
+var
+  PackagePath: UnicodeString;
+  Manifest: TJSONObject;
+  Deployable: TJSONData;
+  UnusedCommunity: Boolean;
+begin
+  PackagePath := IncludeTrailingPathDelimiter(PackageDir);
+  Manifest := ParseObject(ReadDocument(PackagePath + 'transition.json'), 'Invalid transition manifest');
+  try
+    Deployable := Manifest.Find('deployable', jtBoolean);
+    Require((Manifest.Count = 9) and (Manifest.Find('schema_version', jtNumber) <> nil) and
+      (Manifest.Find('schema_version').AsJSON = '1') and (Deployable <> nil) and
+      not Deployable.AsBoolean, 'Unsupported or deployable transition manifest');
+    Require((NormalURL(RequiredString(Manifest, 'source_server_url')) = Metadata.SourceURL) and
+      (NormalURL(RequiredString(Manifest, 'target_server_url')) = Metadata.TargetURL) and
+      (Pos('https://', Metadata.TargetURL) = 1), 'Transition endpoints changed after local checks');
+    RepositoryURL := NormalURL(RequiredString(Manifest, 'target_repo_url'));
+    Require(Pos('https://', RepositoryURL) = 1, 'Transition repository must use HTTPS');
+    Require((RequiredString(Manifest, 'https_certificate') = 'certificates/https.pem') and
+      (RequiredString(Manifest, 'package_certificate') = 'certificates/packages.pem'),
+      'Invalid certificate references in transition manifest');
+    Require((RequiredString(Manifest, 'agent_version') = Metadata.TargetVersion) and
+      (Pos('1.8.3.', Metadata.TargetVersion) = 1) and
+      (AgentVersion(PackagePath + 'waptagent.exe', UnusedCommunity) = Metadata.TargetVersion),
+      'Installer PE version does not match the transition manifest');
+    CheckInstallerHash(Installer, RequiredString(Manifest, 'agent_sha256'),
+      ReadDocument(PackagePath + 'waptagent.sha256'));
+    Bundle := ReadDocument(PackagePath + 'certificates\https.pem');
+  finally
+    Manifest.Free;
+  end;
+end;
+
+procedure CheckTransitionSecurity(const PackageDir: UnicodeString;
+  const Metadata: TLocalMetadata; const Policy: TTransitionSignerPolicy);
+var
+  EnginePath, InstallerPath: UnicodeString;
+  Installer, Engine: THandle;
+  PathSize: DWORD;
+  RepositoryURL: UTF8String;
+  Bundle: RawByteString;
+begin
+  InstallerPath := IncludeTrailingPathDelimiter(PackageDir) + 'waptagent.exe';
+  Installer := OpenStorageFile(InstallerPath, GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING);
+  Require(Installer <> INVALID_HANDLE_VALUE, 'Cannot lock the staged installer for verification');
+  try
+    // PREPARED records a point-in-time check. Immediately before launching the
+    // future installer, repeat SHA256, PE version and Authenticode on the locked
+    // staged file and keep write/delete sharing denied until the image is open.
+    CheckPayload(PackageDir, Installer, Metadata, RepositoryURL, Bundle);
+    try
+      CheckAuthenticode(InstallerPath, Installer, Policy.InstallerSignerSHA256);
+    except
+      on E: ESecurityPrecheck do raise ESecurityPrecheck.Create('Installer: ' + E.Message);
+    end;
+  finally
+    CloseHandle(Installer);
+  end;
+
+  SetLength(EnginePath, 32768);
+  PathSize := GetModuleFileNameW(0, PWideChar(EnginePath), Length(EnginePath));
+  Require((PathSize > 0) and (PathSize < DWORD(Length(EnginePath))), 'Cannot locate transition executable');
+  SetLength(EnginePath, PathSize);
+  Engine := CreateFileW(PWideChar(EnginePath), GENERIC_READ, FILE_SHARE_READ,
+    nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  Require(Engine <> INVALID_HANDLE_VALUE, 'Cannot lock transition executable for verification');
+  try
+    try
+      CheckAuthenticode(EnginePath, Engine, Policy.EngineSignerSHA256);
+    except
+      on E: ESecurityPrecheck do raise ESecurityPrecheck.Create('Transition executable: ' + E.Message);
+    end;
+  finally
+    CloseHandle(Engine);
+  end;
+
+  CheckHistoricalIdentity(UTF8Decode(Metadata.CertificatePath), UTF8Decode(Metadata.KeyPath),
+    Metadata.UUID);
+  try
+    CheckHttps(Metadata.TargetURL + '/ping', Bundle);
+  except
+    on E: ESecurityPrecheck do raise ESecurityPrecheck.Create('Target server /ping: ' + E.Message);
+  end;
+  try
+    CheckHttps(RepositoryURL + '/Packages', Bundle);
+  except
+    on E: ESecurityPrecheck do raise ESecurityPrecheck.Create('Target repository /Packages: ' + E.Message);
+  end;
 end;
 
 end.

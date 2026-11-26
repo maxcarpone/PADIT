@@ -60,13 +60,24 @@ begin
       Check(Pos(ErrorText, E.Message) > 0, E.Message);
   end;
   try
-    Store.Advance(tsPrepared);
+    Store.Advance(tsPrecheckFailed);
     raise Exception.Create('Advance accepted an invalid state');
   except
     on E: ETransitionState do
       Check(Pos(ErrorText, E.Message) > 0, E.Message);
   end;
   Check(ReadText(Path) = Text, 'Invalid state was overwritten');
+end;
+
+procedure SeedPreparedFixture(const Path: UnicodeString);
+var
+  Initial: UTF8String;
+begin
+  // Seed an already-prepared state to test later states without bypassing the API.
+  Initial := ReadText(Path);
+  Initial := StringReplace(Initial, '"state" : "PRECHECK"', '"state" : "PREPARED"', []);
+  Initial := StringReplace(Initial, '"previous_state" : null', '"previous_state" : "PRECHECK"', []);
+  WriteText(Path, Initial);
 end;
 
 procedure TestStore(const Root: UnicodeString);
@@ -98,6 +109,14 @@ begin
         Check(Pos('Forbidden transition', E.Message) > 0, E.Message);
     end;
     Check(ReadText(Path) = FirstState, 'Forbidden jump changed state');
+    try
+      Store.Advance(tsPrepared);
+      raise Exception.Create('PREPARED bypass accepted');
+    except
+      on E: ETransitionState do
+        Check(Pos('requires successful full prechecks', E.Message) > 0, E.Message);
+    end;
+    Check(ReadText(Path) = FirstState, 'Rejected PREPARED bypass changed state');
 
     ExpectInvalid(Store, Path, '{broken', 'Invalid state JSON');
     ExpectInvalid(Store, Path, FirstState + 'false', 'Invalid state JSON');
@@ -118,7 +137,7 @@ begin
       RaiseLastOSError;
     try
       try
-        Store.Advance(tsPrepared);
+        Store.Advance(tsPrecheckFailed);
         raise Exception.Create('Replacement succeeded despite denied delete access');
       except
         on E: EOSError do
@@ -129,7 +148,7 @@ begin
     finally
       CloseHandle(Reader);
     end;
-    Store.Advance(tsPrepared);
+    SeedPreparedFixture(Path);
     Store.Advance(tsBackupInProgress);
     Store.Advance(tsBackupVerified);
     Store.Advance(tsInstalling);
@@ -173,7 +192,7 @@ begin
     Store := TTransitionStore.Create(Path);
     try
       Check(Store.Initialize, 'Initial journal write failed');
-      Check(Store.Advance(tsPrepared), 'PREPARED journal write failed');
+      SeedPreparedFixture(Path + '\state.json');
       if BeforeAbort >= tsBackupInProgress then
         Check(Store.Advance(tsBackupInProgress), 'BACKUP_IN_PROGRESS journal write failed');
       if BeforeAbort = tsBackupVerified then
@@ -205,12 +224,13 @@ begin
     try
       Check(not Store.Initialize, 'Initialize did not report journal failure');
       Check(Store.ReadState = tsPrecheck, 'Initialize did not commit PRECHECK');
-      Check(not Store.Advance(tsPrepared), 'Advance did not report journal failure');
-      Check(Store.ReadState = tsPrepared, 'Advance did not commit PREPARED');
+      SeedPreparedFixture(Root + '\state.json');
+      Check(not Store.Advance(tsAborted), 'Advance did not report journal failure');
+      Check(Store.ReadState = tsAborted, 'Advance did not commit ABORTED');
     finally
       CloseHandle(Handle);
     end;
-    Check(Store.Advance(tsAborted), 'Journal did not recover after unlocking');
+    Check(Store.ReadState = tsAborted, 'State changed after unlocking the journal');
   finally
     Store.Free;
   end;
@@ -251,13 +271,13 @@ begin
         if Command = 'hold' then
         begin
           Store.Initialize;
-          Store.Advance(tsPrepared);
+          Store.RecordPrecheckFailure('fixture diagnostic');
           WriteLn('READY');
           Flush(Output);
           Sleep(INFINITE);
         end
         else if Command = 'resume' then
-          Check(Store.ReadState = tsPrepared, 'State lost after process termination')
+          Check(Store.ReadState = tsPrecheckFailed, 'State lost after process termination')
         else
           raise Exception.Create('Unknown test command');
       finally
