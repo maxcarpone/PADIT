@@ -3086,3 +3086,24 @@ Revue indépendante de W109-126-lot2a-rev2.diff : PASS. Lot 2A accepté.
 - Compatibilité Windows 7 SP1 non qualifiée et non bloquante pour ce lot.
 - Stratégie retenue pour la migration : sauvegarde locale complète et non compressée de l'installation historique, avec retour arrière à partir de cette sauvegarde.
 - Prochain lot 2B : précontrôles et état persistant.
+
+## W109-126 — Lot 2B.1 — État persistant du moteur natif de transition
+
+Revue indépendante de W109-126-lot2b1-rev2.diff : PASS. Lot 2B.1 accepté.
+
+### Fonctionnalités livrées
+
+- Machine à états native avec transitions autorisées explicites. INSTALLING est accessible uniquement depuis BACKUP_VERIFIED. Les états terminaux ne relancent pas la migration.
+- État terminal ABORTED accessible depuis PREPARED, BACKUP_IN_PROGRESS et BACKUP_VERIFIED. Le futur orchestrateur devra, si nécessaire, rétablir le fonctionnement normal de l'agent historique avant de l'enregistrer.
+- Persistance avec validation stricte de state.json. Écriture dans un fichier temporaire du même répertoire, synchronisation via FlushFileBuffers et remplacement atomique du fichier d'état.
+- Journal texte horodaté en UTC. Verrouillage exclusif par fichier, automatiquement libéré par Windows à la fin du processus, y compris après un arrêt brutal.
+- Contrat de Initialize() et Advance() : une exception signale un échec de l'opération sur l'état. Au retour normal, l'état est enregistré et state.json fait foi. True indique que le journal a également été écrit. False signale uniquement l'échec de cette journalisation.
+
+### Validation et limites
+
+- Compilation Windows x86 validée avec Lazarus 4.8 et FPC 3.2.2. Version de test : 1.8.3.7762.
+- Tests initiaux PASS en répertoires temporaires : persistance, transitions autorisées et interdites, rejet du JSON corrompu ou de schéma inconnu, conservation de l'état après échec du remplacement, exclusion concurrente et reprise après arrêt forcé, chemins Unicode, non-régression de --help et --version.
+- Tests complémentaires PASS : trois chemins vers ABORTED, caractère terminal et relecture de cet état, échec de journalisation signalé séparément après la persistance par Initialize() et Advance().
+- Permissions NTFS du répertoire ProgramData et protection contre les points de réanalyse à implémenter au lot 2B.2 avant toute utilisation en production.
+- Résistance aux coupures électriques restant à qualifier.
+- Aucune migration ni publication réelle.
