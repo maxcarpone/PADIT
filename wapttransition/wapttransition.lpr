@@ -4,7 +4,7 @@ program wapttransition;
 {$apptype console}
 
 uses
-  SysUtils, Windows, transitionstate;
+  SysUtils, Windows, transitionstate, transitionprecheck;
 
 {$R *.res}
 

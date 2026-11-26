@@ -3107,3 +3107,29 @@ Revue indépendante de W109-126-lot2b1-rev2.diff : PASS. Lot 2B.1 accepté.
 - Permissions NTFS du répertoire ProgramData et protection contre les points de réanalyse à implémenter au lot 2B.2 avant toute utilisation en production.
 - Résistance aux coupures électriques restant à qualifier.
 - Aucune migration ni publication réelle.
+
+## W109-126 — Lot 2B.2 — Précontrôles locaux Windows
+
+Revue indépendante de W109-126-lot2b2-rev2.diff : PASS. Lot 2B.2 accepté.
+
+### Fonctionnalités et validation
+
+- Précontrôles de l'installation Windows historique : version de l'agent, absence de serveur WAPT local, correspondance du serveur source, présence des fichiers requis et état de WAPTService.
+- Stockage de transition sous ProgramData sur un volume NTFS local, avec propriétaire et permissions contrôlés. ACL limitées à SYSTEM et aux administrateurs pour le stockage. Vérification des droits sensibles sur les ancêtres de production, poignées conservées sans partage de suppression et rejet des points de réanalyse. Une sauvegarde préexistante est préservée.
+- Suppression de winsqlite3.dll et de immutable=1. Le collecteur Python 2.7 utilise la bibliothèque SQLite déjà chargée, ouvre la base en lecture seule et conserve le verrouillage normal. Les bases en mode WAL sont refusées.
+- Préservation de l'identité historique. Priorité à l'UUID configuré, puis au FQDN, puis à l'UUID matériel, avec repli sur l'identité enregistrée selon les conditions WAPT. Les divergences sont refusées. Le contrôle Community croise les métadonnées PE et l'inscription de désinstallation.
+- Prise en compte des chemins personnalisés et Unicode pour la configuration, SQLite et les fichiers d'identité. Calcul de l'espace à partir des tailles observées, avec une marge minimale provisoire de 1 Gio.
+- Contrôle des opérations SQLite, des processus et de la file locale WAPT. La dérogation est limitée à la tâche de préparation identifiée.
+- Les résultats locaux sont enregistrés dans state.json en restant dans PRECHECK. PREPARED est réservé à la réussite des contrôles locaux, cryptographiques et réseau.
+- Tests Python 2.7 x86 : 13/13 PASS. Compilation native Windows x86 avec Lazarus 4.8 et FPC 3.2.2 : PASS, version de test 1.8.3.7763.
+- Paquet toujours NON DÉPLOYABLE. Le hook refuse l'installation et la publication reste interdite.
+
+### Qualifications restantes et suite
+
+- Qualifier les précontrôles sur un agent WAPT Community historique réel, notamment le contrôle d'édition.
+- Qualifier le runtime SQLite historique et l'exécution sous Windows Server 2012 R2.
+- Qualifier les ACL du répertoire ProgramData et de ses ancêtres en production.
+- Vérifier l'inclusion effective de templates/padit_transition_setup.py dans le produit Windows.
+- Raccorder le collecteur Python à StageHistoricalSnapshot() dans le futur orchestrateur.
+- Refaire un contrôle d'inactivité sans dérogation avant toute sauvegarde et toute bascule.
+- Prochain lot 2B.3 : précontrôles cryptographiques et réseau.

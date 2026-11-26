@@ -571,9 +571,8 @@ def build_transition_package(wapt, mainrepo, agent_path, source_server_url, targ
         with open(os.path.join(sources, 'transition.json'), 'w') as output:
             json.dump(transition, output, indent=2, sort_keys=True)
             output.write('\n')
-        with open(os.path.join(sources, 'setup.py'), 'w') as output:
-            output.write("def install():\n"
-                         "    raise RuntimeError('PADIT transition package: not deployable')\n")
+        shutil.copyfile(os.path.join(os.path.dirname(__file__), 'templates',
+            'padit_transition_setup.py'), os.path.join(sources, 'setup.py'))
 
         entry = PackageEntry(package='%s-padit-transition' % prefix,
                              architecture='all', section='base', target_os='windows',
