@@ -10,6 +10,9 @@ type
   ETransitionBackup = class(Exception);
   TBackupPaths = array of UnicodeString;
 
+procedure VerifyBackupDatabase(const Path: UnicodeString);
+function SDDL(Handle: THandle): UTF8String;
+procedure CheckStreams(Handle: THandle);
 procedure AddBackupSource(var Sources: TBackupPaths; const Path: UnicodeString);
 procedure RequireBackupCapacity(BackupBytes, PayloadSize, BackupFree, InstallFree: QWord;
   SharedVolume: Boolean);
@@ -19,6 +22,7 @@ procedure CaptureBackup(const BackupRoot, CacheDir, DatabasePath, InstallDir: Un
   const TransitionID: string; const Sources: TBackupPaths; InitialServiceState: DWORD;
   const ServiceName: UnicodeString);
 function VerifyBackup(const BackupRoot: UnicodeString; const TransitionID: string): string;
+function LoadVerifiedBackup(const BackupRoot: UnicodeString; const TransitionID, ExpectedDigest: string): TJSONObject;
 
 implementation
 
@@ -335,6 +339,11 @@ begin
   end;
 end;
 
+procedure VerifyBackupDatabase(const Path: UnicodeString);
+begin
+  CloseHandle(LockDatabase(Path));
+end;
+
 function ProtectedStream(const Path: UnicodeString; Access, Disposition: DWORD;
   out Handle: THandle): THandleStream;
 begin
@@ -529,7 +538,8 @@ begin
   end;
 end;
 
-function VerifyBackup(const BackupRoot: UnicodeString; const TransitionID: string): string;
+function ReadVerifiedBackup(const BackupRoot: UnicodeString; const TransitionID: string;
+  out Digest: string): TJSONObject;
 var
   Root: UnicodeString;
   Handle: THandle;
@@ -539,6 +549,7 @@ var
   Manifest: TJSONObject;
   Paths: TStringList;
 begin
+  Result := nil;
   Root := IncludeTrailingPathDelimiter(BackupRoot);
   CheckStorageTree(Root);
   Require(DirectoryExists(Root + 'agent') and DirectoryExists(Root + 'registry') and
@@ -568,6 +579,9 @@ begin
           Paths.Sorted := True;
           VerifyEntries(Root, TJSONArray(ManifestField(Manifest, 'entries', jtArray)), Paths);
           VerifyInventory(Root, '', Paths);
+          Digest := FileSHA256(Handle);
+          Result := Manifest;
+          Data := nil;
         finally
           Paths.Free;
         end;
@@ -577,10 +591,26 @@ begin
     finally
       Parser.Free;
     end;
-    Result := FileSHA256(Handle);
   finally
     Stream.Free;
     CloseHandle(Handle);
+  end;
+end;
+
+function VerifyBackup(const BackupRoot: UnicodeString; const TransitionID: string): string;
+begin
+  ReadVerifiedBackup(BackupRoot, TransitionID, Result).Free;
+end;
+
+function LoadVerifiedBackup(const BackupRoot: UnicodeString; const TransitionID, ExpectedDigest: string): TJSONObject;
+var
+  Digest: string;
+begin
+  Result := ReadVerifiedBackup(BackupRoot, TransitionID, Digest);
+  if Digest <> ExpectedDigest then
+  begin
+    Result.Free;
+    raise ETransitionBackup.Create('Verified backup manifest no longer matches state');
   end;
 end;
 

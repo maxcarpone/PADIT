@@ -14,6 +14,7 @@ function RegistryValue(const Key, Name: UnicodeString; View: DWORD; out Value: U
 function ResolvePath(const Path, Base: UnicodeString): UnicodeString;
 function ReadDocument(const Path: UnicodeString): UTF8String;
 procedure CheckTaskStatus(const JSON: UTF8String; PreparationTask: Integer = 0);
+function NormalURL(const URL: UTF8String): UTF8String;
 function HistoricalCommunityVersion(const AgentPath, RegisteredEdition: UnicodeString): UTF8String;
 function InspectLocalAgent(const InstallDir, ConfigPath, WorkingDir,
   PackageDir: UnicodeString; ServiceState: DWORD;
@@ -22,6 +23,7 @@ function InspectLocalAgent(const InstallDir, ConfigPath, WorkingDir,
 // The future orchestrator must recheck the queue and process list after the
 // preparation task exits, and obtain a fresh database check with no exemption.
 function FileSizeRequired(const Path: UnicodeString; const Diagnostic: string): QWord;
+procedure RequireRollbackProcessesIdle;
 procedure RequireWaptIdle(Port: Integer; ServiceState: DWORD);
 function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString;
   out Metadata: TLocalMetadata): Boolean;
@@ -400,7 +402,7 @@ begin
     (Result > 0) and (IntToStr(Result) = Value.AsJSON), 'Invalid historical snapshot identifier: ' + Name);
 end;
 
-procedure CheckCommandLineAgent(PreparationPID: Integer); forward;
+procedure CheckCommandLineAgent(PreparationPID: Integer; ForRollback: Boolean = False); forward;
 
 function HistoricalCommunityVersion(const AgentPath, RegisteredEdition: UnicodeString): UTF8String;
 var
@@ -584,10 +586,11 @@ begin
   Result.TargetVersion := TargetVersion;
 end;
 
-procedure CheckCommandLineAgent(PreparationPID: Integer);
+procedure CheckCommandLineAgent(PreparationPID: Integer; ForRollback: Boolean);
 var
   Snapshot: THandle;
   Entry: TProcessEntry;
+  Name: UnicodeString;
 begin
   Snapshot := CreateToolhelp32Snapshot($00000002, 0);
   if Snapshot = INVALID_HANDLE_VALUE then RaiseLastOSError;
@@ -595,14 +598,23 @@ begin
     Entry.Size := SizeOf(Entry);
     if not Process32First(Snapshot, Entry) then RaiseLastOSError;
     repeat
-      Require((Entry.ProcessId = DWORD(PreparationPID)) or
-        not UnicodeSameText(UnicodeString(PWideChar(@Entry.ExeFile[0])), 'wapt-get.exe'),
+      Name := UnicodeLowerCase(UnicodeString(PWideChar(@Entry.ExeFile[0])));
+      Require((Entry.ProcessId = DWORD(PreparationPID)) or (Name <> 'wapt-get.exe'),
         'A WAPT command-line process is running');
+      if ForRollback then
+        Require((Name <> 'waptpython.exe') and (Name <> 'wapttray.exe') and
+          (Name <> 'waptself.exe') and (Name <> 'waptmessage.exe') and (Name <> 'waptconsole.exe'),
+          'A PADIT or WAPT process remains active after service shutdown');
     until not Process32Next(Snapshot, Entry);
     if GetLastError <> ERROR_NO_MORE_FILES then RaiseLastOSError;
   finally
     CloseHandle(Snapshot);
   end;
+end;
+
+procedure RequireRollbackProcessesIdle;
+begin
+  CheckCommandLineAgent(0, True);
 end;
 
 procedure RequireWaptIdle(Port: Integer; ServiceState: DWORD);

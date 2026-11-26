@@ -3214,3 +3214,24 @@ Revue indépendante de W109-126-f9.diff : PASS. F8/F9 accepté.
 - Récupération après interruption brutale et résistance aux coupures électriques.
 - Compatibilité Windows 7 SP1 et Windows Server 2012 R2.
 - Paquet toujours **NON DÉPLOYABLE**.
+
+
+## W109-126 — Lot 2C.2 — Restauration de l'agent historique
+
+- Revue indépendante du diff W109-126-lot2c2-rev2.diff PASS pour intégration des sources.
+- Restauration native des fichiers, raccourcis sauvegardés, ACL, attributs et horodatages. Les fichiers READONLY sont pris en charge lors de la copie et de la reprise. Une poignée exclusive protège chaque fichier pendant la restauration et la vérification.
+- Le moteur vérifie l'identifiant de transition, le manifeste, son empreinte persistante et l'intégrité de la sauvegarde avant toute modification. La sauvegarde originale est préservée.
+- Suppression limitée aux ajouts identifiés dans l'inventaire fourni par l'orchestrateur. Le cache et les éléments étrangers à WAPT sont préservés.
+- Restauration de la configuration des services via SCM, des clés WAPT ciblées et des métadonnées de désinstallation. Fusion des entrées WAPT dans PATH en conservant les entrées étrangères. Restauration des tâches planifiées et vérification de leurs permissions.
+- Le moteur persiste ROLLING_BACK avant les modifications et permet la reprise à partir de cet état. ROLLED_BACK exige la vérification des fichiers et métadonnées, de la configuration, de l'identité historique, des composants Windows et de l'état initial du service. Un échec ou une incertitude conduit à RECOVERY_REQUIRED avec diagnostic.
+- Refus préalable des configurations de service ou de tâche qui nécessitent des identifiants indisponibles.
+- Tests isolés PASS sur fichiers, service, tâche et clé de registre fictifs. Compilation ciblée Windows x86 validée.
+
+### Qualifications et travaux restants
+
+- Paramètres avancés des services Windows et suppression des composants Windows ajoutés exclusivement par PADIT.
+- Inventaire exact des modifications de l'installateur et maîtrise des relances concurrentes.
+- Relecture de l'UUID SQLite avec le runtime historique restauré et vérification logique de SQLite.
+- Retour arrière complet sur une VM dédiée, confirmation fonctionnelle avec le serveur source et résistance aux interruptions réelles.
+- Paquet toujours **NON DÉPLOYABLE**.
+- Prochain lot 2D — installation et bascule.

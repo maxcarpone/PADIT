@@ -2,8 +2,8 @@ program test_transition_backup;
 
 {$mode objfpc}{$H+}
 
-uses Classes, SysUtils, Windows, fpjson, jsonparser, transitionstate,
-  transitionbackup, transitionbackupwindows, transitionstorage;
+uses Classes, SysUtils, Windows, ActiveX, ComObj, Variants, fpjson, jsonparser, transitionstate,
+  transitionbackup, transitionbackupwindows, transitionstorage, transitionrestore, transitionprecheck;
 
 var
   ServiceHandle: SERVICE_STATUS_HANDLE;
@@ -291,6 +291,178 @@ begin
   end;
 end;
 
+procedure TestRestore(const Root, Service: UnicodeString; FailVerification: Boolean = False);
+var
+  Store: TTransitionStore;
+  State, Manifest: TJSONObject;
+  Scope, Added: TBackupPaths;
+  BackupRoot, RuntimePath, ExtraPath, ForeignPath, CachePath, SQLitePath: UnicodeString;
+  TransitionID, Digest: string;
+  ManifestText, OriginalSQLite: UTF8String;
+  Handle: THandle;
+  Manager, Fixture: SC_HANDLE;
+  Tasks, Folder: OleVariant;
+  Values: TJSONArray;
+  Item: TJSONObject;
+  Registry: HKEY;
+  RegistryKey, RegistryText: UnicodeString;
+begin
+  Store := TTransitionStore.Create(Root + '\transition');
+  try
+    Check(SetFileAttributesW(PWideChar(Root + '\agent\runtime.bin'),
+      FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_READONLY), 'Cannot mark historical runtime read-only');
+    SeedPrepared(Store, Root);
+    Check(Store.RunBackup(Service), 'Fixture backup failed');
+    Check(Store.Advance(tsInstalling), 'Cannot stage fixture rollback');
+    State := TJSONObject(GetJSON(ReadText(Store.RootDirectory + 'state.json')));
+    try
+      TransitionID := State.Strings['transition_id'];
+      Digest := State.Objects['backup'].Strings['sha256'];
+    finally
+      State.Free;
+    end;
+    BackupRoot := Store.RootDirectory + 'backup\';
+    ManifestText := ReadText(BackupRoot + 'manifest.json');
+    if FailVerification then
+    begin
+      Handle := OpenStorageFile(BackupRoot + 'unexpected.tmp', GENERIC_WRITE, 0, CREATE_NEW);
+      Check(Handle <> INVALID_HANDLE_VALUE, 'Cannot add simulated corrupt backup member');
+      CloseHandle(Handle);
+      try
+        Store.RunRollback(nil, nil, Service);
+        raise Exception.Create('Corrupt backup was accepted');
+      except
+        on E: ETransitionBackup do Check(Pos('Unlisted object', E.Message) > 0, E.Message);
+      end;
+      Check(Store.ReadState = tsRecoveryRequired, 'Corrupt backup did not require recovery');
+      Check(BackupServiceState(Service) = SERVICE_STOPPED, 'Verification error changed the fixture service');
+      Exit;
+    end;
+    try
+      LoadVerifiedBackup(BackupRoot, TransitionID, StringOfChar('0', 64)).Free;
+      raise Exception.Create('Backup with wrong committed digest accepted');
+    except
+      on E: ETransitionBackup do Check(Pos('no longer matches state', E.Message) > 0, E.Message);
+    end;
+    Manifest := LoadVerifiedBackup(BackupRoot, TransitionID, Digest);
+    try
+      RuntimePath := Root + '\agent\runtime.bin';
+      ExtraPath := Root + '\agent\fixture-added.exe';
+      ForeignPath := Root + '\agent\foreign.txt';
+      CachePath := Root + '\agent\cache\download.wapt';
+      SQLitePath := Root + '\custom-' + UnicodeString(#$6F22) + '\waptdb.sqlite';
+      OriginalSQLite := ReadText(SQLitePath);
+      Check(SetFileAttributesW(PWideChar(RuntimePath), FILE_ATTRIBUTE_NORMAL),
+        'Cannot change fixture runtime attributes');
+      WriteText(RuntimePath, 'changed');
+      Check(SetFileAttributesW(PWideChar(RuntimePath), FILE_ATTRIBUTE_READONLY),
+        'Cannot mark modified destination read-only');
+      WriteText(ExtraPath, 'installation addition');
+      WriteText(ForeignPath, 'foreign data');
+      WriteText(SQLitePath, 'changed database');
+      Scope := nil;
+      Added := nil;
+      AddBackupSource(Scope, Root + '\agent');
+      AddBackupSource(Scope, ExtractFileDir(SQLitePath));
+      AddBackupSource(Added, ForeignPath);
+      try
+        CheckRestorePaths(Manifest, Scope, Store.RootDirectory, Root + '\agent', Root + '\agent', Added);
+        raise Exception.Create('Overlapping cache accepted');
+      except
+        on E: ETransitionBackup do Check(Pos('outside the approved scope', E.Message) > 0, E.Message);
+      end;
+      Added[0] := ExtraPath;
+      CheckRestorePaths(Manifest, Scope, Store.RootDirectory, Root + '\agent', Root + '\agent\cache', Added);
+      Handle := CreateFileW(PWideChar(SQLitePath), GENERIC_WRITE, FILE_SHARE_READ or FILE_SHARE_WRITE,
+        nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+      Check(Handle <> INVALID_HANDLE_VALUE, 'Cannot lock SQLite fixture');
+      try
+        try
+          RestoreVerifiedFiles(BackupRoot, Root + '\agent', Root + '\agent\cache',
+            TransitionID, Digest, Scope, Added);
+          raise Exception.Create('Locked destination accepted');
+        except
+          on E: ETransitionBackup do Check(Pos('destination', E.Message) > 0, E.Message);
+        end;
+      finally
+        CloseHandle(Handle);
+      end;
+      CheckRestorePaths(Manifest, Scope, Store.RootDirectory, Root + '\agent', Root + '\agent\cache', Added);
+      RestoreVerifiedFiles(BackupRoot, Root + '\agent', Root + '\agent\cache',
+            TransitionID, Digest, Scope, Added);
+      RestoreVerifiedFiles(BackupRoot, Root + '\agent', Root + '\agent\cache',
+            TransitionID, Digest, Scope, Added);
+      Manager := OpenSCManagerW(nil, nil, SC_MANAGER_CONNECT);
+      Check(Manager <> 0, 'Cannot open fixture SCM');
+      try
+        Fixture := OpenServiceW(Manager, PWideChar(Service), SERVICE_CHANGE_CONFIG);
+        Check(Fixture <> 0, 'Cannot open fixture service');
+        try
+          Check(ChangeServiceConfigW(Fixture, High(DWORD), SERVICE_DISABLED, High(DWORD),
+            nil, nil, nil, nil, nil, nil, nil), 'Cannot modify fixture service');
+        finally
+          CloseServiceHandle(Fixture);
+        end;
+      finally
+        CloseServiceHandle(Manager);
+      end;
+      Check(Succeeded(CoInitialize(nil)), 'Cannot connect to fixture task folder');
+      try
+        Tasks := CreateOleObject('Schedule.Service');
+        Tasks.Connect;
+        Folder := Tasks.GetFolder(WideString('\' + Service));
+        Folder.DeleteTask('fixture', 0);
+      finally
+        VarClear(Folder);
+        VarClear(Tasks);
+        CoUninitialize;
+      end;
+      RegistryKey := 'SOFTWARE\' + Service;
+      Check(RegOpenKeyExW(HKEY_LOCAL_MACHINE, PWideChar(RegistryKey), 0,
+        KEY_SET_VALUE or KEY_WOW64_64KEY, Registry) = ERROR_SUCCESS, 'Cannot open synthetic registry key');
+      try
+        RegistryText := 'changed';
+        Check(RegSetValueExW(Registry, 'Sample', 0, REG_SZ, PByte(PWideChar(RegistryText)),
+          (Length(RegistryText)+1)*2) = ERROR_SUCCESS, 'Cannot modify synthetic registry key');
+      finally
+        RegCloseKey(Registry);
+      end;
+      Check(Store.Advance(tsRollingBack), 'Cannot simulate interrupted rollback');
+      FreeAndNil(Store);
+      Store := TTransitionStore.Create(Root + '\transition');
+      Check(Store.RunRollback(Scope, Added, Service), 'Fixture rollback journal failed');
+      Check(Store.ReadState = tsRolledBack, 'Rollback did not commit ROLLED_BACK');
+      Check(RegistryValue(RegistryKey, 'Sample', KEY_WOW64_64KEY, RegistryText) and
+        (RegistryText = 'original'), 'Historical synthetic registry value not restored');
+      Check(BackupServiceState(Service) = SERVICE_RUNNING, 'Fixture initial service state not restored');
+      Values := TJSONArray.Create;
+      try
+        Item := TJSONObject.Create;
+        Values.Add(Item);
+        Item.Add('index', 1);
+        Item.Add('value', UTF8Encode(Root + '\agent'));
+        Check(MergeWaptPath(Root + '\agent;C:\foreign;D:\new', Root + '\agent', Values) =
+          'C:\foreign;' + Root + '\agent;D:\new', 'PATH merge changed non-WAPT entries');
+      finally
+        Values.Free;
+      end;
+      Check(ReadText(RuntimePath) = 'runtime fixture', 'Historical file not restored');
+      Check((GetFileAttributesW(PWideChar(RuntimePath)) and (FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_READONLY)) =
+        (FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_READONLY), 'Historical file attributes not restored');
+      Check(ReadText(SQLitePath) = OriginalSQLite, 'Custom Unicode SQLite file changed');
+      Check(not FileExists(ExtraPath), 'Installation addition not removed');
+      Check(ReadText(ForeignPath) = 'foreign data', 'Foreign file changed');
+      Check(ReadText(CachePath) = 'isolated fixture', 'Package cache changed');
+      Check((ReadText(BackupRoot + 'manifest.json') = ManifestText) and
+        (VerifyBackup(BackupRoot, TransitionID) = Digest), 'Original backup changed');
+    finally
+      Manifest.Free;
+    end;
+  finally
+    Store.Free;
+  end;
+end;
+
 procedure TestVolumes;
 const
   GiB = QWord(1024)*1024*1024;
@@ -397,6 +569,8 @@ begin
       Root := UnicodeString(ParamStr(2));
       Service := UnicodeString(ParamStr(3));
       if Mode = 'success' then TestSuccess(Root, Service)
+      else if Mode = 'restore' then TestRestore(Root, Service)
+      else if Mode = 'restore-failure' then TestRestore(Root, Service, True)
       else if Mode = 'preexisting' then
         ExpectBackupFailure(Root, Service, UnicodeString(Mode), 'previous backup exists', tsPrepared)
       else if (Mode = 'inaccessible') or (Mode = 'busy') then

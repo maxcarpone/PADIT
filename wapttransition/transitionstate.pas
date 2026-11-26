@@ -5,7 +5,7 @@ unit transitionstate;
 interface
 
 uses
-  SysUtils, Windows, fpjson, transitionstorage, transitionsecurity;
+  SysUtils, Windows, fpjson, transitionstorage, transitionsecurity, transitionbackup;
 
 type
   TTransitionState = (tsPrecheck, tsPrecheckFailed, tsPrepared,
@@ -47,6 +47,9 @@ type
     // No CLI invokes backup in 2C.1. Isolated execution accepts only a
     // dedicated fixture service, never the installed historical WAPTService.
     function RunBackup(const IsolatedService: UnicodeString = ''): Boolean;
+    // The orchestrator supplies trusted roots and the exact additions recorded by the installer.
+    function RunRollback(const RestoreScope, InstalledFiles: TBackupPaths;
+      const IsolatedService: UnicodeString = ''): Boolean;
     // Persist local results without advancing. Only the future orchestrator may
     // enter PREPARED after all local, network and cryptographic checks pass.
     function RecordLocalMetadata(const Metadata: TLocalMetadata): Boolean;
@@ -64,7 +67,7 @@ implementation
 
 uses
   Classes, DateUtils, URIParser, jsonparser, jsonscanner, IniFiles, transitionprecheck,
-  transitionbackup, transitionbackupwindows;
+  transitionrestore, transitionbackupwindows;
 
 const
   SchemaVersion = 1;
@@ -581,6 +584,8 @@ var
 begin
   if Next = tsPrepared then
     raise ETransitionState.Create('PREPARED requires successful full prechecks');
+  if Next = tsRolledBack then
+    raise ETransitionState.Create('ROLLED_BACK requires a fully verified restoration');
   if Next in [tsBackupInProgress, tsBackupVerified] then
     raise ETransitionState.Create('Backup states require the protected backup workflow');
   if (Next = tsAborted) and (ReadState in [tsBackupInProgress, tsBackupVerified]) then
@@ -701,6 +706,7 @@ begin
   if not FIsolated then
     PayloadSize := FileSizeRequired(FRoot + 'staging\payload\waptagent.exe', 'Missing staged installer');
   CheckBackupSpace(FRoot + 'backup', InstallDir, Roots, Cache, PayloadSize);
+  RequireRestorableServiceAccount(Service);
   InitialServiceState := BackupServiceState(Service);
   RequireWaptIdle(Port, InitialServiceState);
   StartedJournal := CommitState(tsBackupInProgress, '', '', InitialServiceState);
@@ -737,6 +743,140 @@ begin
     end;
   end;
   Result := StartedJournal and FinishedJournal;
+end;
+
+function TTransitionStore.RunRollback(const RestoreScope, InstalledFiles: TBackupPaths;
+  const IsolatedService: UnicodeString): Boolean;
+var
+  Data, Source, Manifest: TJSONObject;
+  Previous: TTransitionState;
+  BackupRoot, InstallDir, ConfigPath, Database, Cache, Service, Edition, Path,
+    FixtureRoot: UnicodeString;
+  TransitionID, Digest, Diagnostic: string;
+  InitialState, Status: DWORD;
+  StartedJournal: Boolean;
+  Port: Integer;
+  Lines: TStringList;
+  Ini: TMemIniFile;
+
+  procedure ReadConfig;
+  begin
+    Lines.Text := RawByteString(ReadDocument(ConfigPath));
+    Ini.Clear;
+    Ini.SetStrings(Lines);
+    if not TryStrToInt(Ini.ReadString('global', 'waptservice_port', '8088'), Port) or
+      (Port < 1) or (Port > 65535) then
+      raise ETransitionState.Create('Invalid local WAPT service port');
+  end;
+
+begin
+  if FIsolated then
+  begin
+    if Pos('PADIT_BackupTest_', IsolatedService) <> 1 then
+      raise ETransitionState.Create('Rollback requires a dedicated fixture service');
+    Service := IsolatedService;
+    FixtureRoot := IncludeTrailingPathDelimiter(ExtractFileDir(ExcludeTrailingPathDelimiter(FRoot)));
+    for Path in RestoreScope do
+      if not UnicodeSameText(Copy(ExpandFileName(Path), 1, Length(FixtureRoot)), FixtureRoot) then
+        raise ETransitionState.Create('Isolated rollback scope is outside its fixture');
+  end
+  else
+  begin
+    if IsolatedService <> '' then raise ETransitionState.Create('Unexpected fixture service override');
+    Service := 'WAPTService';
+  end;
+  Data := Load;
+  if Data = nil then raise ETransitionState.Create('No transition is available for rollback');
+  try
+    Previous := ParseState(Data.Strings['state']);
+    if not (Previous in [tsInstalling, tsVerifying, tsRollingBack]) then
+      raise ETransitionState.Create('Rollback requires INSTALLING, VERIFYING or ROLLING_BACK');
+    try
+      Source := Data.Objects['source'];
+      InstallDir := UTF8Decode(Field(Source, 'install_dir', jtString).AsString);
+      ConfigPath := UTF8Decode(Field(Source, 'config_path', jtString).AsString);
+      Database := UTF8Decode(Field(Source, 'db_path', jtString).AsString);
+      Cache := IncludeTrailingPathDelimiter(ExtractFileDir(ConfigPath)) + 'cache';
+      TransitionID := Data.Strings['transition_id'];
+      Digest := Data.Objects['backup'].Strings['sha256'];
+      BackupRoot := FRoot + 'backup';
+      Manifest := LoadVerifiedBackup(BackupRoot, TransitionID, Digest);
+      try
+        InitialState := Field(Data.Objects['backup'], 'service_initial_state', jtNumber).AsInteger;
+        if Manifest.Integers['service_initial_state'] <> Integer(InitialState) then
+          raise ETransitionState.Create('Initial service state differs from verified backup');
+        CheckRestorePaths(Manifest, RestoreScope, ExcludeTrailingPathDelimiter(FRoot), InstallDir, Cache, InstalledFiles);
+        Lines := TStringList.Create;
+        Ini := TMemIniFile.Create('');
+        try
+          if not FIsolated then RequireScheduledWaptIdle(InstallDir);
+          Status := BackupServiceState(Service, True);
+          if Status = SERVICE_RUNNING then ReadConfig else Port := 8088;
+          if Status = 0 then RequireWaptIdle(Port, SERVICE_STOPPED)
+          else RequireWaptIdle(Port, Status);
+          StartedJournal := True;
+          if Previous <> tsRollingBack then StartedJournal := CommitState(tsRollingBack);
+          if Status <> 0 then StopBackupService(Service);
+          RequireWaptIdle(Port, SERVICE_STOPPED);
+          if not FIsolated then
+          begin
+            RequireRollbackProcessesIdle;
+            RequireScheduledWaptIdle(InstallDir);
+          end;
+          RestoreVerifiedFiles(BackupRoot, InstallDir, Cache, TransitionID, Digest, RestoreScope, InstalledFiles);
+          if not FIsolated then
+          begin
+            RequireRollbackProcessesIdle;
+            RequireScheduledWaptIdle(InstallDir);
+          end;
+          RestoreWaptServiceConfig(BackupRoot, Service, Manifest.Arrays['entries']);
+          if FIsolated then RestoreWaptRegistry(BackupRoot, Manifest.Arrays['entries'], Service)
+          else
+          begin
+            RestoreWaptRegistry(BackupRoot, Manifest.Arrays['entries']);
+            RestoreWaptPath(BackupRoot, InstallDir, Manifest.Arrays['entries']);
+          end;
+          RestoreWaptTasks(BackupRoot, InstallDir, Service, Manifest.Arrays['entries']);
+          ReadConfig;
+          VerifyBackupDatabase(Database);
+          if not FIsolated then
+          begin
+            if not RegistryValue('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WAPT_is1',
+              'DisplayName', KEY_WOW64_32KEY, Edition) and
+              not RegistryValue('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\WAPT_is1',
+              'DisplayName', KEY_WOW64_64KEY, Edition) then
+              raise ETransitionState.Create('Historical uninstall registration is missing');
+            if HistoricalCommunityVersion(IncludeTrailingPathDelimiter(InstallDir) + 'wapt-get.exe',
+              Edition) <> Source.Strings['agent_version'] then
+              raise ETransitionState.Create('Restored historical agent version differs from state');
+            if NormalURL(Ini.ReadString('global', 'wapt_server', '')) <> Source.Strings['url'] then
+              raise ETransitionState.Create('Restored historical server URL differs from state');
+            CheckHistoricalIdentity(UTF8Decode(Field(Source, 'certificate_path', jtString).AsString),
+              UTF8Decode(Field(Source, 'key_path', jtString).AsString), Data.Objects['host'].Strings['uuid']);
+          end;
+          RestoreBackupService(Service, InitialState);
+          if InitialState = SERVICE_RUNNING then RequireWaptIdle(Port, BackupServiceState(Service));
+          Result := CommitState(tsRolledBack) and StartedJournal;
+        finally
+          Ini.Free;
+          Lines.Free;
+        end;
+      finally
+        Manifest.Free;
+      end;
+    except
+      on E: Exception do
+      begin
+        Diagnostic := 'Rollback failed while restoring or verifying historical WAPT';
+        if (E is ETransitionBackup) or (E is ETransitionState) or (E is ELocalPrecheck) or
+          (E is ESecurityPrecheck) then Diagnostic := Copy(E.Message, 1, 500);
+        CommitState(tsRecoveryRequired, Diagnostic);
+        raise;
+      end;
+    end;
+  finally
+    Data.Free;
+  end;
 end;
 
 function TTransitionStore.RunFullPrecheck(const Policy: TTransitionSignerPolicy): Boolean;

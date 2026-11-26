@@ -171,8 +171,16 @@ begin
     SeedInstallingFixture(Path);
     Store.Advance(tsVerifying);
     Store.Advance(tsRollingBack);
-    Store.Advance(tsRolledBack);
-    Check(Store.ReadState = tsRolledBack, 'Rollback state missing');
+    try
+      Store.Advance(tsRolledBack);
+      raise Exception.Create('An unverified restoration was accepted');
+    except
+      on E: ETransitionState do
+        Check(Pos('requires a fully verified restoration', E.Message) > 0, E.Message);
+    end;
+    Check(Store.ReadState = tsRollingBack, 'A refused restoration changed state');
+    Store.Advance(tsRecoveryRequired);
+    Check(Store.ReadState = tsRecoveryRequired, 'Recovery state missing');
     try
       Store.Initialize;
       raise Exception.Create('Terminal state was reinitialized');
@@ -184,7 +192,7 @@ begin
     Journal := ReadText(Root + '\logs\transition.log');
     Check(Pos('Z STATE PRECHECK', Journal) > 0, 'Missing UTC journal entry');
     Check(Pos('ERROR Advance: Forbidden transition', Journal) > 0, 'Missing error journal');
-    Check(Pos('ROLLING_BACK -> ROLLED_BACK', Journal) > 0, 'Missing rollback journal');
+    Check(Pos('ROLLING_BACK -> RECOVERY_REQUIRED', Journal) > 0, 'Missing rollback journal');
   finally
     Store.Free;
   end;
