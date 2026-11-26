@@ -9,7 +9,7 @@
 [InstallDelete]
 #ifndef FastDebug
 #ifndef waptenterprise
-Type: filesandordirs; Name: "{app}\waptenterprise"
+Type: filesandordirs; Name: "{app}\waptenterprise"; Check: CleanAgentRuntime()
 #endif
 #endif
 
@@ -52,9 +52,9 @@ Source: "{#wapt_base_dir}wapttransition.exe"; DestDir: "{app}"; Flags: ignorever
 
 ; authorized public keys
 #if set_install_certs == ""
-Source: "{#ssl_dir}\*"; DestDir: "{app}\ssl"; Tasks: installCertificates; Flags: createallsubdirs recursesubdirs skipifsourcedoesntexist 
+Source: "{#ssl_dir}\*"; DestDir: "{app}\ssl"; Tasks: installCertificates; Check: ClassicInstall(); Flags: createallsubdirs recursesubdirs skipifsourcedoesntexist
 #else
-Source: "{#ssl_dir}\*"; DestDir: "{app}\ssl"; Flags: createallsubdirs recursesubdirs skipifsourcedoesntexist; Check: InstallCertCheck();
+Source: "{#ssl_dir}\*"; DestDir: "{app}\ssl"; Flags: createallsubdirs recursesubdirs skipifsourcedoesntexist; Check: ClassicInstall() and InstallCertCheck();
 #endif
 
 ; local management console wapt selfservice
@@ -63,8 +63,8 @@ Source: "{#wapt_base_dir}waptself.exe"; DestDir: "{app}"; Flags: ignoreversion; 
 Source: "{#wapt_base_dir}waptmessage.exe"; DestDir: "{app}"; Flags: ignoreversion;  BeforeInstall: killtask('waptmessage.exe');
 
 
-Source: "{param:CopyPackagesTrustedCA}"; DestDir: "{app}\ssl"; Flags: external createallsubdirs recursesubdirs; Check: CopyPackagesTrustedCACheck();
-Source: "{param:CopyServersTrustedCA}"; DestDir: "{app}\ssl\server"; Flags: external createallsubdirs recursesubdirs; Check: CopyServersTrustedCACheck();
+Source: "{param:CopyPackagesTrustedCA}"; DestDir: "{app}\ssl"; Flags: external createallsubdirs recursesubdirs; Check: ClassicInstall() and CopyPackagesTrustedCACheck();
+Source: "{param:CopyServersTrustedCA}"; DestDir: "{app}\ssl\server"; Flags: external createallsubdirs recursesubdirs; Check: ClassicInstall() and CopyServersTrustedCACheck();
 
 [Setup]
 #ifdef waptenterprise
@@ -114,95 +114,95 @@ Name: UseKerberos; Description: "{cm:UseKerberosForRegister}";  GroupDescription
 
 [INI]
 #if edition != "waptserversetup"
-Filename: {app}\wapt-get.ini; Section: global; Key: repo_url; String: {code:GetRepoURL}; Check: MustChangeServerConfig;
+Filename: {app}\wapt-get.ini; Section: global; Key: repo_url; String: {code:GetRepoURL}; Check: ClassicInstall() and MustChangeServerConfig;
 #endif
-Filename: {app}\wapt-get.ini; Section: global; Key: send_usage_report; String:  {#send_usage_report}; 
+Filename: {app}\wapt-get.ini; Section: global; Key: send_usage_report; String:  {#send_usage_report}; Check: ClassicInstall()
 
 #if edition != "waptstarter"
-Filename: {app}\wapt-get.ini; Section: global; Key: use_hostpackages; String: 1; 
+Filename: {app}\wapt-get.ini; Section: global; Key: use_hostpackages; String: 1; Check: ClassicInstall()
   #if edition != "waptserversetup"
-Filename: {app}\wapt-get.ini; Section: global; Key: wapt_server; String: {code:GetWaptServerURL}; Check: MustChangeServerConfig;
+Filename: {app}\wapt-get.ini; Section: global; Key: wapt_server; String: {code:GetWaptServerURL}; Check: ClassicInstall() and MustChangeServerConfig;
   #endif
 
   #if set_use_kerberos == ''
-Filename: {app}\wapt-get.ini; Section: global; Key: use_kerberos; String: {code:UseKerberosCheck};
+Filename: {app}\wapt-get.ini; Section: global; Key: use_kerberos; String: {code:UseKerberosCheck}; Check: ClassicInstall()
   #else
-Filename: {app}\wapt-get.ini; Section: global; Key: use_kerberos; String: {#set_use_kerberos}; 
+Filename: {app}\wapt-get.ini; Section: global; Key: use_kerberos; String: {#set_use_kerberos}; Check: ClassicInstall()
   #endif
 #endif
 
-Filename: {app}\wapt-get.ini; Section: global; Key: check_certificates_validity; String: {#check_certificates_validity};
+Filename: {app}\wapt-get.ini; Section: global; Key: check_certificates_validity; String: {#check_certificates_validity}; Check: ClassicInstall()
 
 ; needs to be relocated if waptagent is compiled on another base directory than target computers
 #if set_verify_cert != ""
-Filename: {app}\wapt-get.ini; Section: global; Key: verify_cert; String: {code:RelocateCertDirWaptBase}; 
+Filename: {app}\wapt-get.ini; Section: global; Key: verify_cert; String: {code:RelocateCertDirWaptBase}; Check: ClassicInstall()
 #else
-Filename: {app}\wapt-get.ini; Section: global; Key: verify_cert; String: {code:VerifyCertCheck}; 
+Filename: {app}\wapt-get.ini; Section: global; Key: verify_cert; String: {code:VerifyCertCheck}; Check: ClassicInstall()
 #endif
 
 #if use_fqdn_as_uuid != ""
-Filename: {app}\wapt-get.ini; Section: global; Key: use_fqdn_as_uuid; String: {#use_fqdn_as_uuid}; 
+Filename: {app}\wapt-get.ini; Section: global; Key: use_fqdn_as_uuid; String: {#use_fqdn_as_uuid}; Check: ClassicInstall()
 #endif
 
 #if use_ad_groups != ""
-Filename: {app}\wapt-get.ini; Section: global; Key: use_ad_groups; String: {#use_ad_groups};
+Filename: {app}\wapt-get.ini; Section: global; Key: use_ad_groups; String: {#use_ad_groups}; Check: ClassicInstall()
 #endif
 
 #if use_repo_rules != ""
-Filename: {app}\wapt-get.ini; Section: global; Key: use_repo_rules; String: {#use_repo_rules};
+Filename: {app}\wapt-get.ini; Section: global; Key: use_repo_rules; String: {#use_repo_rules}; Check: ClassicInstall()
 #endif
 
 #if waptservice_admin_filter != ""
-Filename: {app}\wapt-get.ini; Section: global; Key: waptservice_admin_filter; String: {#waptservice_admin_filter};
+Filename: {app}\wapt-get.ini; Section: global; Key: waptservice_admin_filter; String: {#waptservice_admin_filter}; Check: ClassicInstall()
 #endif
 
 #if maturities != ""
-Filename: {app}\wapt-get.ini; Section: global; Key: maturities; String: {#maturities};
+Filename: {app}\wapt-get.ini; Section: global; Key: maturities; String: {#maturities}; Check: ClassicInstall()
 #endif
 
-Filename: {app}\wapt-get.ini; Section: global; Key: uuid; String: {code:GenerateHostUUID}; Check: MustChangeHostUUID;
+Filename: {app}\wapt-get.ini; Section: global; Key: uuid; String: {code:GenerateHostUUID}; Check: ClassicInstall() and MustChangeHostUUID;
 
 #if edition != "waptserversetup"
-Filename: {app}\wapt-get.ini; Section: global; Key: max_gpo_script_wait; String: 180; Tasks: DisableHiberboot;
-Filename: {app}\wapt-get.ini; Section: global; Key: pre_shutdown_timeout; String: 180; Tasks: DisableHiberboot; 
-Filename: {app}\wapt-get.ini; Section: global; Key: hiberboot_enabled; String: {code:Gethiberboot_enabled};
+Filename: {app}\wapt-get.ini; Section: global; Key: max_gpo_script_wait; String: 180; Tasks: DisableHiberboot; Check: ClassicInstall()
+Filename: {app}\wapt-get.ini; Section: global; Key: pre_shutdown_timeout; String: 180; Tasks: DisableHiberboot; Check: ClassicInstall()
+Filename: {app}\wapt-get.ini; Section: global; Key: hiberboot_enabled; String: {code:Gethiberboot_enabled}; Check: ClassicInstall()
 
   #if append_host_profiles != ""
-Filename: {app}\wapt-get.ini; Section: global; Key: host_profiles; String: {code:GetHostProfiles};
+Filename: {app}\wapt-get.ini; Section: global; Key: host_profiles; String: {code:GetHostProfiles}; Check: ClassicInstall()
   #endif
 
   #if set_waptaudit_task_period != ""
-Filename: {app}\wapt-get.ini; Section: global; Key: waptaudit_task_period; String: {code:GetWaptauditTaskPeriod};
+Filename: {app}\wapt-get.ini; Section: global; Key: waptaudit_task_period; String: {code:GetWaptauditTaskPeriod}; Check: ClassicInstall()
   #endif
 
   ; WaptWUA specific settings
   #ifdef waptwua
     #if set_waptwua_enabled != ""
-Filename: {app}\wapt-get.ini; Section: waptwua; Key: enabled; String: {#set_waptwua_enabled}; 
+Filename: {app}\wapt-get.ini; Section: waptwua; Key: enabled; String: {#set_waptwua_enabled}; Check: ClassicInstall()
     #endif
 
     #if set_waptwua_default_allow != ""
-Filename: {app}\wapt-get.ini; Section: waptwua; Key: default_allow; String: {#set_waptwua_default_allow}; 
+Filename: {app}\wapt-get.ini; Section: waptwua; Key: default_allow; String: {#set_waptwua_default_allow}; Check: ClassicInstall()
     #endif
 
     #if set_waptwua_offline != ""
-Filename: {app}\wapt-get.ini; Section: waptwua; Key: offline; String: {#set_waptwua_offline}; 
+Filename: {app}\wapt-get.ini; Section: waptwua; Key: offline; String: {#set_waptwua_offline}; Check: ClassicInstall()
     #endif
     
     #if set_waptwua_install_at_shutdown != ""
-Filename: {app}\wapt-get.ini; Section: waptwua; Key: install_at_shutdown; String: {#set_waptwua_install_at_shutdown}; 
+Filename: {app}\wapt-get.ini; Section: waptwua; Key: install_at_shutdown; String: {#set_waptwua_install_at_shutdown}; Check: ClassicInstall()
     #endif
 
     #if set_waptwua_allow_direct_download != ""
-Filename: {app}\wapt-get.ini; Section: waptwua; Key: allow_direct_download; String: {#set_waptwua_allow_direct_download}; 
+Filename: {app}\wapt-get.ini; Section: waptwua; Key: allow_direct_download; String: {#set_waptwua_allow_direct_download}; Check: ClassicInstall()
     #endif
     
     #if set_waptwua_install_delay != ""
-Filename: {app}\wapt-get.ini; Section: waptwua; Key: install_delay; String: {#set_waptwua_install_delay}; 
+Filename: {app}\wapt-get.ini; Section: waptwua; Key: install_delay; String: {#set_waptwua_install_delay}; Check: ClassicInstall()
     #endif
     
     #if set_waptwua_download_scheduling != ""
-Filename: {app}\wapt-get.ini; Section: waptwua; Key: download_scheduling; String: {#set_waptwua_download_scheduling}; 
+Filename: {app}\wapt-get.ini; Section: waptwua; Key: download_scheduling; String: {#set_waptwua_download_scheduling}; Check: ClassicInstall()
     #endif
 
   #endif
@@ -211,28 +211,28 @@ Filename: {app}\wapt-get.ini; Section: waptwua; Key: download_scheduling; String
 
 [Run]
 #if edition != "waptserversetup"
-Filename: "{app}\wapt-get.exe"; Parameters: "add-upgrade-shutdown"; Flags: runhidden; StatusMsg: {cm:UpdatePkgUponShutdown}; Description: "{cm:UpdatePkgUponShutdown}"
+Filename: "{app}\wapt-get.exe"; Parameters: "add-upgrade-shutdown"; Flags: runhidden; StatusMsg: {cm:UpdatePkgUponShutdown}; Description: "{cm:UpdatePkgUponShutdown}"; Check: ClassicInstall()
 
 #if edition != "waptstarter"
-Filename: "{app}\wapt-get.exe"; Parameters: "--use-gui --direct register"; Flags: runhidden; StatusMsg: {cm:RegisterHostOnServer}; Description: "{cm:RegisterHostOnServer}"
+Filename: "{app}\wapt-get.exe"; Parameters: "--use-gui --direct register"; Flags: runhidden; StatusMsg: {cm:RegisterHostOnServer}; Description: "{cm:RegisterHostOnServer}"; Check: ClassicInstall()
 #endif
 
 #if set_start_packages != "" 
-Filename: "{app}\wapt-get.exe"; Parameters: "--direct --update-packages install {code:GetStartPackages}"; Tasks: installStartPackages; StatusMsg: {cm:InstallStartPackages}; Description: "{cm:InstallStartPackages} {code:GetStartPackages}"
+Filename: "{app}\wapt-get.exe"; Parameters: "--direct --update-packages install {code:GetStartPackages}"; Tasks: installStartPackages; StatusMsg: {cm:InstallStartPackages}; Description: "{cm:InstallStartPackages} {code:GetStartPackages}"; Check: ClassicInstall()
 #else
-Filename: "{app}\wapt-get.exe"; Parameters: "--direct update"; Flags: runhidden; StatusMsg: {cm:UpdateAvailablePkg}; Description: "{cm:UpdateAvailablePkg}"
+Filename: "{app}\wapt-get.exe"; Parameters: "--direct update"; Flags: runhidden; StatusMsg: {cm:UpdateAvailablePkg}; Description: "{cm:UpdateAvailablePkg}"; Check: ClassicInstall()
 #endif
 
 #endif
 
 [Icons]
-Name: "{commonstartup}\PADIT session setup"; Filename: "{app}\wapt-get.exe"; Parameters: "session-setup ALL"; Flags: runminimized excludefromshowinnewinstall;
+Name: "{commonstartup}\PADIT session setup"; Filename: "{app}\wapt-get.exe"; Parameters: "session-setup ALL"; Flags: runminimized excludefromshowinnewinstall; Check: ClassicInstall()
 
 #if edition != "waptstarter"
-Name: "{group}\{cm:WAPTConsole}"; Filename: "{app}\waptconsole.exe"; WorkingDir: "{app}"; Check: Not IsWaptAgent();
+Name: "{group}\{cm:WAPTConsole}"; Filename: "{app}\waptconsole.exe"; WorkingDir: "{app}"; Check: ClassicInstall() and Not IsWaptAgent();
 #endif
 
-Name: "{group}\{cm:WAPTSelf}"; Filename: "{app}\waptself.exe"; WorkingDir: "{app}"
+Name: "{group}\{cm:WAPTSelf}"; Filename: "{app}\waptself.exe"; WorkingDir: "{app}"; Check: ClassicInstall()
 
 [CustomMessages]
 ;English translations here
@@ -315,6 +315,7 @@ de.Advanced=Erweitert
 
 [Code]
 var
+  RuntimeCleanupApproved: Boolean;
   cbDontChangeConfig, cbStaticUrl: TNewRadioButton;
   CustomPage: TWizardPage;
   edWaptServerUrl:TEdit;
@@ -470,6 +471,265 @@ procedure DeinitializeUninstall();
 begin
 end;
 
+
+function QueryTransitionServiceStatus(Handle: Longword; var Status: _SERVICE_STATUS): Longword;
+  external 'QueryServiceStatus@advapi32.dll stdcall';
+
+function TransitionFileAttributes(Path: String): Longword;
+  external 'GetFileAttributesW@kernel32.dll stdcall';
+
+function TransitionLocalPath(const Path: String): Boolean;
+var
+  Current: String;
+  Attr: Longword;
+begin
+  Result := False;
+  if (Length(Path) <= 3) or (Copy(Path, 2, 2) <> ':\') or
+    (CompareText(ExpandFileName(Path), Path) <> 0) or (Pos('"', Path) > 0) or
+    (Pos(':', Copy(Path, 3, Length(Path))) > 0) then Exit;
+  Current := Path;
+  while Length(Current) > 3 do
+  begin
+    Attr := TransitionFileAttributes(Current);
+    if (Attr = $FFFFFFFF) or ((Attr and $400) <> 0) then Exit;
+    Current := ExtractFileDir(Current);
+  end;
+  Result := True;
+end;
+
+function TransitionWaptStopped(): Boolean;
+var
+  Manager, Service: Longword;
+  Status: _SERVICE_STATUS;
+begin
+  Result := False;
+  Manager := OpenSCManager('', '', SC_MANAGER_CONNECT);
+  if Manager = 0 then Exit;
+  try
+    Service := OpenService(Manager, 'WAPTService', SERVICE_QUERY_STATUS);
+    if Service = 0 then Exit;
+    try
+      Result := (QueryTransitionServiceStatus(Service, Status) <> 0) and
+        (Status.dwCurrentState = SERVICE_STOPPED);
+    finally
+      CloseServiceHandle(Service);
+    end;
+  finally
+    CloseServiceHandle(Manager);
+  end;
+end;
+
+function TransitionHttpsURL(const Value: String): Boolean;
+begin
+  Result := (CompareText(Copy(Value, 1, 8), 'https://') = 0) and
+    (Length(Value) > 8) and (Pos('@', Value) = 0) and (Pos(' ', Value) = 0) and
+    (Pos('\', Value) = 0) and (Pos('"', Value) = 0) and (Pos('?', Value) = 0) and
+    (Pos('#', Value) = 0) and (Pos(#13, Value) = 0) and (Pos(#10, Value) = 0);
+end;
+
+function TransitionCA(const Parameter: String): Boolean;
+var
+  Path: String;
+  PEM: AnsiString;
+begin
+  Path := ExpandConstant('{param:' + Parameter + '|}');
+  Result := TransitionLocalPath(Path) and FileExists(Path) and
+    LoadStringFromFile(Path, PEM) and (Pos('-----BEGIN CERTIFICATE-----', PEM) = 1);
+end;
+
+function TransitionPathBelow(const Path, Root: String): Boolean;
+begin
+  Result := (CompareText(Path, Root) = 0) or
+    (CompareText(Copy(Path, 1, Length(Root) + 1), Root + '\') = 0);
+end;
+
+function TransitionRuntimeOverlaps(const AppPath, ProtectedPath: String): Boolean;
+var
+  Parent, Name, LowerName: String;
+begin
+  Parent := ExtractFileDir(ProtectedPath);
+  Name := ExtractFileName(ProtectedPath);
+  LowerName := Lowercase(Name);
+  Result := TransitionPathBelow(ProtectedPath, AppPath + '\lib\site-packages') or
+    TransitionPathBelow(ProtectedPath, AppPath + '\waptenterprise') or
+    TransitionPathBelow(AppPath + '\lib\site-packages', ProtectedPath) or
+    TransitionPathBelow(AppPath + '\waptenterprise', ProtectedPath) or
+    (CompareText(ProtectedPath, AppPath + '\waptservice') = 0) or
+    ((CompareText(Parent, AppPath) = 0) and (Lowercase(ExtractFileExt(Name)) = '.pyc')) or
+    ((CompareText(Parent, AppPath + '\waptservice') = 0) and
+      ((Lowercase(ExtractFileExt(Name)) = '.pyc') or (Pos('waptservice.py', LowerName) = 1)));
+end;
+
+function RuntimePathSafe(const AppPath, WorkingDir, Value: String): Boolean;
+var
+  Path, Current, Part: String;
+  Attr: Longword;
+begin
+  Result := False;
+  if (Value = '') or (Pos('~', Value) > 0) or (Pos('/', Value) > 0) or
+    (Pos('"', Value) > 0) or (Pos('%', Value) > 0) or (Copy(Value, 1, 1) = '\') or
+    ((Pos(':', Value) > 0) and ((Copy(Value, 2, 2) <> ':\') or
+      (Pos(':', Copy(Value, 4, Length(Value))) > 0))) then Exit;
+  Path := Value;
+  if Copy(Path, 2, 2) <> ':\' then Path := AddBackslash(WorkingDir) + Path;
+  Path := RemoveBackslashUnlessRoot(ExpandFileName(Path));
+  if Length(Path) <= 3 then Exit;
+  Current := Path;
+  while Length(Current) > 3 do
+  begin
+    Part := ExtractFileName(Current);
+    if (Part = '') or (Part[Length(Part)] = '.') or (Part[Length(Part)] = ' ') then Exit;
+    Attr := TransitionFileAttributes(Current);
+    if (Attr <> $FFFFFFFF) and ((Attr and $400) <> 0) then Exit;
+    Current := ExtractFileDir(Current);
+  end;
+  Result := not TransitionRuntimeOverlaps(AppPath, Path);
+end;
+
+function RuntimeTreeSafe(const Tree: String): Boolean;
+begin
+  Result := (TransitionFileAttributes(Tree) = $FFFFFFFF) or TransitionLocalPath(Tree);
+end;
+
+function TransitionRuntimeSafe(const AppPath, ConfigPath, PackagesDir, WorkingDir: String): Boolean;
+var
+  HTTPS, Key, Path: String;
+  I: Integer;
+begin
+  HTTPS := Lowercase(GetIniString('global', 'verify_cert', '', ConfigPath));
+  Result := (Pos('~', AppPath) = 0) and (Pos('~', WorkingDir) = 0) and
+    RuntimeTreeSafe(AppPath + '\lib\site-packages') and
+    RuntimeTreeSafe(AppPath + '\waptenterprise') and
+    RuntimeTreeSafe(AppPath + '\waptservice') and
+    RuntimePathSafe(AppPath, WorkingDir, ConfigPath) and
+    RuntimePathSafe(AppPath, WorkingDir, PackagesDir) and
+    RuntimePathSafe(AppPath, WorkingDir, AddBackslash(ExtractFileDir(ConfigPath)) + 'cache') and
+    RuntimePathSafe(AppPath, WorkingDir, GetIniString('global', 'dbpath', AppPath + '\db\waptdb.sqlite', ConfigPath)) and
+    RuntimePathSafe(AppPath, WorkingDir, GetIniString('global', 'private_dir', AppPath + '\private', ConfigPath)) and
+    RuntimePathSafe(AppPath, WorkingDir, GetIniString('global', 'persistent_root_dir',
+      AppPath + '\private\persistent', ConfigPath)) and
+    RuntimePathSafe(AppPath, WorkingDir, GetIniString('global', 'public_certs_dir', AppPath + '\ssl', ConfigPath)) and
+    ((HTTPS = '') or (HTTPS = '0') or (HTTPS = '1') or (HTTPS = 'true') or (HTTPS = 'false') or
+      RuntimePathSafe(AppPath, WorkingDir, HTTPS));
+  if not Result then Exit;
+  for I := 0 to 2 do
+  begin
+    case I of
+      0: Key := 'log_directory';
+      1: Key := 'personal_certificate_path';
+      2: Key := 'private_key';
+    end;
+    Path := GetIniString('global', Key, '', ConfigPath);
+    if (Path <> '') and not RuntimePathSafe(AppPath, WorkingDir, Path) then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
+function TransitionServiceScript(const AppPath, WorkingDir, Arguments: String): Boolean;
+var
+  Script, Remaining: String;
+  Ending: Integer;
+begin
+  Result := False;
+  Remaining := Trim(Arguments);
+  if Copy(Remaining, 1, 1) = '"' then
+  begin
+    Delete(Remaining, 1, 1);
+    Ending := Pos('"', Remaining);
+    if (Ending = 0) or ((Ending < Length(Remaining)) and
+      (Remaining[Ending+1] <> ' ') and (Remaining[Ending+1] <> #9)) then Exit;
+    Script := Copy(Remaining, 1, Ending - 1);
+  end
+  else
+  begin
+    Ending := 1;
+    while (Ending <= Length(Remaining)) and (Remaining[Ending] <> ' ') and
+      (Remaining[Ending] <> #9) do Inc(Ending);
+    Script := Copy(Remaining, 1, Ending - 1);
+  end;
+  if (Script = '') or (Pos('~', Script) > 0) then Exit;
+  if Copy(Script, 2, 2) <> ':\' then Script := AddBackslash(WorkingDir) + Script;
+  Result := (CompareText(ExpandFileName(Script), AppPath + '\waptservice\service.py') = 0) and
+    TransitionLocalPath(Script) and FileExists(Script);
+end;
+
+function CleanAgentRuntime(): Boolean;
+begin
+  Result := ClassicInstall() or
+    (RuntimeCleanupApproved and (ExpandConstant('{param:TRANSITION|}') = '1') and ('{#edition}' = 'waptagent'));
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  AppPath, ConfigPath, PackagesDir, WorkingDir, Application, Arguments: String;
+begin
+  Result := '';
+  if ClassicInstall() then Exit;
+  Result := 'Transition requires the supported agent installer and silent no-close/no-restart switches.';
+  if (ExpandConstant('{param:TRANSITION|}') <> '1') or
+    ('{#edition}' <> 'waptagent') or not runningSilently() or
+    not HasSetupSwitch('/NOCLOSEAPPLICATIONS') or not HasSetupSwitch('/NORESTART') or
+    HasSetupSwitch('/FORCECLOSEAPPLICATIONS') or HasSetupSwitch('/CLOSEAPPLICATIONS') or
+    HasSetupSwitch('/RESTARTAPPLICATIONS') then Exit;
+
+  AppPath := ExpandConstant('{app}');
+  ConfigPath := ExpandConstant('{param:TRANSITION_INI|}');
+  PackagesDir := ExpandConstant('{param:TRANSITION_PACKAGES_DIR|}');
+  Result := 'Transition requires the existing agent and explicit historical configuration paths.';
+  if not TransitionLocalPath(AppPath) or not FileExists(AppPath + '\wapt-get.exe') or
+     not TransitionLocalPath(ConfigPath) or not FileExists(ConfigPath) or
+     not TransitionLocalPath(PackagesDir) or not DirExists(PackagesDir) then Exit;
+
+  if not RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\WAPTService\Parameters',
+    'AppDirectory', WorkingDir) or (WorkingDir = '') then WorkingDir := AppPath;
+  Result := 'Historical service must use the agent runtime and the supported service.py entry point.';
+  if not TransitionLocalPath(WorkingDir) or not DirExists(WorkingDir) or
+    not RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\WAPTService\Parameters',
+      'Application', Application) or (CompareText(Application, AppPath + '\waptpython.exe') <> 0) or
+    not RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\WAPTService\Parameters',
+      'AppParameters', Arguments) or not TransitionServiceScript(AppPath, WorkingDir, Arguments) then Exit;
+  Result := 'Existing INI, database, identity, trust or cache overlaps the runtime cleanup.';
+  if not TransitionRuntimeSafe(AppPath, ConfigPath, PackagesDir, WorkingDir) then Exit;
+
+  Result := 'Transition requires HTTPS endpoints and explicit server and package CA files.';
+  if not TransitionHttpsURL(ExpandConstant('{param:wapt_server|}')) or
+     not TransitionHttpsURL(ExpandConstant('{param:repo_url|}')) or
+     not TransitionCA('verify_cert') or not TransitionCA('CopyPackagesTrustedCA') then Exit;
+  Result := 'A transition CA destination already exists.';
+  if (TransitionFileAttributes(AppPath + '\padit-transition-https.cabundle') <> $FFFFFFFF) or
+     (TransitionFileAttributes(PackagesDir + '\padit-transition-packages.pem') <> $FFFFFFFF) then Exit;
+
+#ifdef vcredist
+  Result := 'The required VC++ redistributable must be installed before transition.';
+  if not VCVersionInstalled(VC_2008_SP1_MFC_SEC_UPD_REDIST_X86) then Exit;
+#endif
+
+  Result := 'WAPTService must already be stopped by the transition engine.';
+  if not TransitionWaptStopped() then Exit;
+  RuntimeCleanupApproved := True;
+  Result := '';
+end;
+
+procedure ApplyTransitionConfig();
+var
+  ConfigPath, HTTPSCA, PackageCA: String;
+begin
+  // Use the historical INI directly. All normal setup INI entries are disabled.
+  if not TransitionWaptStopped() then RaiseException('WAPTService resumed during transition.');
+  ConfigPath := ExpandConstant('{param:TRANSITION_INI|}');
+  HTTPSCA := ExpandConstant('{app}\padit-transition-https.cabundle');
+  PackageCA := ExpandConstant('{param:TRANSITION_PACKAGES_DIR|}') + '\padit-transition-packages.pem';
+  if not FileCopy(ExpandConstant('{param:verify_cert|}'), HTTPSCA, True) or
+     not FileCopy(ExpandConstant('{param:CopyPackagesTrustedCA|}'), PackageCA, True) then
+    RaiseException('Cannot write transition CA files.');
+  if not SetIniString('global', 'verify_cert', HTTPSCA, ConfigPath) or
+     not SetIniString('global', 'wapt_server', ExpandConstant('{param:wapt_server|}'), ConfigPath) or
+     not SetIniString('global', 'repo_url', ExpandConstant('{param:repo_url|}'), ConfigPath) then
+    RaiseException('Cannot write transition endpoints to the historical configuration.');
+end;
 
 function InstallCertCheck:Boolean;
 var
@@ -739,5 +999,6 @@ procedure killtask(name:String);
 var
   errorcode:integer;
 begin
+  if TransitionMode() then Exit;
   shellexec('','taskkill','/t /im "'+name+'" /f','',sw_Hide,ewWaitUntilTerminated,Errorcode);
 end;

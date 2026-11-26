@@ -3235,3 +3235,23 @@ Revue indépendante de W109-126-f9.diff : PASS. F8/F9 accepté.
 - Retour arrière complet sur une VM dédiée, confirmation fonctionnelle avec le serveur source et résistance aux interruptions réelles.
 - Paquet toujours **NON DÉPLOYABLE**.
 - Prochain lot 2D — installation et bascule.
+
+
+## W109-126 — Lot 2D — Installation et bascule
+
+- Revue indépendante du diff W109-126-lot2d-rev3.diff PASS pour intégration des sources.
+- L'orchestration native réutilise la machine à états, la sauvegarde vérifiée et le retour arrière du lot 2C. Elle protège l'image de l'installateur par une poignée qui interdit sa modification et sa suppression pendant la vérification et le lancement. Le Job Object suit les processus de l'installateur.
+- Le marqueur persistant installer.pending protège les issues incertaines. Les codes de retour Inno Setup sont traités explicitement, notamment les demandes de redémarrage et les codes inconnus. Une issue incertaine bloque toute relance et tout retour arrière automatique.
+- L'installateur Inno unique accepte /TRANSITION=1 et conserve le comportement classique sans ce paramètre. En transition, il écarte les arrêts forcés, la purge, l'ajout de racine dans le magasin Windows, la modification de la stratégie d'arrêt, l'enregistrement, la mise à jour et l'installation de paquets initiaux. Le redistribuable VC++ est un prérequis si la recette le nécessite.
+- Le service SCM historique est conservé à l'arrêt si son application et son point d'entrée correspondent au runtime livré. Le nettoyage ciblé remplace le runtime Python et retire les anciens modules et bytecodes prévus par la recette. Les chevauchements avec l'INI, SQLite, l'identité, les certificats et le cache sont refusés.
+- La confiance HTTPS et les certificats de paquets sont séparés. Le chemin de l'INI historique est conservé et le mode transition exige une CA HTTPS explicite.
+- Tests ciblés Inno et natifs PASS. Orchestration et retour arrière fictifs PASS. Le parcours nominal s'arrête à VERIFYING. COMPLETED exige la confirmation auprès du serveur cible.
+
+### Qualifications restantes
+
+- Installation classique réelle et installation en mode transition sur VM dédiée.
+- Inventaire exact des fichiers et composants Windows ajoutés, absence de modules Python historiques résiduels et protection contre les points de réanalyse dans les arbres nettoyés.
+- Maîtrise des relances externes et SCM, résolution des exécutions incertaines et retour arrière réel.
+- Vérification logique de SQLite et relecture de l'UUID, puis confirmation auprès du serveur cible.
+- Paquet toujours **NON DÉPLOYABLE** et hook réel désactivé.
+- Prochain lot 2E — confirmation de la migration.

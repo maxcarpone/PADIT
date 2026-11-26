@@ -111,7 +111,8 @@ Source: "{#wapt_base_dir}devwapt.bat"; DestDir: "{app}";
 Source: "{#wapt_base_dir}waptpyscripter.bat"; DestDir: "{app}"; 
 
 ; deployment/upgrade tool
-Source: "{#wapt_base_dir}waptdeploy.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace; 
+Source: "{#wapt_base_dir}waptdeploy.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace; Check: ClassicInstall()
+Source: "{#wapt_base_dir}waptdeploy.exe"; DestDir: "{app}"; Flags: ignoreversion; Check: TransitionMode()
 
 ; translations
 Source: "{#wapt_base_dir}languages\*"; DestDir: "{app}\languages\"; Flags: createallsubdirs recursesubdirs;
@@ -142,7 +143,7 @@ Source: "{#wapt_base_dir}wapt-get.ini.tmpl"; DestDir: "{app}";
 [Dirs]
 Name: "{app}\ssl"
 Name: "{app}\ssl\server"
-Name: "{app}"; Permissions: everyone-readexec authusers-readexec admins-full   
+Name: "{app}"; Permissions: everyone-readexec authusers-readexec admins-full; Check: ClassicInstall()
 Name: "{app}\private"
 Name: "{app}\Scripts"
 #ifdef waptenterprise
@@ -192,12 +193,12 @@ SignTool={#signtool}
 #endif
 
 [Registry]
-Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath('{app}')
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\wapt-get.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\wapt-get.exe"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: ClassicInstall() and NeedsAddPath('{app}')
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\wapt-get.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\wapt-get.exe"; Flags: uninsdeletekey; Check: ClassicInstall()
 
 [Run]
 #ifdef vcredist
-Filename: "{app}\vc_redist\vcredist_x86.exe"; Parameters: "/q"; WorkingDir: "{tmp}"; StatusMsg: "{cm:InstallingVCpp}"; Description: "{cm:InstallingVCpp}"; Check: VCRedistNeedsInstall 
+Filename: "{app}\vc_redist\vcredist_x86.exe"; Parameters: "/q"; WorkingDir: "{tmp}"; StatusMsg: "{cm:InstallingVCpp}"; Description: "{cm:InstallingVCpp}"; Check: ClassicInstall() and VCRedistNeedsInstall()
 ;Filename: "{app}\vc_redist\vcredist_x86.exe"; Parameters: "/q"; WorkingDir: "{tmp}"; StatusMsg: "{cm:InstallingVCpp}"; Description: "{cm:InstallingVCpp}"; Tasks: installredist2008
 ; Duplication necessaire, cf. [Tasks]
 ;Filename: "{app}\vc_redist\vcredist_x86.exe"; Parameters: "/q"; WorkingDir: "{tmp}"; StatusMsg: "{cm:InstallingVCpp}"; Description: "{cm:InstallingVCpp}"; Tasks: installredist2008unchecked
@@ -240,11 +241,11 @@ Name: EnableWaptServiceNoPassword; Description: "{cm:EnableWaptServiceNoPassword
 
 [InstallDelete]
 #ifndef FastDebug
-Type: filesandordirs; Name: "{app}\lib\site-packages"
+Type: filesandordirs; Name: "{app}\lib\site-packages"; Check: CleanAgentRuntime()
 #endif FastDebug
-Type: files; Name: "{app}\*.pyc"
-Type: files; Name: "{app}\waptservice\*.pyc"
-Type: files; Name: "{app}\waptservice\waptservice.py*"
+Type: files; Name: "{app}\*.pyc"; Check: CleanAgentRuntime()
+Type: files; Name: "{app}\waptservice\*.pyc"; Check: CleanAgentRuntime()
+Type: files; Name: "{app}\waptservice\waptservice.py*"; Check: CleanAgentRuntime()
 
 [UninstallRun]
 Filename: "taskkill"; Parameters: "/t /im ""waptself.exe"" /f"; Flags: runhidden; StatusMsg: "Arrêt de waptself"; RunOnceId: "PADIT_StopSelf"
@@ -341,6 +342,32 @@ begin
     end;
 end;
 
+function TransitionMode(): Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 1 to ParamCount do
+    if (CompareText(ParamStr(I), '/TRANSITION') = 0) or
+      (CompareText(Copy(ParamStr(I), 1, 12), '/TRANSITION=') = 0) then Exit;
+  Result := False;
+end;
+
+function ClassicInstall(): Boolean;
+begin
+  Result := not TransitionMode();
+end;
+
+function HasSetupSwitch(const Name: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), Name) = 0 then Exit;
+  Result := False;
+end;
+
 procedure InstallAuthenticodeRootCA();
 var
   ResultCode: Integer;
@@ -402,12 +429,19 @@ begin
   end;
 end;
 
+procedure ApplyTransitionConfig(); forward;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
 
 
 begin
+  if TransitionMode() then
+  begin
+    if CurStep = ssPostInstall then ApplyTransitionConfig();
+    Exit;
+  end;
   if CurStep = ssInstall then
   begin
     // Establish trust before any installed WAPT executable is used.

@@ -29,6 +29,7 @@ type
     FDirectoryPins: TDirectoryPins;
     procedure Log(const MessageText: string);
     function TryLog(const MessageText: string): Boolean;
+    function InstallerPending: Boolean;
     function Load: TJSONObject;
     procedure Save(Data: TJSONObject);
     function CommitState(Next: TTransitionState; const Diagnostic: string = '';
@@ -47,6 +48,8 @@ type
     // No CLI invokes backup in 2C.1. Isolated execution accepts only a
     // dedicated fixture service, never the installed historical WAPTService.
     function RunBackup(const IsolatedService: UnicodeString = ''): Boolean;
+    function RunFixtureCutover(const Service, Scenario: UnicodeString; const InstallerHash: string;
+      Timeout: DWORD; const RestoreScope, InstalledFiles: TBackupPaths): Boolean;
     // The orchestrator supplies trusted roots and the exact additions recorded by the installer.
     function RunRollback(const RestoreScope, InstalledFiles: TBackupPaths;
       const IsolatedService: UnicodeString = ''): Boolean;
@@ -67,7 +70,7 @@ implementation
 
 uses
   Classes, DateUtils, URIParser, jsonparser, jsonscanner, IniFiles, transitionprecheck,
-  transitionrestore, transitionbackupwindows;
+  transitionrestore, transitionbackupwindows, transitioninstall;
 
 const
   SchemaVersion = 1;
@@ -82,7 +85,7 @@ const
     [],                                                     // PRECHECK_FAILED
     [tsBackupInProgress, tsAborted],                        // PREPARED
     [tsBackupVerified, tsRecoveryRequired, tsAborted],      // BACKUP_IN_PROGRESS
-    [tsInstalling, tsAborted],                              // BACKUP_VERIFIED
+    [tsInstalling, tsAborted, tsRecoveryRequired],          // BACKUP_VERIFIED
     [tsVerifying, tsRollingBack, tsRecoveryRequired],       // INSTALLING
     [tsCompleted, tsRollingBack, tsRecoveryRequired],       // VERIFYING
     [],                                                     // COMPLETED
@@ -577,13 +580,23 @@ begin
   Result := TryLog('PRECHECK Local checks passed');
 end;
 
+function TTransitionStore.InstallerPending: Boolean;
+begin
+  Result := GetFileAttributesW(PWideChar(FRoot + 'staging\installer.pending')) <> INVALID_FILE_ATTRIBUTES;
+  if not Result then Result := GetLastError <> ERROR_FILE_NOT_FOUND;
+end;
+
 function TTransitionStore.Advance(Next: TTransitionState): Boolean;
 var
   Data: TJSONObject;
   Digest: string;
 begin
+  if (Next = tsRollingBack) and InstallerPending then
+    raise ETransitionState.Create('Installer outcome remains uncertain; rollback blocked');
   if Next = tsPrepared then
     raise ETransitionState.Create('PREPARED requires successful full prechecks');
+  if Next = tsCompleted then
+    raise ETransitionState.Create('COMPLETED requires confirmation from the target server');
   if Next = tsRolledBack then
     raise ETransitionState.Create('ROLLED_BACK requires a fully verified restoration');
   if Next in [tsBackupInProgress, tsBackupVerified] then
@@ -745,6 +758,164 @@ begin
   Result := StartedJournal and FinishedJournal;
 end;
 
+function TTransitionStore.RunFixtureCutover(const Service, Scenario: UnicodeString;
+  const InstallerHash: string; Timeout: DWORD; const RestoreScope, InstalledFiles: TBackupPaths): Boolean;
+var
+  Data, Source: TJSONObject;
+  State: TTransitionState;
+  InstallerPath, InstallDir, KeyPath, CertPath, ConfigPath, DatabasePath: UnicodeString;
+  Installer, Key, Cert, Marker: THandle;
+  Code, InitialState: DWORD;
+  PhaseJournal, BackupJournal, Ambiguous, MarkerOwned: Boolean;
+  Port: Integer;
+  Lines: TStringList;
+  Ini: TMemIniFile;
+  Arguments, FixtureDir: UnicodeString;
+begin
+  if not FIsolated or (Pos('PADIT_BackupTest_', Service) <> 1) then
+    raise ETransitionState.Create('Cutover is limited to an isolated fixture service');
+  if (Scenario <> 'nominal') and (Scenario <> 'exit') and
+     (Scenario <> 'timeout') and (Scenario <> 'invalid') then
+    raise ETransitionState.Create('Unknown cutover fixture scenario');
+  State := ReadState;
+  if (State = tsInstalling) or InstallerPending then
+    raise ETransitionState.Create('Prior installer outcome is uncertain; do not retry or roll back');
+  if not (State in [tsPrepared, tsBackupVerified]) then
+    raise ETransitionState.Create('Cutover requires PREPARED or BACKUP_VERIFIED');
+  FixtureDir := IncludeTrailingPathDelimiter(ExtractFileDir(ExcludeTrailingPathDelimiter(FRoot)));
+  Data := Load;
+  try
+    Source := Data.Objects['source'];
+    InstallDir := UTF8Decode(Field(Source, 'install_dir', jtString).AsString);
+    ConfigPath := UTF8Decode(Field(Source, 'config_path', jtString).AsString);
+    KeyPath := UTF8Decode(Field(Source, 'key_path', jtString).AsString);
+    CertPath := UTF8Decode(Field(Source, 'certificate_path', jtString).AsString);
+    DatabasePath := UTF8Decode(Field(Source, 'db_path', jtString).AsString);
+    if not UnicodeSameText(InstallDir, FixtureDir + 'agent') or
+       not UnicodeSameText(ConfigPath, InstallDir + '\wapt-get.ini') or
+       not UnicodeSameText(KeyPath, InstallDir + '\private\machine.pem') or
+       not UnicodeSameText(CertPath, InstallDir + '\private\machine.crt') or
+       not UnicodeSameText(Copy(ExpandFileName(DatabasePath), 1, Length(FixtureDir)), FixtureDir) then
+      raise ETransitionState.Create('Cutover fixture paths do not match the isolated layout');
+  finally
+    Data.Free;
+  end;
+  BackupJournal := True;
+  if State = tsPrepared then BackupJournal := RunBackup(Service);
+  Installer := INVALID_HANDLE_VALUE;
+  Key := INVALID_HANDLE_VALUE;
+  Cert := INVALID_HANDLE_VALUE;
+  Ambiguous := False;
+  MarkerOwned := False;
+  Data := Load;
+  try
+    InitialState := Field(Data.Objects['backup'], 'service_initial_state', jtNumber).AsInteger;
+    try
+      if BackupServiceState(Service) <> SERVICE_STOPPED then
+        raise ETransitionState.Create('Fixture service resumed before installer launch');
+      RequireWaptIdle(0, SERVICE_STOPPED);
+      InstallerPath := FRoot + 'staging\fixture-installer.exe';
+      Installer := OpenStorageFile(InstallerPath, GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING);
+      if (Installer = INVALID_HANDLE_VALUE) or (FileSHA256(Installer) <> InstallerHash) then
+        raise ETransitionInstall.Create('Staged fixture installer failed the final SHA256 check');
+      CheckLocalPath(KeyPath);
+      CheckLocalPath(CertPath);
+      Key := CreateFileW(PWideChar(KeyPath), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT, 0);
+      Cert := CreateFileW(PWideChar(CertPath), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING,
+        FILE_FLAG_OPEN_REPARSE_POINT, 0);
+      if (Key = INVALID_HANDLE_VALUE) or (Cert = INVALID_HANDLE_VALUE) then
+        raise ETransitionInstall.Create('Cannot protect fixture identity during cutover');
+      Marker := OpenStorageFile(FRoot + 'staging\installer.pending', GENERIC_WRITE, 0, CREATE_NEW);
+      if Marker = INVALID_HANDLE_VALUE then
+        raise ETransitionInstall.Create('Cannot create protected installer uncertainty marker');
+      MarkerOwned := True;
+      try
+        if not FlushFileBuffers(Marker) then
+          raise ETransitionInstall.Create('Cannot flush installer uncertainty marker');
+      finally
+        CloseHandle(Marker);
+      end;
+      PhaseJournal := Advance(tsInstalling);
+      State := tsInstalling;
+      Arguments := 'fixture-install ' + Scenario + ' "' + InstallDir + '"';
+      try
+        Code := RunLockedInstaller(InstallerPath, Arguments, Timeout);
+        CheckSetupExit(Code);
+      except
+        on E: EInstallUncertain do
+        begin
+          Ambiguous := True;
+          TryLog('ERROR INSTALLING: ' + E.Message);
+          raise;
+        end;
+      end;
+      if not DeleteFileW(PWideChar(FRoot + 'staging\installer.pending')) then
+      begin
+        Ambiguous := True;
+        raise EInstallUncertain.Create('Cannot clear the installer uncertainty marker');
+      end;
+      MarkerOwned := False;
+      Result := CommitState(tsVerifying) and PhaseJournal and BackupJournal;
+      State := tsVerifying;
+      if (BackupServiceState(Service) <> SERVICE_STOPPED) or
+        (ReadDocument(InstallDir + '\padit-fixture.txt') <> 'PADIT fixture verified') then
+        raise ETransitionInstall.Create('Local fixture verification failed');
+    except
+      on E: Exception do
+      begin
+        if Key <> INVALID_HANDLE_VALUE then CloseHandle(Key);
+        if Cert <> INVALID_HANDLE_VALUE then CloseHandle(Cert);
+        Key := INVALID_HANDLE_VALUE;
+        Cert := INVALID_HANDLE_VALUE;
+        if not Ambiguous then
+        begin
+          if MarkerOwned and not DeleteFileW(PWideChar(FRoot + 'staging\installer.pending')) then
+            raise EInstallUncertain.Create('Cannot clear the installer uncertainty marker');
+          if State in [tsInstalling, tsVerifying] then
+          begin
+            TryLog('ERROR CUTOVER: ' + E.Message);
+            RunRollback(RestoreScope, InstalledFiles, Service);
+          end
+          else
+          begin
+            try
+              RestoreBackupService(Service, InitialState);
+              if InitialState = SERVICE_RUNNING then
+              begin
+                Lines := TStringList.Create;
+                Ini := TMemIniFile.Create('');
+                try
+                  Lines.Text := RawByteString(ReadDocument(ConfigPath));
+                  Ini.SetStrings(Lines);
+                  if not TryStrToInt(Ini.ReadString('global', 'waptservice_port', '8088'), Port)
+                    or (Port < 1) or (Port > 65535) then
+                    raise ETransitionInstall.Create('Invalid fixture service port');
+                  RequireWaptIdle(Port, BackupServiceState(Service));
+                finally
+                  Ini.Free;
+                  Lines.Free;
+                end;
+              end;
+            except
+              CommitState(tsRecoveryRequired, 'Cannot restore fixture service after pre-launch failure');
+              raise;
+            end;
+            TryLog('ERROR CUTOVER: ' + E.Message);
+            CommitState(tsAborted);
+          end;
+        end;
+        raise;
+      end;
+    end;
+  finally
+    if Key <> INVALID_HANDLE_VALUE then CloseHandle(Key);
+    if Cert <> INVALID_HANDLE_VALUE then CloseHandle(Cert);
+    if Installer <> INVALID_HANDLE_VALUE then CloseHandle(Installer);
+    Data.Free;
+  end;
+end;
+
 function TTransitionStore.RunRollback(const RestoreScope, InstalledFiles: TBackupPaths;
   const IsolatedService: UnicodeString): Boolean;
 var
@@ -770,6 +941,8 @@ var
   end;
 
 begin
+  if InstallerPending then
+    raise ETransitionState.Create('Installer outcome remains uncertain; rollback blocked');
   if FIsolated then
   begin
     if Pos('PADIT_BackupTest_', IsolatedService) <> 1 then

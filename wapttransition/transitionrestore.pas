@@ -124,7 +124,12 @@ begin
     for Candidate in InstalledFiles do
     begin
       ValidatePath(Candidate, False);
-      Require(Below(Candidate, InstallDir) and not UnicodeSameText(Candidate, InstallDir) and
+      Found := False;
+      for Root in Scope do
+        if Below(Candidate, Root) then Found := True;
+      Require((Below(Candidate, InstallDir) or (Found and
+        UnicodeSameText(ExtractFileName(Candidate), 'padit-transition-packages.pem'))) and
+        not UnicodeSameText(Candidate, InstallDir) and
         not Below(Candidate, CacheDir) and not Below(Candidate, StoreRoot),
         'Removal is outside the installation or overlaps protected data');
       Require(Destinations.IndexOf(UTF8Encode(UnicodeLowerCase(Candidate))) < 0,

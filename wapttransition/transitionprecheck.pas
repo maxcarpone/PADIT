@@ -27,6 +27,11 @@ procedure RequireRollbackProcessesIdle;
 procedure RequireWaptIdle(Port: Integer; ServiceState: DWORD);
 function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString;
   out Metadata: TLocalMetadata): Boolean;
+// Successful calls return a read handle which denies both writes and deletion.
+function OpenVerifiedInstaller(const PackageDir: UnicodeString; const Metadata: TLocalMetadata;
+  const Policy: TTransitionSignerPolicy; out RepositoryURL: UTF8String; out Bundle: RawByteString): THandle;
+procedure CheckInstalledCutover(const Metadata: TLocalMetadata; const RepositoryURL: UTF8String;
+  const HTTPSPath, PackageCAPath: UnicodeString; const HTTPSBundle, PackageBundle: RawByteString);
 procedure CheckPayload(const PackageDir: UnicodeString; Installer: THandle;
   const Metadata: TLocalMetadata; out RepositoryURL: UTF8String; out Bundle: RawByteString);
 procedure CheckTransitionSecurity(const PackageDir: UnicodeString;
@@ -35,7 +40,7 @@ procedure CheckTransitionSecurity(const PackageDir: UnicodeString;
 implementation
 
 uses Classes, IniFiles, fpjson, jsonparser, jsonscanner,
-  WinHttp, ShellApi, transitionstorage;
+  WinHttp, ShellApi, transitionstorage, transitionbackup;
 
 const
   UninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\';
@@ -719,6 +724,39 @@ begin
   Result := Store.RecordLocalMetadata(Metadata);
 end;
 
+procedure CheckInstalledCutover(const Metadata: TLocalMetadata; const RepositoryURL: UTF8String;
+  const HTTPSPath, PackageCAPath: UnicodeString; const HTTPSBundle, PackageBundle: RawByteString);
+var
+  Config: TStringList;
+  Ini: TMemIniFile;
+  Community: Boolean;
+  Forced: UTF8String;
+begin
+  Require(ServiceStatus('WAPTService') = SERVICE_STOPPED, 'WAPTService must remain stopped before local verification');
+  RequireRollbackProcessesIdle;
+  Require(AgentVersion(IncludeTrailingPathDelimiter(UTF8Decode(Metadata.InstallDir)) + 'wapt-get.exe',
+    Community) = Metadata.TargetVersion, 'Unexpected installed PADIT version');
+  Config := TStringList.Create;
+  Ini := TMemIniFile.Create('');
+  try
+    Config.Text := RawByteString(ReadDocument(UTF8Decode(Metadata.ConfigPath)));
+    Ini.SetStrings(Config);
+    Require((NormalURL(Ini.ReadString('global', 'wapt_server', '')) = Metadata.TargetURL) and
+      (NormalURL(Ini.ReadString('global', 'repo_url', '')) = RepositoryURL), 'Installed endpoints differ from target');
+    Require(UnicodeSameText(UTF8Decode(Ini.ReadString('global', 'verify_cert', '')), HTTPSPath) and
+      (ReadDocument(HTTPSPath) = HTTPSBundle) and (ReadDocument(PackageCAPath) = PackageBundle),
+      'Installed CA configuration differs from verified transition trust');
+    Forced := Ini.ReadString('global', 'uuid', '');
+    if Metadata.IdentificationMode = 'configured' then
+      Require(UnicodeSameText(UTF8Decode(Forced), UTF8Decode(Metadata.UUID)), 'Installed forced UUID was changed');
+  finally
+    Ini.Free;
+    Config.Free;
+  end;
+  VerifyBackupDatabase(UTF8Decode(Metadata.DatabasePath));
+  CheckHistoricalIdentity(UTF8Decode(Metadata.CertificatePath), UTF8Decode(Metadata.KeyPath), Metadata.UUID);
+end;
+
 procedure CheckPayload(const PackageDir: UnicodeString; Installer: THandle;
   const Metadata: TLocalMetadata; out RepositoryURL: UTF8String; out Bundle: RawByteString);
 var
@@ -754,31 +792,38 @@ begin
   end;
 end;
 
+function OpenVerifiedInstaller(const PackageDir: UnicodeString; const Metadata: TLocalMetadata;
+  const Policy: TTransitionSignerPolicy; out RepositoryURL: UTF8String; out Bundle: RawByteString): THandle;
+var
+  InstallerPath: UnicodeString;
+begin
+  InstallerPath := IncludeTrailingPathDelimiter(PackageDir) + 'waptagent.exe';
+  Result := OpenStorageFile(InstallerPath, GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING);
+  Require(Result <> INVALID_HANDLE_VALUE, 'Cannot lock the staged installer for verification');
+  try
+    CheckPayload(PackageDir, Result, Metadata, RepositoryURL, Bundle);
+    CheckAuthenticode(InstallerPath, Result, Policy.InstallerSignerSHA256);
+  except
+    CloseHandle(Result);
+    raise;
+  end;
+end;
+
 procedure CheckTransitionSecurity(const PackageDir: UnicodeString;
   const Metadata: TLocalMetadata; const Policy: TTransitionSignerPolicy);
 var
-  EnginePath, InstallerPath: UnicodeString;
+  EnginePath: UnicodeString;
   Installer, Engine: THandle;
   PathSize: DWORD;
   RepositoryURL: UTF8String;
   Bundle: RawByteString;
 begin
-  InstallerPath := IncludeTrailingPathDelimiter(PackageDir) + 'waptagent.exe';
-  Installer := OpenStorageFile(InstallerPath, GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING);
-  Require(Installer <> INVALID_HANDLE_VALUE, 'Cannot lock the staged installer for verification');
   try
-    // PREPARED records a point-in-time check. Immediately before launching the
-    // future installer, repeat SHA256, PE version and Authenticode on the locked
-    // staged file and keep write/delete sharing denied until the image is open.
-    CheckPayload(PackageDir, Installer, Metadata, RepositoryURL, Bundle);
-    try
-      CheckAuthenticode(InstallerPath, Installer, Policy.InstallerSignerSHA256);
-    except
-      on E: ESecurityPrecheck do raise ESecurityPrecheck.Create('Installer: ' + E.Message);
-    end;
-  finally
-    CloseHandle(Installer);
+    Installer := OpenVerifiedInstaller(PackageDir, Metadata, Policy, RepositoryURL, Bundle);
+  except
+    on E: ESecurityPrecheck do raise ESecurityPrecheck.Create('Installer: ' + E.Message);
   end;
+  CloseHandle(Installer);
 
   SetLength(EnginePath, 32768);
   PathSize := GetModuleFileNameW(0, PWideChar(EnginePath), Length(EnginePath));

@@ -3,7 +3,7 @@ program test_transition_backup;
 {$mode objfpc}{$H+}
 
 uses Classes, SysUtils, Windows, ActiveX, ComObj, Variants, fpjson, jsonparser, transitionstate,
-  transitionbackup, transitionbackupwindows, transitionstorage, transitionrestore, transitionprecheck;
+  transitionbackup, transitionbackupwindows, transitionstorage, transitionrestore, transitionprecheck, transitionsecurity, transitioninstall;
 
 var
   ServiceHandle: SERVICE_STATUS_HANDLE;
@@ -296,7 +296,7 @@ var
   Store: TTransitionStore;
   State, Manifest: TJSONObject;
   Scope, Added: TBackupPaths;
-  BackupRoot, RuntimePath, ExtraPath, ForeignPath, CachePath, SQLitePath: UnicodeString;
+  BackupRoot, RuntimePath, ExtraPath, ForeignPath, CachePath, SQLitePath, AddedCA: UnicodeString;
   TransitionID, Digest: string;
   ManifestText, OriginalSQLite: UTF8String;
   Handle: THandle;
@@ -352,6 +352,8 @@ begin
       CachePath := Root + '\agent\cache\download.wapt';
       SQLitePath := Root + '\custom-' + UnicodeString(#$6F22) + '\waptdb.sqlite';
       OriginalSQLite := ReadText(SQLitePath);
+      AddedCA := IncludeTrailingPathDelimiter(ExtractFileDir(SQLitePath)) + 'padit-transition-packages.pem';
+      WriteText(AddedCA, 'new fixture CA');
       Check(SetFileAttributesW(PWideChar(RuntimePath), FILE_ATTRIBUTE_NORMAL),
         'Cannot change fixture runtime attributes');
       WriteText(RuntimePath, 'changed');
@@ -372,6 +374,7 @@ begin
         on E: ETransitionBackup do Check(Pos('outside the approved scope', E.Message) > 0, E.Message);
       end;
       Added[0] := ExtraPath;
+      AddBackupSource(Added, AddedCA);
       CheckRestorePaths(Manifest, Scope, Store.RootDirectory, Root + '\agent', Root + '\agent\cache', Added);
       Handle := CreateFileW(PWideChar(SQLitePath), GENERIC_WRITE, FILE_SHARE_READ or FILE_SHARE_WRITE,
         nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
@@ -451,12 +454,232 @@ begin
         (FILE_ATTRIBUTE_HIDDEN or FILE_ATTRIBUTE_READONLY), 'Historical file attributes not restored');
       Check(ReadText(SQLitePath) = OriginalSQLite, 'Custom Unicode SQLite file changed');
       Check(not FileExists(ExtraPath), 'Installation addition not removed');
+      Check(not FileExists(AddedCA), 'Transition-only CA in custom directory not removed');
       Check(ReadText(ForeignPath) = 'foreign data', 'Foreign file changed');
       Check(ReadText(CachePath) = 'isolated fixture', 'Package cache changed');
       Check((ReadText(BackupRoot + 'manifest.json') = ManifestText) and
         (VerifyBackup(BackupRoot, TransitionID) = Digest), 'Original backup changed');
     finally
       Manifest.Free;
+    end;
+  finally
+    Store.Free;
+  end;
+end;
+
+procedure TestSetupArguments;
+const
+  UncertainCodes: array[0..3] of DWORD = (8, 9, 1641, TransitionRestartCode);
+var
+  Arg: UnicodeString;
+  Code: DWORD;
+begin
+  Arg := TransitionSetupArguments('C:\Program Files\Agent', 'D:\Settings\custom.ini', 'D:\Trust',
+    'D:\Stage\server.pem', 'D:\Stage\packages.pem', 'https://target.example', 'https://repo.example/wapt');
+  Check(Pos('/TRANSITION=1', Arg) > 0, 'Missing transition switch');
+  Check(Pos('/NORESTART /NOCLOSEAPPLICATIONS /RESTARTEXITCODE=3010', Arg) > 0,
+    'Missing no-restart/no-close switches');
+  Check(Pos('/DIR="C:\Program Files\Agent" /TRANSITION_INI="D:\Settings\custom.ini"', Arg) > 0,
+    'Historical paths not preserved as distinct quoted arguments');
+  Check(Pos('/verify_cert="D:\Stage\server.pem"', Arg) > 0, 'TLS trust argument missing');
+  try
+    TransitionSetupArguments('C:\Agent', 'C:\custom.ini', 'C:\Trust', '0', 'C:\packages.pem',
+      'https://target.example', 'https://repo.example');
+    raise Exception.Create('TLS validation could be disabled');
+  except
+    on E: ETransitionInstall do Check(Pos('local path', E.Message) > 0, E.Message);
+  end;
+  try
+    TransitionSetupArguments('C:\Agent', 'C:\custom.ini', 'C:\Trust', 'C:\server.pem', 'C:\packages.pem',
+      'https://target.example', 'http://repo.example');
+    raise Exception.Create('HTTP repository accepted');
+  except
+    on E: ETransitionInstall do Check(Pos('HTTPS URL', E.Message) > 0, E.Message);
+  end;
+  CheckSetupExit(0);
+  for Code := 1 to 7 do
+    try
+      CheckSetupExit(Code);
+      raise Exception.Create('Unsuccessful setup exit accepted');
+    except
+      on E: EInstallUncertain do raise;
+      on E: ETransitionInstall do Check(Pos(IntToStr(Code), E.Message) > 0, E.Message);
+    end;
+  for Code in UncertainCodes do
+    try
+      CheckSetupExit(Code);
+      raise Exception.Create('Uncertain setup exit accepted');
+    except
+      on E: EInstallUncertain do Check(Pos(IntToStr(Code), E.Message) > 0, E.Message);
+    end;
+end;
+
+procedure FixtureInstaller;
+var
+  Home, IdentityPath, Image, Command: UnicodeString;
+  Handle: THandle;
+  Startup: TStartupInfoW;
+  Child: TProcessInformation;
+begin
+  Home := UnicodeString(ParamStr(3));
+  Check(FileExists(Home + '\private\machine.pem'), 'Fixture identity missing');
+  if ParamStr(2) = 'timeout' then
+  begin
+    Image := UnicodeString(ParamStr(0));
+    Command := '"' + Image + '" fixture-delay';
+    UniqueString(Command);
+    FillChar(Startup, SizeOf(Startup), 0);
+    Startup.cb := SizeOf(Startup);
+    Check(CreateProcessW(PWideChar(Image), PWideChar(Command), nil, nil, False, CREATE_NO_WINDOW,
+      nil, nil, Startup, Child), 'Cannot start fictitious installer descendant');
+    CloseHandle(Child.hThread);
+    CloseHandle(Child.hProcess);
+    Exit;
+  end;
+  IdentityPath := Home + '\private\machine.pem';
+  Handle := CreateFileW(PWideChar(IdentityPath), GENERIC_WRITE,
+    FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  if Handle <> INVALID_HANDLE_VALUE then
+  begin
+    CloseHandle(Handle);
+    ExitCode := 31;
+    Exit;
+  end;
+  if ParamStr(2) = 'exit' then
+  begin
+    WriteText(Home + '\padit-fixture.txt', 'partial installer output');
+    ExitCode := 7;
+  end
+  else if ParamStr(2) = 'nominal' then
+    WriteText(Home + '\padit-fixture.txt', 'PADIT fixture verified');
+end;
+
+procedure TestCutover(const Root, Service, CaseName: UnicodeString);
+var
+  Store: TTransitionStore;
+  FileHandle: THandle;
+  FixtureImage, Path: UnicodeString;
+  Payload, OriginalKey: UTF8String;
+  Hash, Before: string;
+  Scenario: UnicodeString;
+  Expected: TTransitionState;
+  Scope, Added: TBackupPaths;
+  Timeout: DWORD;
+begin
+  Store := TTransitionStore.Create(Root + '\transition');
+  try
+    SeedPrepared(Store, Root);
+    if CaseName <> 'cutover-ok' then
+      Check(Store.RunBackup(Service), 'Fixture backup did not complete');
+    Scenario := 'nominal';
+    Expected := tsVerifying;
+    Before := '';
+    Timeout := 10000;
+    if CaseName = 'cutover-exit' then
+    begin
+      Scenario := 'exit';
+      Expected := tsRolledBack;
+      Before := 'exit code 7';
+    end
+    else if CaseName = 'cutover-verify' then
+    begin
+      Scenario := 'invalid';
+      Expected := tsRolledBack;
+    end
+    else if CaseName = 'cutover-timeout' then
+    begin
+      Scenario := 'timeout';
+      Timeout := 100;
+      Expected := tsInstalling;
+      Before := 'deadline exceeded';
+    end
+    else if CaseName = 'cutover-launch' then
+    begin
+      Expected := tsRolledBack;
+      Before := 'Cannot create installer process';
+    end
+    else if CaseName = 'cutover-tamper' then
+    begin
+      Expected := tsAborted;
+      Before := 'final SHA256';
+    end
+    else if CaseName = 'cutover-backup' then
+    begin
+      Expected := tsAborted;
+      Before := 'Unlisted object';
+      FileHandle := OpenStorageFile(Store.RootDirectory + 'backup\unexpected.tmp', GENERIC_WRITE, 0, CREATE_NEW);
+      Check(FileHandle <> INVALID_HANDLE_VALUE, 'Cannot alter fixture backup');
+      CloseHandle(FileHandle);
+    end;
+    Scope := nil;
+    Added := nil;
+    AddBackupSource(Scope, Root + '\agent');
+    AddBackupSource(Scope, Root + '\custom-' + UnicodeString(#$6F22));
+    AddBackupSource(Added, Root + '\agent\padit-fixture.txt');
+    OriginalKey := ReadText(Root + '\agent\private\machine.pem');
+    FixtureImage := Store.RootDirectory + 'staging\fixture-installer.exe';
+    if CaseName = 'cutover-launch' then Payload := 'invalid executable'
+    else Payload := ReadText(UnicodeString(ParamStr(0)));
+    FileHandle := OpenStorageFile(FixtureImage, GENERIC_READ or GENERIC_WRITE, 0, CREATE_NEW);
+    Check(FileHandle <> INVALID_HANDLE_VALUE, 'Cannot create staged fixture installer');
+    try
+      Check(FileWrite(FileHandle, Payload[1], Length(Payload)) = Length(Payload), 'Cannot stage fixture installer');
+      Hash := FileSHA256(FileHandle);
+      if CaseName = 'cutover-tamper' then
+      begin
+        Check(SetFilePointer(FileHandle, 0, nil, FILE_BEGIN) = 0, 'Cannot rewind fixture installer');
+        Check(FileWrite(FileHandle, 'XX'[1], 2) = 2, 'Cannot alter fixture installer');
+      end;
+    finally
+      CloseHandle(FileHandle);
+    end;
+    if Expected = tsVerifying then Check(Store.RunFixtureCutover(Service, Scenario, Hash, Timeout, Scope, Added),
+      'Fixture cutover journal failed')
+    else
+      try
+        Store.RunFixtureCutover(Service, Scenario, Hash, Timeout, Scope, Added);
+        raise Exception.Create('Failed installer was accepted');
+      except
+        on E: Exception do
+          Check((E.Message <> 'Failed installer was accepted') and
+            ((Before = '') or (Pos(Before, E.Message) > 0)), E.Message);
+      end;
+    Check(Store.ReadState = Expected, 'Unexpected fixture cutover state');
+    Check(ReadText(Root + '\agent\private\machine.pem') = OriginalKey, 'Historical fixture identity changed');
+    Path := Root + '\agent\padit-fixture.txt';
+    if Expected = tsVerifying then
+    begin
+      Check(FileExists(Path), 'Successful installer output missing');
+      try
+        Store.Advance(tsCompleted);
+        raise Exception.Create('Premature completion accepted');
+      except
+        on E: ETransitionState do Check(Pos('confirmation', E.Message) > 0, E.Message);
+      end;
+    end
+    else if Expected = tsInstalling then
+    begin
+      FreeAndNil(Store);
+      Store := TTransitionStore.Create(Root + '\transition');
+      Check(Store.ReadState = tsInstalling, 'Interrupted state did not persist');
+      try
+        Store.RunFixtureCutover(Service, Scenario, Hash, Timeout, Scope, Added);
+        raise Exception.Create('Uncertain installer was retried');
+      except
+        on E: ETransitionState do Check(Pos('uncertain', E.Message) > 0, E.Message);
+      end;
+      try
+        Store.RunRollback(Scope, Added, Service);
+        raise Exception.Create('Rollback allowed with an uncertain installer');
+      except
+        on E: ETransitionState do Check(Pos('rollback blocked', E.Message) > 0, E.Message);
+      end;
+      Sleep(1500);
+    end
+    else
+    begin
+      Check(not FileExists(Path), 'Introduced fixture file was not removed');
+      Check(BackupServiceState(Service) = SERVICE_RUNNING, 'Historical fixture service was not restored');
     end;
   finally
     Store.Free;
@@ -564,11 +787,15 @@ begin
   try
     Mode := ParamStr(1);
     if Mode = 'service' then RunFixtureService
+    else if Mode = 'fixture-delay' then Sleep(1200)
+    else if Mode = 'fixture-install' then FixtureInstaller
     else
     begin
       Root := UnicodeString(ParamStr(2));
       Service := UnicodeString(ParamStr(3));
-      if Mode = 'success' then TestSuccess(Root, Service)
+      if Mode = 'setup-arguments' then TestSetupArguments
+      else if Pos('cutover-', Mode) = 1 then TestCutover(Root, Service, UnicodeString(Mode))
+      else if Mode = 'success' then TestSuccess(Root, Service)
       else if Mode = 'restore' then TestRestore(Root, Service)
       else if Mode = 'restore-failure' then TestRestore(Root, Service, True)
       else if Mode = 'preexisting' then
