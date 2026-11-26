@@ -3187,3 +3187,30 @@ Revue indépendante de W109-126-f9.diff : PASS. F8/F9 accepté.
 - Les deux contrôles requalifiés sur VM109 sont PASS. Un instantané valide a été produit en mémoire avec le runtime historique, le nom Windows lu hors réseau et l'UUID WMI local. Les tests de non-régression ciblés sont PASS.
 - Aucune modification de l'agent historique, aucune migration ni communication avec SCRAB. Paquet toujours NON DÉPLOYABLE.
 - Prochain chantier : lot 2C, sauvegarde et restauration.
+
+## W109-126 — Lot 2C.1 — Conditions d'inactivité
+
+- Le service historique et les tâches WAPT doivent rester inactifs du début de la sauvegarde jusqu'à l'installation. Le futur orchestrateur devra revérifier l'inactivité et l'intégrité immédiatement avant la bascule.
+- Les contrôles de la file locale, du gestionnaire de services et des tâches reconnues, ainsi que les poignées de copie, ne bloquent pas un redémarrage manuel, une tâche indirecte, un outil externe ni une modification de fichier après sa copie. Le verrou du moteur couvre uniquement ses propres instances. L'exploitation devra empêcher ces opérations concurrentes.
+- L'état initial du service est enregistré avant sa mise à l'arrêt. Après un échec, le moteur tente de rétablir cet état et vérifie le résultat. Après interruption brutale, l'état persistant et les fichiers partiels servent au diagnostic.
+- Paquet toujours NON DÉPLOYABLE.
+
+
+### Sauvegarde et vérification
+
+- Revue indépendante du diff W109-126-lot2c1-rev2.diff PASS pour intégration des sources.
+- Sauvegarde locale native complète sans compression. Les chemins personnalisés sont pris en compte. Le cache voisin de l'INI actif est exclu conformément au comportement historique de WAPT.
+- Les métadonnées conservent les ACL d'origine, les attributs et les horodatages. Les ACL du stockage sécurisé protègent les copies. La collecte Windows cible les éléments WAPT nécessaires dans le registre, les services, les tâches planifiées et les raccourcis.
+- La copie de SQLite exige une poignée qui interdit les écritures concurrentes. Le moteur refuse la copie si cette protection est indisponible ou si un journal annexe est présent.
+- Le manifeste JSON contient les tailles et les SHA256 calculés via CryptoAPI. Le moteur vérifie intégralement la sauvegarde avant BACKUP_VERIFIED et vérifie de nouveau le manifeste et les fichiers avant INSTALLING.
+- L'état initial du service est persisté avant l'arrêt. Après une erreur, le moteur conserve les fichiers partiels et le diagnostic. Il enregistre ABORTED après rétablissement vérifié du service dans son état initial ou RECOVERY_REQUIRED si le rétablissement est impossible ou incertain.
+- Le contrôle d'espace distingue les volumes de sauvegarde et d'installation et applique une marge provisoire de 1 Gio.
+- Tests initiaux et complémentaires PASS sur des données et services isolés. Compilation Windows x86 validée avec la version de test 1.8.3.7766. Sorties de --help et --version validées. Agent historique de VM109 préservé.
+
+### Qualifications restantes
+
+- Fidélité de la restauration au lot 2C.2, notamment pour les comptes personnalisés des services et tâches, les ACL d'audit et les profils utilisateur.
+- Exhaustivité du périmètre de sauvegarde par rapport aux modifications de l'installateur et maîtrise des opérations concurrentes jusqu'à l'installation.
+- Récupération après interruption brutale et résistance aux coupures électriques.
+- Compatibilité Windows 7 SP1 et Windows Server 2012 R2.
+- Paquet toujours **NON DÉPLOYABLE**.

@@ -25,12 +25,14 @@ type
   private
     FRoot: UnicodeString;
     FLock: THandle;
+    FIsolated: Boolean;
     FDirectoryPins: TDirectoryPins;
     procedure Log(const MessageText: string);
     function TryLog(const MessageText: string): Boolean;
     function Load: TJSONObject;
     procedure Save(Data: TJSONObject);
-    function CommitState(Next: TTransitionState; const Diagnostic: string = ''): Boolean;
+    function CommitState(Next: TTransitionState; const Diagnostic: string = '';
+      const BackupDigest: string = ''; InitialServiceState: DWORD = 0): Boolean;
   public
     constructor Create(const Root: UnicodeString = '');
     destructor Destroy; override;
@@ -42,6 +44,9 @@ type
     function Advance(Next: TTransitionState): Boolean;
     // Policy must come from trusted configuration, never the transition package.
     function RunFullPrecheck(const Policy: TTransitionSignerPolicy): Boolean;
+    // No CLI invokes backup in 2C.1. Isolated execution accepts only a
+    // dedicated fixture service, never the installed historical WAPTService.
+    function RunBackup(const IsolatedService: UnicodeString = ''): Boolean;
     // Persist local results without advancing. Only the future orchestrator may
     // enter PREPARED after all local, network and cryptographic checks pass.
     function RecordLocalMetadata(const Metadata: TLocalMetadata): Boolean;
@@ -58,7 +63,8 @@ function IsSafeServerURL(const Value: string): Boolean;
 implementation
 
 uses
-  Classes, DateUtils, URIParser, jsonparser, jsonscanner, transitionprecheck;
+  Classes, DateUtils, URIParser, jsonparser, jsonscanner, IniFiles, transitionprecheck,
+  transitionbackup, transitionbackupwindows;
 
 const
   SchemaVersion = 1;
@@ -219,6 +225,7 @@ var
   Current, Previous: TTransitionState;
   CreatedAt, UpdatedAt, Identifier: string;
   Id: TGUID;
+  Backup: TJSONObject;
 begin
   if Field(Data, 'schema_version', jtNumber).AsJSON <> IntToStr(SchemaVersion) then
     raise ETransitionState.Create('Unsupported state schema version');
@@ -247,20 +254,37 @@ begin
      'certificate_path', 'db_path', 'service_state'], True, 3);
   ValidateMetadata(TJSONObject(Field(Data, 'target', jtObject)),
     ['url', 'agent_version'], True, 2);
-  ValidateMetadata(TJSONObject(Field(Data, 'backup', jtObject)),
-    ['verified', 'manifest'], False, 2);
-  if Current = tsPrecheckFailed then
+  Backup := TJSONObject(Field(Data, 'backup', jtObject));
+  if Backup.Find('service_initial_state') <> nil then
+  begin
+    Identifier := Field(Backup, 'service_initial_state', jtNumber).AsJSON;
+    if (Identifier <> IntToStr(SERVICE_RUNNING)) and (Identifier <> IntToStr(SERVICE_STOPPED)) then
+      raise ETransitionState.Create('Invalid initial backup service state');
+  end
+  else if (Current = tsBackupInProgress) or
+    ((Current <> tsPrecheck) and (Previous = tsBackupInProgress)) then
+    raise ETransitionState.Create('Missing initial backup service state');
+  if Backup.Find('sha256') = nil then
+  begin
+    Field(Backup, 'verified', jtNull);
+    if (Backup.Count <> 2 + Ord(Backup.Find('service_initial_state') <> nil)) then
+      raise ETransitionState.Create('Invalid pending backup reference');
+    Field(Backup, 'manifest', jtNull);
+    if Current in [tsBackupVerified, tsInstalling, tsVerifying, tsCompleted, tsRollingBack, tsRolledBack] then
+      raise ETransitionState.Create('Verified backup reference is required');
+  end
+  else if (Backup.Count <> 3 + Ord(Backup.Find('service_initial_state') <> nil)) or not Field(Backup, 'verified', jtBoolean).AsBoolean or
+    (Field(Backup, 'manifest', jtString).AsString <> 'backup/manifest.json') or
+    (Length(Field(Backup, 'sha256', jtString).AsString) <> 64) then
+    raise ETransitionState.Create('Invalid verified backup reference');
+  if (Current in [tsPrecheckFailed, tsRecoveryRequired]) or
+    ((Current = tsAborted) and (Data.Strings['previous_state'] = 'BACKUP_IN_PROGRESS')) then
   begin
     Identifier := Field(Data, 'last_error', jtString).AsString;
     if (Identifier = '') or (Length(Identifier) > 512) or
        (Pos(#0, Identifier) > 0) or (Pos(#10, Identifier) > 0) or
        (Pos(#13, Identifier) > 0) then
-      raise ETransitionState.Create('Invalid precheck diagnostic');
-  end
-  else if Current = tsRecoveryRequired then
-  begin
-    if Field(Data, 'last_error', jtString).AsString <> StateNames[Current] then
-      raise ETransitionState.Create('Invalid last_error');
+      raise ETransitionState.Create('Invalid transition diagnostic');
   end
   else
     Field(Data, 'last_error', jtNull);
@@ -270,6 +294,7 @@ constructor TTransitionStore.Create(const Root: UnicodeString);
 begin
   inherited Create;
   FLock := INVALID_HANDLE_VALUE;
+  FIsolated := Root <> '';
   FRoot := SecureTransitionRoot(Root, FDirectoryPins);
   try
     FLock := OpenStorageFile(FRoot + 'transition.lock', GENERIC_WRITE, 0, OPEN_ALWAYS);
@@ -550,10 +575,168 @@ begin
 end;
 
 function TTransitionStore.Advance(Next: TTransitionState): Boolean;
+var
+  Data: TJSONObject;
+  Digest: string;
 begin
   if Next = tsPrepared then
     raise ETransitionState.Create('PREPARED requires successful full prechecks');
+  if Next in [tsBackupInProgress, tsBackupVerified] then
+    raise ETransitionState.Create('Backup states require the protected backup workflow');
+  if (Next = tsAborted) and (ReadState in [tsBackupInProgress, tsBackupVerified]) then
+    raise ETransitionState.Create('Restore normal agent operation before recording ABORTED');
+  if Next = tsInstalling then
+  begin
+    try
+      Data := Load;
+      try
+        if (Data = nil) or (ParseState(Data.Strings['state']) <> tsBackupVerified) then
+          raise ETransitionState.Create('Forbidden transition: installation requires a verified backup');
+        Digest := VerifyBackup(FRoot + 'backup', Data.Strings['transition_id']);
+        if Digest <> Data.Objects['backup'].Strings['sha256'] then
+          raise ETransitionState.Create('Verified backup manifest no longer matches state');
+      finally
+        Data.Free;
+      end;
+    except
+      on E: Exception do
+      begin
+        TryLog('ERROR Advance: ' + E.Message);
+        raise;
+      end;
+    end;
+  end;
   Result := CommitState(Next);
+end;
+
+function TTransitionStore.RunBackup(const IsolatedService: UnicodeString): Boolean;
+var
+  Data: TJSONObject;
+  Source: TJSONObject;
+  ConfigLines, Shortcuts: TStringList;
+  Ini: TMemIniFile;
+  Roots: TBackupPaths;
+  InstallDir, ConfigPath, WorkingDir, DB, Cache, Path, Service: UnicodeString;
+  TransitionID, Digest, Diagnostic: string;
+  InitialServiceState: DWORD;
+  PayloadSize: QWord;
+  FailureState: TTransitionState;
+  Port: Integer;
+  I: Integer;
+  StartedJournal, FinishedJournal: Boolean;
+
+  procedure IncludeConfigured(const Name: string);
+  begin
+    if Ini.ValueExists('global', Name) then
+      AddBackupSource(Roots, ResolvePath(UTF8Decode(Ini.ReadString('global', Name, '')), WorkingDir));
+  end;
+
+begin
+  if FIsolated then
+  begin
+    if Pos('PADIT_BackupTest_', IsolatedService) <> 1 then
+      raise ETransitionState.Create('Isolated backup requires a dedicated test service');
+    Service := IsolatedService;
+  end
+  else
+  begin
+    if IsolatedService <> '' then raise ETransitionState.Create('Unexpected isolated service override');
+    Service := 'WAPTService';
+  end;
+  Data := Load;
+  try
+    if (Data = nil) or (ParseState(Data.Strings['state']) <> tsPrepared) then
+      raise ETransitionState.Create('Backup requires PREPARED');
+    if HasBackup then raise ETransitionBackup.Create('A previous backup exists and will be preserved');
+    TransitionID := Data.Strings['transition_id'];
+    Source := Data.Objects['source'];
+    InstallDir := UTF8Decode(Field(Source, 'install_dir', jtString).AsString);
+    ConfigPath := UTF8Decode(Field(Source, 'config_path', jtString).AsString);
+    DB := UTF8Decode(Field(Source, 'db_path', jtString).AsString);
+    WorkingDir := InstallDir;
+    if not FIsolated and RegistryValue('SYSTEM\CurrentControlSet\Services\WAPTService\Parameters',
+      'AppDirectory', 0, Path) and (Path <> '') then WorkingDir := ResolvePath(Path, InstallDir);
+    // Historical WAPT uses dirname(config_filename) + 'cache', including custom INIs.
+    Cache := IncludeTrailingPathDelimiter(ExtractFileDir(ConfigPath)) + 'cache';
+    Roots := nil;
+    AddBackupSource(Roots, InstallDir);
+    AddBackupSource(Roots, ConfigPath);
+    AddBackupSource(Roots, DB);
+    AddBackupSource(Roots, UTF8Decode(Field(Source, 'key_path', jtString).AsString));
+    AddBackupSource(Roots, UTF8Decode(Field(Source, 'certificate_path', jtString).AsString));
+    ConfigLines := TStringList.Create;
+    Ini := TMemIniFile.Create('');
+    try
+      ConfigLines.Text := RawByteString(ReadDocument(ConfigPath));
+      Ini.SetStrings(ConfigLines);
+      if not TryStrToInt(Ini.ReadString('global', 'waptservice_port', '8088'), Port) or
+        (Port < 1) or (Port > 65535) then raise ETransitionBackup.Create('Invalid WAPT service port');
+      IncludeConfigured('private_dir');
+      IncludeConfigured('persistent_root_dir');
+      IncludeConfigured('public_certs_dir');
+      IncludeConfigured('log_directory');
+      Path := UTF8Decode(Ini.ReadString('global', 'verify_cert', ''));
+      if (Path <> '') and (Path <> '0') and (Path <> '1') and
+        not UnicodeSameText(Path, 'true') and not UnicodeSameText(Path, 'false') then
+        AddBackupSource(Roots, ResolvePath(Path, WorkingDir));
+    finally
+      Ini.Free;
+      ConfigLines.Free;
+    end;
+  finally
+    Data.Free;
+  end;
+  if not FIsolated then
+  begin
+    Shortcuts := TStringList.Create;
+    try
+      DiscoverWaptShortcuts(InstallDir, Shortcuts);
+      for I := 0 to Shortcuts.Count - 1 do AddBackupSource(Roots, UTF8Decode(Shortcuts[I]));
+    finally
+      Shortcuts.Free;
+    end;
+    RequireScheduledWaptIdle(InstallDir);
+  end;
+  PayloadSize := 0;
+  if not FIsolated then
+    PayloadSize := FileSizeRequired(FRoot + 'staging\payload\waptagent.exe', 'Missing staged installer');
+  CheckBackupSpace(FRoot + 'backup', InstallDir, Roots, Cache, PayloadSize);
+  InitialServiceState := BackupServiceState(Service);
+  RequireWaptIdle(Port, InitialServiceState);
+  StartedJournal := CommitState(tsBackupInProgress, '', '', InitialServiceState);
+  try
+    StopBackupService(Service);
+    RequireWaptIdle(Port, BackupServiceState(Service));
+    CaptureBackup(FRoot + 'backup', Cache, DB, InstallDir, TransitionID, Roots,
+      InitialServiceState, Service);
+    if BackupServiceState(Service) <> SERVICE_STOPPED then
+      raise ETransitionBackup.Create('Historical service resumed during backup');
+    RequireWaptIdle(Port, SERVICE_STOPPED);
+    Digest := VerifyBackup(FRoot + 'backup', TransitionID);
+    FinishedJournal := CommitState(tsBackupVerified, '', Digest);
+  except
+    on E: Exception do
+    begin
+      Diagnostic := 'Backup failed after entering BACKUP_IN_PROGRESS';
+      if (E is ETransitionBackup) or (E is ELocalPrecheck) then Diagnostic := E.Message;
+      FailureState := tsAborted;
+      try
+        RestoreBackupService(Service, InitialServiceState);
+        if InitialServiceState = SERVICE_RUNNING then RequireWaptIdle(Port, InitialServiceState);
+      except
+        on RestoreError: Exception do
+        begin
+          FailureState := tsRecoveryRequired;
+          Diagnostic := Copy(Diagnostic, 1, 350) + '; service restoration failed';
+          if (RestoreError is ETransitionBackup) or (RestoreError is ELocalPrecheck) then
+            Diagnostic := Diagnostic + ': ' + RestoreError.Message;
+        end;
+      end;
+      CommitState(FailureState, Diagnostic);
+      raise;
+    end;
+  end;
+  Result := StartedJournal and FinishedJournal;
 end;
 
 function TTransitionStore.RunFullPrecheck(const Policy: TTransitionSignerPolicy): Boolean;
@@ -588,7 +771,8 @@ begin
   Result := LocalJournal and FinalJournal;
 end;
 
-function TTransitionStore.CommitState(Next: TTransitionState; const Diagnostic: string): Boolean;
+function TTransitionStore.CommitState(Next: TTransitionState; const Diagnostic, BackupDigest: string;
+  InitialServiceState: DWORD): Boolean;
 var
   Data: TJSONObject;
   Current: TTransitionState;
@@ -610,10 +794,18 @@ begin
         Data.Strings['updated_at'] := Stamp;
       if IsFailure(Next) then
         Data.Strings['last_error'] := StateNames[Next];
-      if (Next = tsPrecheckFailed) and (Diagnostic <> '') then
+      if (IsFailure(Next) or (Next = tsAborted)) and (Diagnostic <> '') then
       begin
         Data.Strings['last_error'] := Diagnostic;
         EventText := EventText + ' (' + Diagnostic + ')';
+      end;
+      if Next = tsBackupInProgress then
+        Data.Objects['backup'].Integers['service_initial_state'] := InitialServiceState;
+      if Next = tsBackupVerified then
+      begin
+        Data.Objects['backup'].Booleans['verified'] := True;
+        Data.Objects['backup'].Strings['manifest'] := 'backup/manifest.json';
+        Data.Objects['backup'].Strings['sha256'] := BackupDigest;
       end;
       Save(Data);
     finally
@@ -626,7 +818,7 @@ begin
       raise;
     end;
   end;
-  if IsFailure(Next) then
+  if IsFailure(Next) or ((Next = tsAborted) and (Diagnostic <> '')) then
     Result := TryLog('ERROR STATE ' + EventText)
   else
     Result := TryLog('STATE ' + EventText);

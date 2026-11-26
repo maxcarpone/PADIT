@@ -10,6 +10,9 @@ uses SysUtils, Windows, transitionstate, transitionsecurity;
 type
   ELocalPrecheck = class(Exception);
 
+function RegistryValue(const Key, Name: UnicodeString; View: DWORD; out Value: UnicodeString): Boolean;
+function ResolvePath(const Path, Base: UnicodeString): UnicodeString;
+function ReadDocument(const Path: UnicodeString): UTF8String;
 procedure CheckTaskStatus(const JSON: UTF8String; PreparationTask: Integer = 0);
 function HistoricalCommunityVersion(const AgentPath, RegisteredEdition: UnicodeString): UTF8String;
 function InspectLocalAgent(const InstallDir, ConfigPath, WorkingDir,
@@ -18,6 +21,7 @@ function InspectLocalAgent(const InstallDir, ConfigPath, WorkingDir,
   const Snapshot: UTF8String; const RegisteredEdition: UnicodeString): TLocalMetadata;
 // The future orchestrator must recheck the queue and process list after the
 // preparation task exits, and obtain a fresh database check with no exemption.
+function FileSizeRequired(const Path: UnicodeString; const Diagnostic: string): QWord;
 procedure RequireWaptIdle(Port: Integer; ServiceState: DWORD);
 function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString;
   out Metadata: TLocalMetadata): Boolean;

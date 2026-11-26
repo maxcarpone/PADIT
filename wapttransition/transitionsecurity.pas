@@ -17,6 +17,7 @@ type
     InstallerSignerSHA256, EngineSignerSHA256: string;
   end;
 
+function FileSHA256(FileHandle: THandle): string;
 procedure CheckInstallerHash(FileHandle: THandle; const ManifestHash, Sidecar: RawByteString);
 procedure CheckAuthenticode(const Path: UnicodeString; FileHandle: THandle;
   const ExpectedSignerSHA256: string);

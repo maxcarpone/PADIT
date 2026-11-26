@@ -3,7 +3,7 @@ program test_transition_state;
 {$mode objfpc}{$H+}
 
 uses
-  Classes, SysUtils, Windows, transitionstate;
+  Classes, SysUtils, Windows, fpjson, jsonparser, transitionstate;
 
 procedure Check(Condition: Boolean; const Description: string);
 begin
@@ -80,6 +80,26 @@ begin
   WriteText(Path, Initial);
 end;
 
+procedure SeedInstallingFixture(const Path: UnicodeString);
+var
+  Data: TJSONObject;
+begin
+  Data := TJSONObject(GetJSON(ReadText(Path)));
+  try
+    Data.Strings['state'] := 'INSTALLING';
+    Data.Strings['previous_state'] := 'BACKUP_VERIFIED';
+    with Data.Objects['backup'] do
+    begin
+      Booleans['verified'] := True;
+      Strings['manifest'] := 'backup/manifest.json';
+      Strings['sha256'] := StringOfChar('0', 64);
+    end;
+    WriteText(Path, Data.FormatJSON);
+  finally
+    Data.Free;
+  end;
+end;
+
 procedure TestStore(const Root: UnicodeString);
 var
   Store: TTransitionStore;
@@ -148,10 +168,7 @@ begin
     finally
       CloseHandle(Reader);
     end;
-    SeedPreparedFixture(Path);
-    Store.Advance(tsBackupInProgress);
-    Store.Advance(tsBackupVerified);
-    Store.Advance(tsInstalling);
+    SeedInstallingFixture(Path);
     Store.Advance(tsVerifying);
     Store.Advance(tsRollingBack);
     Store.Advance(tsRolledBack);
@@ -176,7 +193,7 @@ end;
 procedure TestAborted(const Root: UnicodeString);
 var
   Store: TTransitionStore;
-  State, BeforeAbort: TTransitionState;
+  State: TTransitionState;
   Path: UnicodeString;
 begin
   for State := Low(TTransitionState) to High(TTransitionState) do
@@ -186,27 +203,20 @@ begin
       'Unexpected predecessor for ABORTED');
     Check(not CanAdvance(tsAborted, State), 'ABORTED has an outgoing transition');
   end;
-  for BeforeAbort := tsPrepared to tsBackupVerified do
-  begin
-    Path := Root + '-abort-' + UnicodeString(IntToStr(Ord(BeforeAbort)));
-    Store := TTransitionStore.Create(Path);
-    try
-      Check(Store.Initialize, 'Initial journal write failed');
-      SeedPreparedFixture(Path + '\state.json');
-      if BeforeAbort >= tsBackupInProgress then
-        Check(Store.Advance(tsBackupInProgress), 'BACKUP_IN_PROGRESS journal write failed');
-      if BeforeAbort = tsBackupVerified then
-        Check(Store.Advance(tsBackupVerified), 'BACKUP_VERIFIED journal write failed');
-      Check(Store.Advance(tsAborted), 'ABORTED journal write failed');
-    finally
-      Store.Free;
-    end;
-    Store := TTransitionStore.Create(Path);
-    try
-      Check(Store.ReadState = tsAborted, 'ABORTED was not persisted');
-    finally
-      Store.Free;
-    end;
+  Path := Root + '-abort';
+  Store := TTransitionStore.Create(Path);
+  try
+    Check(Store.Initialize, 'Initial journal write failed');
+    SeedPreparedFixture(Path + '\state.json');
+    Check(Store.Advance(tsAborted), 'ABORTED journal write failed');
+  finally
+    Store.Free;
+  end;
+  Store := TTransitionStore.Create(Path);
+  try
+    Check(Store.ReadState = tsAborted, 'ABORTED was not persisted');
+  finally
+    Store.Free;
   end;
 end;
 

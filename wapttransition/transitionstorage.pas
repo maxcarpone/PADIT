@@ -17,6 +17,7 @@ function GetVolumePathNameW(Path, Volume: PWideChar; Size: DWORD): BOOL;
 
 function SecureTransitionRoot(const OverrideRoot: UnicodeString;
   var Pins: TDirectoryPins): UnicodeString;
+function SecurityDescriptor(IsDirectory: Boolean): PSECURITY_DESCRIPTOR;
 procedure SecureDirectory(const Path: UnicodeString);
 procedure CheckStorageFile(const Path: UnicodeString);
 procedure CheckLocalPath(const Path: UnicodeString);
