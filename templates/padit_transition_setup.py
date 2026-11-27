@@ -315,17 +315,22 @@ def _windows_authenticode_signer(path, handle):
             verify(w.HWND(-1), action, ctypes.byref(data))
 
 
-def _approval_for_locked_package(wapt, entry, package_dir, signer_for, images, read):
-    """Use the historical WAPT chain and the signed contents, never an executable's claimed pin."""
-    import hashlib
+def _authenticate_transition_package(wapt, entry, package_dir):
     from zipfile import is_zipfile
 
     if (not entry.localpath or not os.path.isfile(entry.localpath) or
-            not is_zipfile(entry.localpath) or
+            not is_zipfile(entry.localpath) or entry._default_md != 'sha256' or
             os.path.normcase(os.path.abspath(entry.sourcespath or '')) != os.path.normcase(package_dir)):
         raise RuntimeError('Transition requires an authenticated WAPT archive')
     if not entry.check_package_signature(wapt.cabundle):
         raise RuntimeError('Transition package signer did not authenticate its contents')
+
+
+def _approval_for_locked_package(wapt, entry, package_dir, signer_for, images, read):
+    """Use the historical WAPT chain and the signed contents, never an executable's claimed pin."""
+    import hashlib
+
+    _authenticate_transition_package(wapt, entry, package_dir)
 
     manifest = read('transition.json', 65536)
     policy_bytes = read('signer-policy.json', 4096)
@@ -451,6 +456,27 @@ def record_verified_transition_payload(wapt, entry, package_dir, protected_paylo
                                      cwd=protected_payload_dir, shell=False)
 
     return with_verified_transition_engine(wapt, entry, package_dir, protected_payload_dir, record)
+
+
+def install_fixture(wapt, entry, package_dir, fixture, config_path, install_dir, working_dir):
+    """Exercise the package hook with an explicit fixture adapter only."""
+    from hashlib import sha256
+
+    package_dir = os.path.abspath(package_dir)
+    snapshot = collect_historical_snapshot(config_path, install_dir, working_dir)
+    _authenticate_transition_package(wapt, entry, package_dir)
+    with open(os.path.join(package_dir, 'transition.json'), 'rb') as manifest:
+        contents = manifest.read(65537)
+    if not 0 < len(contents) <= 65536:
+        raise RuntimeError('Invalid transition manifest size')
+    payload = fixture.stage(package_dir, sha256(contents).hexdigest())
+
+    def record(image, approved_digest):
+        fixture.record(image, snapshot, approved_digest)
+
+    with_verified_transition_engine(wapt, entry, package_dir, payload, record)
+    # Recording precedes scheduling so the latter can be retried without package files.
+    return fixture.program()
 
 
 def install():

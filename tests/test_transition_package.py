@@ -183,6 +183,135 @@ class TransitionPackageTest(unittest.TestCase):
                 namespace['install']()
         self.assertEqual(os.listdir(self.output), [result['filename']])
 
+    def test_fixture_hook_to_native_relay(self):
+        native = os.environ.get('PADIT_HOOK_NATIVE_FIXTURE')
+        for scenario in ('boot', 'immediate', 'prepare-fail', 'trust-fail', 'program-fail', 'interrupted'):
+            root = os.path.join(self.root, scenario)
+            os.mkdir(root)
+            self.arguments['target_directory'] = root
+            entry = PackageEntry(waptfile=self.build()['localpath'])
+            self.console.cabundle = self.cert
+            source = os.path.join(root, 'source')
+            entry.unzip_package(target_dir=source, cabundle=self.cert)
+            conf = os.path.join(root, 'wapt-get.ini')
+            with open(conf, 'wb') as stream:
+                stream.write('[global]\nfake_hostname=fixture.invalid\nuuid=fixture-id\ndbpath=fixture.sqlite\n')
+            db = sqlite3.connect(os.path.join(root, 'fixture.sqlite'))
+            try:
+                db.execute('CREATE TABLE wapt_params(name,value,create_date,ptype)')
+                db.execute('CREATE TABLE wapt_localstatus(id,package,process_id,install_status)')
+                db.execute("INSERT INTO wapt_params VALUES ('uuid','fixture-id','2026-01-01','str')")
+                db.commit()
+            finally:
+                db.close()
+            namespace = {}
+            with open(os.path.join(source, 'setup.py'), 'rb') as script:
+                eval(compile(script.read(), 'setup.py', 'exec'), namespace)
+
+            def signer(path, handle):
+                self.assertTrue(handle)
+                if scenario == 'trust-fail':
+                    return 'c' * 64
+                return ('b' if os.path.basename(path) == 'waptagent.exe' else 'a') * 64
+
+            namespace['_windows_authenticode_signer'] = signer
+            if not native:
+                namespace['_check_protected_payload'] = lambda path: None
+            protected = os.path.join(root, 'isolated')
+            payload = os.path.join(protected, 'staging', 'payload')
+            state_path = os.path.join(protected, 'state.json')
+            planned = 'boot' if scenario == 'boot' else 'immediate'
+            owner = self
+
+            def invoke(mode, *args, **options):
+                child = subprocess.Popen([native, mode, protected] + list(args),
+                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT)
+                output = child.communicate(options.get('data'))[0]
+                if child.returncode:
+                    raise RuntimeError(output.strip())
+                return output.strip()
+
+            def read_state():
+                with open(state_path, 'rb') as stream:
+                    return json.load(stream)
+
+            def write_state(state):
+                with open(state_path, 'wb') as stream:
+                    json.dump(state, stream)
+
+            class Fixture(object):
+                failure = scenario
+
+                def stage(self, directory, digest):
+                    if self.failure == 'prepare-fail':
+                        raise RuntimeError('fixture preparation failed')
+                    if native:
+                        return invoke('stage', directory, digest)
+                    shutil.copytree(directory, payload, ignore=shutil.ignore_patterns('WAPT', 'setup.py'))
+                    return payload
+
+                def record(self, image, snapshot, digest):
+                    expected = os.path.join(payload, 'patchs', 'wapttransition.exe')
+                    owner.assertEqual(os.path.normcase(os.path.normpath(image)),
+                                      os.path.normcase(os.path.normpath(expected)))
+                    owner.assertEqual(json.loads(snapshot)['uuid'], 'fixture-id')
+                    if native:
+                        invoke('record', digest, data=snapshot + '\n')
+                    else:
+                        write_state(dict(state='PRECHECK', payload_sha256=digest, transition_id='fixture-id'))
+
+                def program(self):
+                    if self.failure == 'interrupted':
+                        raise RuntimeError('fixture interrupted before programming')
+                    if native:
+                        return invoke('program', 'fail' if self.failure == 'program-fail' else planned)
+                    if self.failure == 'program-fail':
+                        raise RuntimeError('fixture scheduling failure')
+                    with open(os.path.join(protected, 'fixture-schedule'), 'wb') as stream:
+                        stream.write(planned)
+                    return read_state()['transition_id']
+
+                def relay(self, transition_id):
+                    if native:
+                        return invoke('--historical-relay', transition_id)
+                    state = read_state()
+                    owner.assertEqual(state['transition_id'], transition_id)
+                    owner.assertEqual(state['state'], 'PRECHECK')
+                    with open(os.path.join(payload, 'transition.json'), 'rb') as stream:
+                        owner.assertEqual(hashlib.sha256(stream.read()).hexdigest(), state['payload_sha256'])
+                    state['relay_claimed'] = True
+                    write_state(state)
+                    return 'READY FOR LOCAL ORCHESTRATOR'
+
+            fixture = Fixture()
+            with self.assertRaisesRegexp(RuntimeError, 'not deployable'):
+                namespace['install']()
+            if scenario in ('boot', 'immediate'):
+                transition_id = namespace['install_fixture'](
+                    self.console, entry, source, fixture, conf, root, root)
+            else:
+                expected = {'prepare-fail': 'preparation failed', 'trust-fail': 'Unauthorized',
+                            'program-fail': 'scheduling failure', 'interrupted': 'interrupted'}[scenario]
+                with self.assertRaisesRegexp(RuntimeError, expected):
+                    namespace['install_fixture'](self.console, entry, source, fixture, conf, root, root)
+                if scenario in ('prepare-fail', 'trust-fail'):
+                    self.assertFalse(os.path.isfile(state_path))
+                    continue
+                self.assertEqual(read_state()['state'], 'PRECHECK')
+                self.assertFalse(os.path.isfile(os.path.join(protected, 'fixture-schedule')))
+            shutil.rmtree(source)
+            if scenario in ('interrupted', 'program-fail'):
+                fixture.failure = None
+                transition_id = fixture.program()
+            with open(os.path.join(protected, 'fixture-schedule'), 'rb') as stream:
+                self.assertEqual(stream.read(), planned)
+            if native:
+                self.assertEqual(os.path.isfile(os.path.join(protected, 'fixture-run-request')), planned == 'immediate')
+            self.assertEqual(fixture.relay(transition_id), 'READY FOR LOCAL ORCHESTRATOR')
+            self.assertEqual(read_state()['state'], 'PRECHECK')
+            self.assertTrue(read_state()['relay_claimed'])
+
     def test_historical_signer_policy_gate(self):
         entry = PackageEntry(waptfile=self.build()['localpath'])
         source = os.path.join(self.root, 'authenticated')

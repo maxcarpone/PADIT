@@ -2,8 +2,8 @@ program test_transition_backup;
 
 {$mode objfpc}{$H+}
 
-uses Classes, SysUtils, Windows, ActiveX, ComObj, Variants, fpjson, jsonparser, transitionstate,
-  transitionbackup, transitionbackupwindows, transitionstorage, transitionrestore, transitionprecheck, transitionsecurity, transitioninstall;
+uses Classes, SysUtils, Windows, WinDirs, ActiveX, ComObj, Variants, fpjson, jsonparser, transitionstate,
+  transitionbackup, transitionbackupwindows, transitionstorage, transitionrestore, transitionprecheck, transitionsecurity, transitioninstall, transitionhandoff;
 
 var
   ServiceHandle: SERVICE_STATUS_HANDLE;
@@ -557,7 +557,56 @@ begin
     WriteText(Home + '\padit-fixture.txt', 'PADIT fixture verified');
 end;
 
-procedure TestCutover(const Root, Service, CaseName: UnicodeString);
+procedure AlterL2Backup(const BackupRoot: UnicodeString);
+var
+  Handle: THandle;
+begin
+  Handle := OpenStorageFile(BackupRoot + '\unexpected.tmp', GENERIC_WRITE, 0, CREATE_NEW);
+  Check(Handle <> INVALID_HANDLE_VALUE, 'Cannot alter L2 fixture backup');
+  CloseHandle(Handle);
+end;
+
+function FixtureFileSDDL(const Path: UnicodeString): UTF8String;
+var
+  Handle: THandle;
+begin
+  Handle := CreateFileW(PWideChar(Path), GENERIC_READ, FILE_SHARE_READ, nil, OPEN_EXISTING, 0, 0);
+  if Handle = INVALID_HANDLE_VALUE then RaiseLastOSError;
+  try
+    Result := SDDL(Handle);
+  finally
+    CloseHandle(Handle);
+  end;
+end;
+
+procedure CheckL2LaunchACL(const BackupRoot, CertPath: UnicodeString; const Before: UTF8String);
+var
+  Manifest, Entry: TJSONObject;
+  Entries: TJSONArray;
+  I: Integer;
+  Actual: UTF8String;
+begin
+  Actual := FixtureFileSDDL(CertPath);
+  Manifest := TJSONObject(GetJSON(ReadText(BackupRoot + '\manifest.json')));
+  try
+    Entries := Manifest.Arrays['entries'];
+    for I := 0 to Entries.Count - 1 do
+    begin
+      Entry := Entries.Objects[I];
+      if not UnicodeSameText(UTF8Decode(Entry.Strings['source']), CertPath) then Continue;
+      Check(Entry.Strings['sddl'] = Before, 'L2 certificate backup SDDL differs from original');
+      Check(Actual = Before, 'L2 certificate rollback changed NTFS inheritance: ' +
+        'original=' + Before + ' actual=' + Actual);
+      WriteLn('PASS inherited machine.crt SDDL preserved exactly');
+      Exit;
+    end;
+    raise Exception.Create('L2 certificate missing from backup manifest');
+  finally
+    Manifest.Free;
+  end;
+end;
+
+procedure TestCutover(const Root, Service, CaseName: UnicodeString; Integrated: Boolean = False);
 var
   Store: TTransitionStore;
   FileHandle: THandle;
@@ -568,17 +617,70 @@ var
   Expected: TTransitionState;
   Scope, Added: TBackupPaths;
   Timeout: DWORD;
+  Metadata: TLocalMetadata;
+  Hook: TFixtureBackupCheckpoint;
+  ServiceName: string;
+  DBWriter: THandle;
+  Journal, OriginalCertSDDL: UTF8String;
+  Stage, P: Integer;
+const
+  OrderedStates: array[0..4] of string = ('PRECHECK -> PREPARED', 'PREPARED -> BACKUP_IN_PROGRESS',
+    'BACKUP_IN_PROGRESS -> BACKUP_VERIFIED', 'BACKUP_VERIFIED -> INSTALLING', 'INSTALLING -> VERIFYING');
 begin
+  DBWriter := INVALID_HANDLE_VALUE;
   Store := TTransitionStore.Create(Root + '\transition');
   try
-    SeedPrepared(Store, Root);
-    if CaseName <> 'cutover-ok' then
-      Check(Store.RunBackup(Service), 'Fixture backup did not complete');
+    DBWriter := INVALID_HANDLE_VALUE;
+    Hook := nil;
+    ServiceName := UTF8Encode(Service);
+    if Integrated then
+    begin
+      Check(Store.Initialize, 'Cannot initialize the L2 fixture');
+      Metadata := Default(TLocalMetadata);
+      Metadata.UUID := 'fixture-id';
+      Metadata.Hostname := 'fixture.example';
+      Metadata.IdentificationMode := 'configured';
+      Metadata.SourceURL := 'https://historical.example';
+      Metadata.SourceVersion := '1.8.2.7393';
+      Metadata.ServiceState := 'running';
+      Metadata.TargetURL := 'https://fixture.example';
+      Metadata.TargetVersion := '1.8.3.7766';
+      Metadata.InstallDir := UTF8Encode(Root + '\agent');
+      Metadata.ConfigPath := Metadata.InstallDir + '\wapt-get.ini';
+      Metadata.KeyPath := Metadata.InstallDir + '\private\machine.pem';
+      Metadata.CertificatePath := Metadata.InstallDir + '\private\machine.crt';
+      Metadata.DatabasePath := UTF8Encode(Root + '\custom-' + UnicodeString(#$6F22) + '\waptdb.sqlite');
+    end
+    else
+    begin
+      SeedPrepared(Store, Root);
+      if CaseName <> 'cutover-ok' then
+        Check(Store.RunBackup(Service), 'Fixture backup did not complete');
+    end;
     Scenario := 'nominal';
     Expected := tsVerifying;
     Before := '';
     Timeout := 10000;
-    if CaseName = 'cutover-exit' then
+    if Integrated and (CaseName = 'cutover-precheck') then
+    begin
+      Expected := tsPrecheckFailed;
+      Before := 'precheck rejected';
+    end
+    else if Integrated and (CaseName = 'cutover-control') then
+    begin
+      Expected := tsPrepared;
+      ServiceName := ServiceName + '_missing';
+      Before := 'service';
+    end
+    else if Integrated and (CaseName = 'cutover-save') then
+    begin
+      Expected := tsAborted;
+      Before := 'still open for writing';
+      DBWriter := CreateFileW(PWideChar(UTF8Decode(Metadata.DatabasePath)), GENERIC_WRITE,
+        FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING, 0, 0);
+      Check(DBWriter <> INVALID_HANDLE_VALUE, 'Cannot create L2 SQLite writer');
+    end
+    else if CaseName = 'cutover-exit' then
     begin
       Scenario := 'exit';
       Expected := tsRolledBack;
@@ -610,9 +712,8 @@ begin
     begin
       Expected := tsAborted;
       Before := 'Unlisted object';
-      FileHandle := OpenStorageFile(Store.RootDirectory + 'backup\unexpected.tmp', GENERIC_WRITE, 0, CREATE_NEW);
-      Check(FileHandle <> INVALID_HANDLE_VALUE, 'Cannot alter fixture backup');
-      CloseHandle(FileHandle);
+      if Integrated then Hook := @AlterL2Backup
+      else AlterL2Backup(Store.RootDirectory + 'backup');
     end;
     Scope := nil;
     Added := nil;
@@ -620,6 +721,12 @@ begin
     AddBackupSource(Scope, Root + '\custom-' + UnicodeString(#$6F22));
     AddBackupSource(Added, Root + '\agent\padit-fixture.txt');
     OriginalKey := ReadText(Root + '\agent\private\machine.pem');
+    if Integrated and (CaseName = 'cutover-launch') then
+    begin
+      OriginalCertSDDL := FixtureFileSDDL(Root + '\agent\private\machine.crt');
+      Check((Pos('D:AI(', OriginalCertSDDL) > 0) and (Pos(';ID;', OriginalCertSDDL) > 0),
+        'L2 launch fixture requires an automatically inherited certificate DACL');
+    end;
     FixtureImage := Store.RootDirectory + 'staging\fixture-installer.exe';
     if CaseName = 'cutover-launch' then Payload := 'invalid executable'
     else Payload := ReadText(UnicodeString(ParamStr(0)));
@@ -635,6 +742,49 @@ begin
       end;
     finally
       CloseHandle(FileHandle);
+    end;
+    if Integrated then
+    begin
+      try
+        Check(Store.RunFixtureOrchestrator(ServiceName, UTF8Encode(Scenario), Hash, Timeout, Metadata,
+          Scope, Added, CaseName = 'cutover-precheck', Hook), 'L2 fixture journal failed');
+        Check(Before = '', 'Unexpected L2 success');
+      except
+        on E: Exception do
+          Check((Before <> '') and (Pos(Before, E.Message) > 0), E.Message);
+      end;
+      Check(Store.ReadState = Expected, 'Unexpected L2 fixture state');
+      if CaseName = 'cutover-launch' then
+        CheckL2LaunchACL(Store.RootDirectory + 'backup', Root + '\agent\private\machine.crt', OriginalCertSDDL);
+      Journal := ReadText(Store.RootDirectory + 'logs\transition.log');
+      if Expected = tsVerifying then
+      begin
+        for Stage := Low(OrderedStates) to High(OrderedStates) do
+        begin
+          P := Pos(OrderedStates[Stage], Journal);
+          Check(P > 0, 'Missing or out-of-order L2 state: ' + OrderedStates[Stage]);
+          Delete(Journal, 1, P + Length(OrderedStates[Stage]) - 1);
+        end;
+        Check(FileExists(Root + '\agent\padit-fixture.txt'), 'Installer result missing');
+        try
+          Store.Advance(tsCompleted);
+          raise Exception.Create('L2 accepted completion without server confirmation');
+        except
+          on E: ETransitionState do Check(Pos('confirmation', E.Message) > 0, E.Message);
+        end;
+      end;
+      if Expected = tsInstalling then
+      begin
+        Check(FileExists(Store.RootDirectory + 'staging\installer.pending'), 'Installer marker lost');
+        try
+          Store.RunFixtureCutover(Service, Scenario, Hash, Timeout, Scope, Added);
+          raise Exception.Create('L2 retried uncertain installer');
+        except
+          on E: ETransitionState do Check(Pos('uncertain', E.Message) > 0, E.Message);
+        end;
+        Sleep(1500);
+      end;
+      Exit;
     end;
     if Expected = tsVerifying then Check(Store.RunFixtureCutover(Service, Scenario, Hash, Timeout, Scope, Added),
       'Fixture cutover journal failed')
@@ -716,6 +866,7 @@ begin
       Check(BackupServiceState(Service) = SERVICE_RUNNING, 'Historical fixture service was not restored');
     end;
   finally
+    if DBWriter <> INVALID_HANDLE_VALUE then CloseHandle(DBWriter);
     Store.Free;
   end;
 end;
@@ -794,6 +945,236 @@ begin
   end;
 end;
 
+function FixtureSddlToDescriptor(Text: PWideChar; Revision: DWORD;
+  out Descriptor: PSECURITY_DESCRIPTOR; Size: PDWORD): BOOL; stdcall;
+  external 'advapi32.dll' name 'ConvertStringSecurityDescriptorToSecurityDescriptorW';
+
+procedure SetFixtureFileDACL(const Path, DACL: UnicodeString);
+var
+  Descriptor: PSECURITY_DESCRIPTOR;
+  Target: THandle;
+begin
+  Check(FixtureSddlToDescriptor(PWideChar(DACL), 1, Descriptor, nil), 'Invalid fixture DACL');
+  try
+    Target := CreateFileW(PWideChar(Path), WRITE_DAC, FILE_SHARE_READ, nil, OPEN_EXISTING, 0, 0);
+    if Target = INVALID_HANDLE_VALUE then RaiseLastOSError;
+    try
+      Check(SetKernelObjectSecurity(Target, DACL_SECURITY_INFORMATION or DWORD($80000000), Descriptor),
+        'Cannot set isolated fixture DACL');
+    finally
+      CloseHandle(Target);
+    end;
+  finally
+    LocalFree(HLOCAL(Descriptor));
+  end;
+end;
+
+procedure TestL4Guards;
+const
+  BeforeInstall: array[0..2] of TTransitionState = (tsPrecheck, tsPrepared, tsBackupVerified);
+var
+  State: TTransitionState;
+  Store: TTransitionStore;
+  ProgramData: UnicodeString;
+begin
+  for State in BeforeInstall do
+    try
+      ClassifyLocalResume(State, False, True);
+      raise Exception.Create('Rollback request reached a pre-install action');
+    except
+      on E: ETransitionState do Check(Pos('No installation to roll back', E.Message) > 0, E.Message);
+    end;
+  ProgramData := GetWindowsSpecialDirUnicode(FOLDERID_ProgramData, False);
+  Check(ProgramData <> '', 'Cannot resolve ProgramData');
+  try
+    // Use only its existing parent to prove rejection before any directory creation.
+    Store := TTransitionStore.Create(ProgramData);
+    Store.Free;
+    raise Exception.Create('Fixture root was allowed to overlap production storage');
+  except
+    on E: Exception do Check(Pos('overlaps the production transition directory', E.Message) > 0, E.Message);
+  end;
+end;
+
+procedure TestL3Routing;
+var
+  State: TTransitionState;
+begin
+  Check(ClassifyLocalResume(tsPrecheck, False, False) = lraPrecheck, 'PRECHECK routing');
+  Check(ClassifyLocalResume(tsPrepared, False, False) = lraBackup, 'PREPARED routing');
+  Check(ClassifyLocalResume(tsBackupInProgress, False, False) = lraAbandonBackup, 'Interrupted backup routing');
+  Check(ClassifyLocalResume(tsBackupVerified, False, False) = lraInstall, 'BACKUP_VERIFIED routing');
+  Check(ClassifyLocalResume(tsInstalling, False, False) = lraRecovery, 'Unproven installer outcome accepted');
+  Check(ClassifyLocalResume(tsVerifying, False, False) = lraAwaitConfirmation, 'VERIFYING routing');
+  Check(ClassifyLocalResume(tsVerifying, False, True) = lraRollback, 'Explicit restore routing');
+  Check(ClassifyLocalResume(tsRollingBack, False, False) = lraRollback, 'Interrupted restore routing');
+  for State := tsPrecheck to tsRollingBack do
+    Check(ClassifyLocalResume(State, True, True) = lraRecovery, 'Uncertain installer allowed work');
+end;
+
+function FixtureQueryServiceProcess(Service: SC_HANDLE; InfoLevel: DWORD; Buffer: Pointer;
+  BufferSize: DWORD; var Needed: DWORD): BOOL; stdcall;
+  external 'advapi32.dll' name 'QueryServiceStatusEx';
+
+function PinFixtureServiceProcess(const Name: UnicodeString): THandle;
+var
+  SCM, Service: SC_HANDLE;
+  Status: record
+    Basic: TServiceStatus;
+    PID, Flags: DWORD;
+  end;
+  Needed: DWORD;
+  Candidate: THandle;
+  Created, Ended, Kernel, UserTime: TFileTime;
+  Image: UnicodeString;
+begin
+  Check(Pos('PADIT_BackupTest_', Name) = 1, 'Invalid fixture service name');
+  SCM := OpenSCManagerW(nil, nil, SC_MANAGER_CONNECT);
+  if SCM = 0 then RaiseLastOSError;
+  try
+    Service := OpenServiceW(SCM, PWideChar(Name), SERVICE_QUERY_STATUS);
+    if Service = 0 then RaiseLastOSError;
+    try
+      if not FixtureQueryServiceProcess(Service, 0, @Status, SizeOf(Status), Needed) then RaiseLastOSError;
+      Check((Status.Basic.dwCurrentState = SERVICE_RUNNING) and (Status.PID <> 0),
+        'Fixture service has no running process to verify');
+      Candidate := OpenProcess(SYNCHRONIZE or $1000, False, Status.PID);
+      if Candidate = 0 then RaiseLastOSError;
+      try
+        if not GetProcessTimes(Candidate, Created, Ended, Kernel, UserTime) then RaiseLastOSError;
+        Image := ExpandFileName(UnicodeString(ParamStr(0)));
+        Result := OpenProducer(Status.PID,
+          (QWord(Created.dwHighDateTime) shl 32) or Created.dwLowDateTime, Image);
+        WriteLn('Fixture SCM PID ', Status.PID, ' image ', UTF8Encode(Image));
+      finally
+        CloseHandle(Candidate);
+      end;
+    finally
+      CloseServiceHandle(Service);
+    end;
+  finally
+    CloseServiceHandle(SCM);
+  end;
+end;
+
+procedure TestL3Recovery(const Root, Service: UnicodeString; const Mode: string);
+var
+  Store: TTransitionStore;
+  State: TJSONObject;
+  Scope: TBackupPaths;
+  Handle, FixtureProcess: THandle;
+  StoppedAt: QWord;
+  CertPath, DBPath, Marker: UnicodeString;
+  OriginalACL, OriginalDB, OriginalKey, Manifest: UTF8String;
+begin
+  Store := TTransitionStore.Create(Root + '\transition');
+  Handle := INVALID_HANDLE_VALUE;
+  FixtureProcess := 0;
+  try
+    SeedPrepared(Store, Root);
+    CertPath := Root + '\agent\private\machine.crt';
+    DBPath := Root + '\custom-' + UnicodeString(#$6F22) + '\waptdb.sqlite';
+    OriginalDB := ReadText(DBPath);
+    OriginalKey := ReadText(Root + '\agent\private\machine.pem');
+    if Mode = 'l3-backup-interrupted' then
+    begin
+      State := TJSONObject(GetJSON(ReadText(Store.RootDirectory + 'state.json')));
+      try
+        State.Strings['state'] := 'BACKUP_IN_PROGRESS';
+        State.Strings['previous_state'] := 'PREPARED';
+        State.Objects['backup'].Integers['service_initial_state'] := SERVICE_RUNNING;
+        WriteText(Store.RootDirectory + 'state.json', State.FormatJSON);
+      finally
+        State.Free;
+      end;
+      Marker := Store.RootDirectory + 'backup\manifest.tmp';
+      Handle := OpenStorageFile(Marker, GENERIC_WRITE, 0, CREATE_NEW);
+      Check(Handle <> INVALID_HANDLE_VALUE, 'Cannot create interrupted backup evidence');
+      CloseHandle(Handle);
+      Handle := INVALID_HANDLE_VALUE;
+      FixtureProcess := PinFixtureServiceProcess(Service);
+      StopBackupService(Service);
+      StoppedAt := GetTickCount64;
+      FreeAndNil(Store);
+      Store := TTransitionStore.Create(Root + '\transition');
+      WaitForProducer(FixtureProcess, 5000);
+      WriteLn('Fixture process exit confirmed ', GetTickCount64 - StoppedAt, ' ms after SCM stop');
+      Check(Store.ResumeFixtureRecovery(Service, nil, nil, False, FixtureProcess),
+        'Interrupted backup recovery journal failed');
+      Check(Store.ReadState = tsAborted, 'Interrupted backup was not abandoned');
+      Check(FileExists(Marker), 'Interrupted backup evidence lost');
+      Check(BackupServiceState(Service) = SERVICE_RUNNING, 'Fixture service did not restart');
+      Check(ReadText(DBPath) = OriginalDB, 'Backup interruption changed SQLite');
+      Exit;
+    end;
+    SetFixtureFileDACL(CertPath, 'D:P(A;;FA;;;SY)(A;;FA;;;BA)');
+    OriginalACL := FixtureFileSDDL(CertPath);
+    Check(Pos('D:P(', OriginalACL) > 0, 'Fixture certificate is not protected');
+    Check(Store.RunBackup(Service), 'Fixture backup failed');
+    Check(Store.Advance(tsInstalling), 'Cannot establish installation boundary');
+    Manifest := ReadText(Store.RootDirectory + 'backup\manifest.json');
+    Scope := nil;
+    AddBackupSource(Scope, Root + '\agent');
+    AddBackupSource(Scope, ExtractFileDir(DBPath));
+    if Mode = 'l3-pending' then
+    begin
+      Marker := Store.RootDirectory + 'staging\installer.pending';
+      Handle := OpenStorageFile(Marker, GENERIC_WRITE, 0, CREATE_NEW);
+      Check(Handle <> INVALID_HANDLE_VALUE, 'Cannot create pending installer marker');
+      CloseHandle(Handle);
+      Handle := INVALID_HANDLE_VALUE;
+      try
+        Store.ResumeFixtureRecovery(Service, Scope, nil, True);
+        raise Exception.Create('Uncertain installer was restored or rerun');
+      except
+        on E: ETransitionState do Check(Pos('Local recovery required', E.Message) > 0, E.Message);
+      end;
+      Check(Store.ReadState = tsRecoveryRequired, 'Uncertain installer did not require recovery');
+      Check(FileExists(Marker), 'Uncertain installer evidence lost');
+      Check(FixtureFileSDDL(CertPath) = OriginalACL, 'Uncertain path touched certificate permissions');
+    end
+    else
+    begin
+      Check(Store.Advance(tsRollingBack), 'Cannot establish rollback boundary');
+      SetFixtureFileDACL(CertPath, 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;BU)');
+      Check(FixtureFileSDDL(CertPath) <> OriginalACL, 'Fixture did not change the DACL');
+      if Mode = 'l3-restore-fail' then
+      begin
+        Handle := CreateFileW(PWideChar(CertPath), GENERIC_WRITE, FILE_SHARE_READ or FILE_SHARE_WRITE,
+          nil, OPEN_EXISTING, 0, 0);
+        Check(Handle <> INVALID_HANDLE_VALUE, 'Cannot lock fixture restoration target');
+      end;
+      FreeAndNil(Store);
+      Store := TTransitionStore.Create(Root + '\transition');
+      if Mode = 'l3-restore-fail' then
+      begin
+        try
+          Store.ResumeFixtureRecovery(Service, Scope, nil);
+          raise Exception.Create('Locked file was accepted');
+        except
+          on E: ETransitionBackup do Check(Pos('restoration destination', E.Message) > 0, E.Message);
+        end;
+        Check(Store.ReadState = tsRecoveryRequired, 'Failed restoration did not require recovery');
+      end
+      else
+      begin
+        Check(Store.ResumeFixtureRecovery(Service, Scope, nil), 'Interrupted rollback journal failed');
+        Check(Store.ReadState = tsRolledBack, 'Interrupted rollback was not verified and committed');
+        Check(FixtureFileSDDL(CertPath) = OriginalACL, 'Changed protected certificate DACL differs from manifest');
+        Check(BackupServiceState(Service) = SERVICE_RUNNING, 'Historical fixture service did not restart');
+        WriteLn('PASS restored changed protected machine.crt SDDL exactly');
+      end;
+    end;
+    Check(ReadText(Store.RootDirectory + 'backup\manifest.json') = Manifest, 'Backup manifest changed');
+    Check(ReadText(DBPath) = OriginalDB, 'Fixture SQLite contents changed');
+    Check(ReadText(Root + '\agent\private\machine.pem') = OriginalKey, 'Fixture key changed');
+  finally
+    if FixtureProcess <> 0 then CloseHandle(FixtureProcess);
+    if Handle <> INVALID_HANDLE_VALUE then CloseHandle(Handle);
+    Store.Free;
+  end;
+end;
+
 procedure MakeHugeSparse(const FileName: UnicodeString);
 const
   SetSparse = $000900C4;
@@ -828,6 +1209,11 @@ begin
       Root := UnicodeString(ParamStr(2));
       Service := UnicodeString(ParamStr(3));
       if Mode = 'setup-arguments' then TestSetupArguments
+      else if Mode = 'l4-guards' then TestL4Guards
+      else if Mode = 'l3-routing' then TestL3Routing
+      else if (Mode = 'l3-backup-interrupted') or (Mode = 'l3-pending') or
+        (Mode = 'l3-rollback') or (Mode = 'l3-restore-fail') then TestL3Recovery(Root, Service, Mode)
+      else if Pos('l2-', Mode) = 1 then TestCutover(Root, Service, 'cutover-' + UnicodeString(Copy(Mode,4,MaxInt)), True)
       else if Pos('cutover-', Mode) = 1 then TestCutover(Root, Service, UnicodeString(Mode))
       else if Mode = 'success' then TestSuccess(Root, Service)
       else if Mode = 'restore' then TestRestore(Root, Service)

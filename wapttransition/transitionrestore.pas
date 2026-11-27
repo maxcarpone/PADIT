@@ -176,7 +176,8 @@ procedure ApplyMetadata(FileHandle: THandle; Entry: TJSONObject);
 var
   Created, Accessed, Written: TFileTime;
   Descriptor: PSECURITY_DESCRIPTOR;
-  Attr: DWORD;
+  Attr, Revision, Parts: DWORD;
+  Control: SECURITY_DESCRIPTOR_CONTROL;
   Info: TByHandleFileInformation;
   Basic: TFileBasicMetadata;
 begin
@@ -194,10 +195,17 @@ begin
     (CompareFileTime(@Info.ftCreationTime, @Created) = 0) and
     (CompareFileTime(@Info.ftLastAccessTime, @Accessed) = 0) and
     (CompareFileTime(@Info.ftLastWriteTime, @Written) = 0), 'Restored Windows metadata differs from manifest');
+  // Reapplying an identical DACL may clear the NTFS auto-inherited flag.
+  if SDDL(FileHandle) = Entry.Strings['sddl'] then Exit;
   Require(SddlToDescriptor(PWideChar(UTF8Decode(Entry.Strings['sddl'])), 1, Descriptor, nil),
     'Cannot decode original NTFS permissions');
   try
-    Require(SetKernelObjectSecurity(FileHandle, OwnerGroupDacl, Descriptor),
+    Require(GetSecurityDescriptorControl(Descriptor, @Control, @Revision),
+      'Cannot read original NTFS protection flag');
+    Parts := OwnerGroupDacl;
+    if (Control and $1000) <> 0 then Parts := Parts or DWORD($80000000) // protected DACL
+    else Parts := Parts or DWORD($20000000); // unprotected DACL
+    Require(SetKernelObjectSecurity(FileHandle, Parts, Descriptor),
       'Cannot restore original NTFS permissions');
     Require(SDDL(FileHandle) = Entry.Strings['sddl'], 'Restored NTFS permissions differ from manifest');
   finally

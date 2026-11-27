@@ -5,15 +5,18 @@ unit transitionstate;
 interface
 
 uses
-  SysUtils, Windows, fpjson, transitionstorage, transitionsecurity, transitionbackup;
+  SysUtils, Windows, fpjson, transitionstorage, transitionsecurity, transitionbackup, transitionrelay;
 
 type
   TTransitionState = (tsPrecheck, tsPrecheckFailed, tsPrepared,
     tsBackupInProgress, tsBackupVerified, tsInstalling, tsVerifying,
     tsCompleted, tsRollingBack, tsRolledBack, tsRecoveryRequired, tsAborted);
 
+  TLocalResumeAction = (lraPrecheck, lraBackup, lraAbandonBackup, lraInstall,
+    lraAwaitConfirmation, lraRollback, lraRecovery);
   TRelayEntryAction = (reaClaim, reaResume, reaCleanup, reaRecovery);
 
+  TFixtureBackupCheckpoint = procedure(const BackupRoot: UnicodeString);
   ETransitionState = class(Exception);
 
   TLocalMetadata = record
@@ -33,6 +36,11 @@ type
     function TryLog(const MessageText: string): Boolean;
     function InstallerPending: Boolean;
     procedure RequireStagedRelayImage;
+    function InstallApprovedPayload(Timeout: DWORD;
+      const RestoreScope, InstalledFiles: TBackupPaths): Boolean;
+    function AbandonInterruptedBackup(const ServiceName: UnicodeString; FixtureProcess: THandle = 0): Boolean;
+    function RestoreSettledTransition(const RestoreScope, InstalledFiles: TBackupPaths;
+      const IsolatedService: UnicodeString): Boolean;
     function Load: TJSONObject;
     procedure Save(Data: TJSONObject);
     function CommitState(Next: TTransitionState; const Diagnostic: string = '';
@@ -48,6 +56,14 @@ type
     // restore normal operation of the historical agent if necessary.
     function Advance(Next: TTransitionState): Boolean;
     // Policy must come from trusted configuration, never the transition package.
+    function RunLocalOrchestrator(Timeout: DWORD; const RestoreScope, InstalledFiles: TBackupPaths;
+      RequestRollback: Boolean = False): Boolean;
+    function ResumeFixtureRecovery(const Service: UnicodeString;
+      const RestoreScope, InstalledFiles: TBackupPaths; RequestRollback: Boolean = False;
+      FixtureProcess: THandle = 0): Boolean;
+    function RunFixtureOrchestrator(const Service, Scenario, InstallerHash: string; Timeout: DWORD;
+      const Metadata: TLocalMetadata; const RestoreScope, InstalledFiles: TBackupPaths;
+      RejectPrecheck: Boolean = False; AfterBackup: TFixtureBackupCheckpoint = nil): Boolean;
     function RunFullPrecheck(const Policy: TTransitionSignerPolicy): Boolean;
     function ConfirmFixture(const Service: UnicodeString; const ServerURL, UUID, Version,
       ExpectedDigest, ReceivedDigest: string): Boolean;
@@ -55,7 +71,8 @@ type
     // dedicated fixture service, never the installed historical WAPTService.
     function RunBackup(const IsolatedService: UnicodeString = ''): Boolean;
     function RunFixtureCutover(const Service, Scenario: UnicodeString; const InstallerHash: string;
-      Timeout: DWORD; const RestoreScope, InstalledFiles: TBackupPaths): Boolean;
+      Timeout: DWORD; const RestoreScope, InstalledFiles: TBackupPaths;
+      AfterBackup: TFixtureBackupCheckpoint = nil): Boolean;
     // The orchestrator supplies trusted roots and the exact additions recorded by the installer.
     function RunRollback(const RestoreScope, InstalledFiles: TBackupPaths;
       const IsolatedService: UnicodeString = ''): Boolean;
@@ -64,8 +81,11 @@ type
     function RecordLocalMetadata(const Metadata: TLocalMetadata): Boolean;
     procedure StageHistoricalSnapshot(const Snapshot: UTF8String);
     procedure RecordAuthenticatedPayload(const ManifestDigest: string);
-    procedure ProgramHistoricalRelay;
-    procedure VerifyHistoricalRelay(const TransitionID: string);
+    procedure RecordFixturePayload(const Snapshot, ManifestDigest: UTF8String);
+    function ProgramHistoricalRelay(FixtureScheduler: TRelayScheduler = nil;
+      FixtureAtStartup: Boolean = False): string;
+    function VerifyHistoricalRelay(const TransitionID: string;
+      FixtureScheduler: TRelayScheduler = nil): TRelayEntryAction;
     procedure PrepareFixtureHandoff(const SourceDir: UnicodeString; const Snapshot, ManifestDigest: UTF8String);
     // The fixture owns the returned exclusive admission handle until it finishes.
     function AcquireFixtureHandoff(Producer: THandle; const Database: UnicodeString; Timeout: DWORD): THandle;
@@ -74,6 +94,7 @@ type
     property RootDirectory: UnicodeString read FRoot;
   end;
 
+function ClassifyLocalResume(State: TTransitionState; InstallPending, RequestRollback: Boolean): TLocalResumeAction;
 function ClassifyRelayEntry(State: TTransitionState; Claimed, InstallPending: Boolean): TRelayEntryAction;
 function CanAdvance(Current, Next: TTransitionState): Boolean;
 
@@ -83,7 +104,7 @@ implementation
 
 uses
   Classes, DateUtils, URIParser, jsonparser, jsonscanner, IniFiles, transitionprecheck,
-  transitionrestore, transitionbackupwindows, transitioninstall, transitionhandoff, transitionrelay;
+  transitionrestore, transitionbackupwindows, transitioninstall, transitionhandoff;
 
 const
   SchemaVersion = 1;
@@ -107,6 +128,26 @@ const
     [],                                                     // RECOVERY_REQUIRED
     []);                                                    // ABORTED
 
+function ClassifyLocalResume(State: TTransitionState; InstallPending, RequestRollback: Boolean): TLocalResumeAction;
+begin
+  if InstallPending then Exit(lraRecovery);
+  if RequestRollback and (State in [tsPrecheck, tsPrepared, tsBackupVerified]) then
+    raise ETransitionState.Create('No installation to roll back in this state');
+  case State of
+    tsPrecheck: Result := lraPrecheck;
+    tsPrepared: Result := lraBackup;
+    tsBackupInProgress: Result := lraAbandonBackup;
+    tsBackupVerified: Result := lraInstall;
+    tsInstalling, tsRecoveryRequired: Result := lraRecovery;
+    tsVerifying:
+      if RequestRollback then Result := lraRollback
+      else Result := lraAwaitConfirmation;
+    tsRollingBack: Result := lraRollback;
+  else
+    raise ETransitionState.Create('State is not eligible for local resume');
+  end;
+end;
+
 function ClassifyRelayEntry(State: TTransitionState; Claimed, InstallPending: Boolean): TRelayEntryAction;
 begin
   case State of
@@ -117,7 +158,7 @@ begin
           raise ETransitionState.Create('Terminal state conflicts with an uncertain installer outcome');
         Exit(reaCleanup);
       end;
-    tsBackupInProgress, tsInstalling, tsRollingBack: Exit(reaRecovery);
+    tsInstalling: Exit(reaRecovery);
   end;
   if InstallPending then Exit(reaRecovery);
   if Claimed then Exit(reaResume);
@@ -653,11 +694,30 @@ begin
   end;
 end;
 
-procedure TTransitionStore.ProgramHistoricalRelay;
+procedure TTransitionStore.RecordFixturePayload(const Snapshot, ManifestDigest: UTF8String);
 var
   Data: TJSONObject;
 begin
-  if FIsolated then raise ETransitionState.Create('Real relay is unavailable in fixture storage');
+  if not FIsolated then raise ETransitionState.Create('Fixture record requires isolated storage');
+  CheckStagedPayload(FRoot + 'staging\payload', ManifestDigest);
+  Initialize;
+  StageHistoricalSnapshot(Snapshot);
+  Data := Load;
+  try
+    Data.Add('payload_sha256', ManifestDigest);
+    Save(Data);
+  finally
+    Data.Free;
+  end;
+end;
+
+function TTransitionStore.ProgramHistoricalRelay(FixtureScheduler: TRelayScheduler;
+  FixtureAtStartup: Boolean): string;
+var
+  Data: TJSONObject;
+begin
+  if FIsolated <> Assigned(FixtureScheduler) then
+    raise ETransitionState.Create('Fixture scheduler requires isolated storage');
   Data := Load;
   try
     if (Data = nil) or (ParseState(Data.Strings['state']) <> tsPrecheck) or
@@ -666,7 +726,14 @@ begin
     if (Data.Find('relay_claimed') <> nil) or InstallerPending then
       raise ETransitionState.Create('Historical relay is already claimed or installation is uncertain');
     try
-      ScheduleHistoricalRelay(FRoot, Data.Strings['transition_id'], Data.Strings['payload_sha256']);
+      Result := Data.Strings['transition_id'];
+      if FIsolated then
+      begin
+        CheckStagedPayload(FRoot + 'staging\payload', Data.Strings['payload_sha256']);
+        EnsureRelay(FixtureScheduler, FRoot, UnicodeString(Result), FixtureAtStartup);
+      end
+      else
+        ScheduleHistoricalRelay(FRoot, UnicodeString(Result), Data.Strings['payload_sha256']);
     except
       on E: Exception do
       begin
@@ -679,20 +746,27 @@ begin
   end;
 end;
 
-procedure TTransitionStore.VerifyHistoricalRelay(const TransitionID: string);
+function TTransitionStore.VerifyHistoricalRelay(const TransitionID: string;
+  FixtureScheduler: TRelayScheduler): TRelayEntryAction;
 var
   Data: TJSONObject;
   Locks: TPayloadLocks;
   Current: TTransitionState;
   Action: TRelayEntryAction;
 begin
-  if FIsolated then raise ETransitionState.Create('Real relay is unavailable in fixture storage');
+  if FIsolated <> Assigned(FixtureScheduler) then
+    raise ETransitionState.Create('Fixture scheduler requires isolated storage');
   Data := Load;
   try
     if (Data = nil) or (Data.Strings['transition_id'] <> TransitionID) then
       raise ETransitionState.Create('No matching historical relay to verify');
-    RequireStagedRelayImage;
-    LockVerifiedPayload(FRoot + 'staging\payload', Data.Get('payload_sha256', ''), Locks);
+    if FIsolated then
+      CheckStagedPayload(FRoot + 'staging\payload', Data.Get('payload_sha256', ''))
+    else
+    begin
+      RequireStagedRelayImage;
+      LockVerifiedPayload(FRoot + 'staging\payload', Data.Get('payload_sha256', ''), Locks);
+    end;
     try
       Current := ParseState(Data.Strings['state']);
       Action := ClassifyRelayEntry(Current, Data.Find('relay_claimed') <> nil, InstallerPending);
@@ -706,7 +780,8 @@ begin
         CommitState(tsRecoveryRequired, 'Historical relay interrupted in a phase requiring recovery');
       try
         // A consumed task remains registered but disabled while its transition is unfinished.
-        RetireHistoricalRelay(FRoot, TransitionID, Action = reaCleanup);
+        if FIsolated then RetireRelay(FixtureScheduler, FRoot, UnicodeString(TransitionID), Action = reaCleanup)
+        else RetireHistoricalRelay(FRoot, UnicodeString(TransitionID), Action = reaCleanup);
       except
         on E: Exception do
         begin
@@ -716,11 +791,12 @@ begin
       end;
       if Action = reaRecovery then
         raise ETransitionState.Create('Historical relay requires recovery; disabled task and data preserved');
+      Result := Action;
       if Action = reaCleanup then TryLog('Historical relay task removed')
       else if Action = reaResume then TryLog('Historical relay already claimed; verified without taking control again')
       else TryLog('Historical relay payload verified and trigger disabled');
     finally
-      ReleasePayload(Locks);
+      if not FIsolated then ReleasePayload(Locks);
     end;
   finally
     Data.Free;
@@ -814,7 +890,8 @@ var
   Data: TJSONObject;
   Digest: string;
 begin
-  if (Next = tsRollingBack) and InstallerPending then
+  if (Next = tsRollingBack) and (InstallerPending or
+    ((not FIsolated) and (ReadState = tsInstalling))) then
     raise ETransitionState.Create('Installer outcome remains uncertain; rollback blocked');
   if Next = tsPrepared then
     raise ETransitionState.Create('PREPARED requires successful full prechecks');
@@ -1012,8 +1089,312 @@ begin
   Result := StartedJournal and FinishedJournal;
 end;
 
+function TTransitionStore.AbandonInterruptedBackup(const ServiceName: UnicodeString; FixtureProcess: THandle): Boolean;
+var
+  Data: TJSONObject;
+  Service: TWindowsHistoricalService;
+  Initial, Current: DWORD;
+begin
+  if InstallerPending or (ReadState <> tsBackupInProgress) then
+    raise ETransitionState.Create('Cannot safely abandon the interrupted backup');
+  Data := Load;
+  try
+    Initial := Field(Data.Objects['backup'], 'service_initial_state', jtNumber).AsInteger;
+    Service := TWindowsHistoricalService.Create(ServiceName,
+      UTF8Decode(Field(Data.Objects['source'], 'db_path', jtString).AsString), 0);
+    try
+      try
+        Current := Service.State;
+        if FIsolated then
+        begin
+          if (FixtureProcess = 0) or (Current <> SERVICE_STOPPED) then
+            raise ETransitionState.Create('Stopped fixture service and its process handle are required');
+          WaitForProducer(FixtureProcess, 5000);
+          Service.CheckDatabase;
+          if Service.State <> SERVICE_STOPPED then
+            raise ETransitionState.Create('Fixture service resumed before recovery');
+        end
+        else if Current = SERVICE_STOPPED then TakeControlOfHistoricalService(Service, SERVICE_STOPPED)
+        else if Current <> Initial then
+          raise ETransitionState.Create('Interrupted backup left the historical service in an uncertain state');
+        RestoreHistoricalService(Service, Initial);
+      except
+        on E: Exception do
+        begin
+          TryLog('ERROR interrupted backup: ' + E.Message);
+          CommitState(tsRecoveryRequired, 'Cannot verify service recovery after interrupted backup');
+          raise;
+        end;
+      end;
+    finally
+      Service.Free;
+    end;
+  finally
+    Data.Free;
+  end;
+  Result := CommitState(tsAborted, 'Interrupted backup preserved; historical service restored');
+end;
+
+function TTransitionStore.RunLocalOrchestrator(Timeout: DWORD; const RestoreScope, InstalledFiles: TBackupPaths;
+  RequestRollback: Boolean): Boolean;
+var
+  Policy: TTransitionSignerPolicy;
+  PrecheckJournal, BackupJournal, InstallJournal: Boolean;
+  Data: TJSONObject;
+  Current: TTransitionState;
+  Action: TLocalResumeAction;
+  Locks: TPayloadLocks;
+begin
+  if FIsolated then raise ETransitionState.Create('Use the isolated orchestrator adapter for fixtures');
+  if (Timeout = 0) or (Timeout = INFINITE) then
+    raise ETransitionState.Create('Invalid install deadline');
+  RequireStagedRelayImage;
+  Data := Load;
+  try
+    if (Data = nil) or (Data.Find('relay_claimed') = nil) then
+      raise ETransitionState.Create('Local orchestration requires a claimed relay');
+    Current := ParseState(Data.Strings['state']);
+    Action := ClassifyLocalResume(Current, InstallerPending, RequestRollback);
+    LockVerifiedPayload(FRoot + 'staging\payload', Data.Get('payload_sha256', ''), Locks);
+  finally
+    Data.Free;
+  end;
+  try
+    case Action of
+      lraRecovery:
+        begin
+          if Current <> tsRecoveryRequired then
+            CommitState(tsRecoveryRequired, 'Installer cannot be proven inactive and settled');
+          raise ETransitionState.Create('Local recovery required; automatic installation and restoration blocked');
+        end;
+      lraAbandonBackup: Exit(AbandonInterruptedBackup('WAPTService'));
+      lraAwaitConfirmation: Exit(True);
+      lraRollback:
+        begin
+          if Length(RestoreScope) = 0 then
+            raise ETransitionState.Create('Rollback requires an approved restoration scope');
+          Exit(RunRollback(RestoreScope, InstalledFiles));
+        end;
+    end;
+    PrecheckJournal := True;
+    BackupJournal := True;
+    if Action = lraPrecheck then
+    begin
+      Policy := Default(TTransitionSignerPolicy);
+      PrecheckJournal := RunFullPrecheck(Policy);
+    end;
+    if Action in [lraPrecheck, lraBackup] then BackupJournal := RunBackup;
+    InstallJournal := InstallApprovedPayload(Timeout, RestoreScope, InstalledFiles);
+    Result := PrecheckJournal and BackupJournal and InstallJournal;
+  finally
+    ReleasePayload(Locks);
+  end;
+end;
+
+function TTransitionStore.ResumeFixtureRecovery(const Service: UnicodeString;
+  const RestoreScope, InstalledFiles: TBackupPaths; RequestRollback: Boolean; FixtureProcess: THandle): Boolean;
+var
+  Current: TTransitionState;
+begin
+  if not FIsolated or (Pos('PADIT_BackupTest_', Service) <> 1) then
+    raise ETransitionState.Create('Recovery fixture requires isolated storage and a dedicated service');
+  Current := ReadState;
+  case ClassifyLocalResume(Current, InstallerPending, RequestRollback) of
+    lraAbandonBackup: Result := AbandonInterruptedBackup(Service, FixtureProcess);
+    lraRollback: Result := RunRollback(RestoreScope, InstalledFiles, Service);
+    lraAwaitConfirmation: Result := True;
+    lraRecovery:
+      begin
+        if Current <> tsRecoveryRequired then
+          CommitState(tsRecoveryRequired, 'Fixture installer outcome is uncertain');
+        raise ETransitionState.Create('Local recovery required; installer outcome is uncertain');
+      end;
+  else
+    raise ETransitionState.Create('Recovery fixture requires an interrupted recovery phase');
+  end;
+end;
+
+function TTransitionStore.InstallApprovedPayload(Timeout: DWORD;
+  const RestoreScope, InstalledFiles: TBackupPaths): Boolean;
+const
+  HistoricalService = 'WAPTService';
+var
+  Data, Source: TJSONObject;
+  Metadata: TLocalMetadata;
+  Payload, InstallDir, ConfigPath, WorkingDir, PackagesDir, HTTPSCA, PackageCA: UnicodeString;
+  Arguments, InstallerPath, MarkerPath, RegistryDir: UnicodeString;
+  RepositoryURL: UTF8String;
+  HTTPSBundle, PackageBundle: RawByteString;
+  ApprovedDigest: string;
+  Locks: TPayloadLocks;
+  Policy: TTransitionSignerPolicy;
+  Installer, Marker, Key, Cert: THandle;
+  Lines: TStringList;
+  Ini: TMemIniFile;
+  Service: TWindowsHistoricalService;
+  InitialState, Code: DWORD;
+  MarkerOwned, EnteredInstall, Settled, PhaseJournal: Boolean;
+begin
+  if InstallerPending then
+    raise ETransitionState.Create('Prior installer outcome remains uncertain');
+  Data := Load;
+  try
+    if (Data = nil) or (ParseState(Data.Strings['state']) <> tsBackupVerified) then
+      raise ETransitionState.Create('Installation requires BACKUP_VERIFIED');
+    InitialState := Field(Data.Objects['backup'], 'service_initial_state', jtNumber).AsInteger;
+    ApprovedDigest := Data.Get('payload_sha256', '');
+    Source := Data.Objects['source'];
+    Metadata.InstallDir := Field(Source, 'install_dir', jtString).AsString;
+    Metadata.ConfigPath := Field(Source, 'config_path', jtString).AsString;
+    Metadata.DatabasePath := Field(Source, 'db_path', jtString).AsString;
+    Metadata.KeyPath := Field(Source, 'key_path', jtString).AsString;
+    Metadata.CertificatePath := Field(Source, 'certificate_path', jtString).AsString;
+    Metadata.SourceURL := Field(Source, 'url', jtString).AsString;
+    Metadata.TargetURL := Field(Data.Objects['target'], 'url', jtString).AsString;
+    Metadata.TargetVersion := Field(Data.Objects['target'], 'agent_version', jtString).AsString;
+    Metadata.UUID := Field(Data.Objects['host'], 'uuid', jtString).AsString;
+    Metadata.IdentificationMode := Field(Data.Objects['host'], 'identification_mode', jtString).AsString;
+  finally
+    Data.Free;
+  end;
+
+  Payload := FRoot + 'staging\payload';
+  InstallerPath := Payload + '\waptagent.exe';
+  MarkerPath := FRoot + 'staging\installer.pending';
+  MarkerOwned := False;
+  EnteredInstall := False;
+  Settled := False;
+  Key := INVALID_HANDLE_VALUE;
+  Cert := INVALID_HANDLE_VALUE;
+  Service := TWindowsHistoricalService.Create(HistoricalService, UTF8Decode(Metadata.DatabasePath), 0);
+  try
+    try
+      LockVerifiedPayload(Payload, ApprovedDigest, Locks);
+      try
+        Policy := LoadTransitionSignerPolicy(Payload);
+        Installer := OpenVerifiedInstaller(Payload, Metadata, Policy, RepositoryURL, HTTPSBundle, ApprovedDigest);
+        try
+          InstallDir := UTF8Decode(Metadata.InstallDir);
+          ConfigPath := UTF8Decode(Metadata.ConfigPath);
+          WorkingDir := InstallDir;
+          if RegistryValue('SYSTEM\CurrentControlSet\Services\WAPTService\Parameters',
+            'AppDirectory', 0, RegistryDir) and (RegistryDir <> '') then
+            WorkingDir := ResolvePath(RegistryDir, InstallDir);
+          Lines := TStringList.Create;
+          Ini := TMemIniFile.Create('');
+          try
+            Lines.Text := ReadDocument(ConfigPath);
+            Ini.SetStrings(Lines);
+            PackagesDir := ResolvePath(UTF8Decode(Ini.ReadString('global', 'public_certs_dir',
+              UTF8Encode(InstallDir + '\ssl'))), WorkingDir);
+          finally
+            Ini.Free;
+            Lines.Free;
+          end;
+          HTTPSCA := Payload + '\certificates\https.pem';
+          PackageCA := Payload + '\certificates\packages.pem';
+          PackageBundle := ReadDocument(PackageCA);
+          Arguments := TransitionSetupArguments(InstallDir, ConfigPath, PackagesDir, HTTPSCA, PackageCA,
+            UTF8Decode(Metadata.TargetURL), UTF8Decode(RepositoryURL));
+          RequireScheduledWaptIdle(InstallDir);
+          TakeControlOfHistoricalService(Service, SERVICE_STOPPED);
+          CheckLocalPath(UTF8Decode(Metadata.KeyPath));
+          CheckLocalPath(UTF8Decode(Metadata.CertificatePath));
+          Key := CreateFileW(PWideChar(UTF8Decode(Metadata.KeyPath)), GENERIC_READ, FILE_SHARE_READ, nil,
+            OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, 0);
+          Cert := CreateFileW(PWideChar(UTF8Decode(Metadata.CertificatePath)), GENERIC_READ, FILE_SHARE_READ, nil,
+            OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, 0);
+          if (Key = INVALID_HANDLE_VALUE) or (Cert = INVALID_HANDLE_VALUE) then
+            raise ETransitionInstall.Create('Cannot protect the historical identity during cutover');
+          CheckHistoricalIdentity(UTF8Decode(Metadata.CertificatePath), UTF8Decode(Metadata.KeyPath), Metadata.UUID);
+          Marker := OpenStorageFile(MarkerPath, GENERIC_WRITE, 0, CREATE_NEW);
+          if Marker = INVALID_HANDLE_VALUE then RaiseLastOSError;
+          MarkerOwned := True;
+          try
+            if not FlushFileBuffers(Marker) then RaiseLastOSError;
+          finally
+            CloseHandle(Marker);
+          end;
+          // Revalidate the complete backup and its persisted digest before recording INSTALLING.
+          PhaseJournal := Advance(tsInstalling);
+          EnteredInstall := True;
+          TakeControlOfHistoricalService(Service, SERVICE_STOPPED);
+          Code := RunLockedInstaller(InstallerPath, Arguments, Timeout);
+          Settled := True;
+          CheckSetupExit(Code);
+          CheckInstalledCutover(Metadata, RepositoryURL, InstallDir + '\padit-transition-https.cabundle',
+            PackagesDir + '\padit-transition-packages.pem', HTTPSBundle, PackageBundle);
+          if not DeleteFileW(PWideChar(MarkerPath)) then
+            raise EInstallUncertain.Create('Cannot clear the installer uncertainty marker');
+          MarkerOwned := False;
+          Result := CommitState(tsVerifying) and PhaseJournal;
+        finally
+          if Key <> INVALID_HANDLE_VALUE then CloseHandle(Key);
+          if Cert <> INVALID_HANDLE_VALUE then CloseHandle(Cert);
+          CloseHandle(Installer);
+        end;
+      finally
+        ReleasePayload(Locks);
+      end;
+    except
+      on E: Exception do
+      begin
+        TryLog('ERROR LOCAL CUTOVER: ' + E.Message);
+        if EnteredInstall or (ReadState = tsInstalling) then
+        begin
+          if (Settled or (E is EInstallNotStarted)) and not (E is EInstallUncertain) and
+            (Length(RestoreScope) > 0) and
+            MarkerOwned and DeleteFileW(PWideChar(MarkerPath)) then
+            RestoreSettledTransition(RestoreScope, InstalledFiles, '')
+          else
+            CommitState(tsRecoveryRequired, 'Local cutover failed after entering INSTALLING');
+        end
+        else
+        begin
+          if MarkerOwned and not DeleteFileW(PWideChar(MarkerPath)) then
+          begin
+            CommitState(tsRecoveryRequired, 'Cannot clear pre-launch installer marker');
+            raise;
+          end;
+          try
+            RestoreHistoricalService(Service, InitialState);
+          except
+            CommitState(tsRecoveryRequired, 'Cannot restore historical service after pre-launch failure');
+            raise;
+          end;
+          CommitState(tsAborted);
+        end;
+        raise;
+      end;
+    end;
+  finally
+    Service.Free;
+  end;
+end;
+
+function TTransitionStore.RunFixtureOrchestrator(const Service, Scenario, InstallerHash: string;
+  Timeout: DWORD; const Metadata: TLocalMetadata; const RestoreScope, InstalledFiles: TBackupPaths;
+  RejectPrecheck: Boolean; AfterBackup: TFixtureBackupCheckpoint): Boolean;
+var
+  PrecheckJournal, CutoverJournal: Boolean;
+begin
+  if not FIsolated or (Pos('PADIT_BackupTest_', Service) <> 1) or (ReadState <> tsPrecheck) then
+    raise ETransitionState.Create('Fixture orchestration requires an isolated PRECHECK and test service');
+  if RejectPrecheck then
+  begin
+    RecordPrecheckFailure('Fixture precheck rejected');
+    raise ETransitionState.Create('Fixture precheck rejected');
+  end;
+  PrecheckJournal := RecordLocalMetadata(Metadata);
+  PrecheckJournal := CommitState(tsPrepared) and PrecheckJournal;
+  CutoverJournal := RunFixtureCutover(UnicodeString(Service), UnicodeString(Scenario),
+    InstallerHash, Timeout, RestoreScope, InstalledFiles, AfterBackup);
+  Result := PrecheckJournal and CutoverJournal;
+end;
+
 function TTransitionStore.RunFixtureCutover(const Service, Scenario: UnicodeString;
-  const InstallerHash: string; Timeout: DWORD; const RestoreScope, InstalledFiles: TBackupPaths): Boolean;
+  const InstallerHash: string; Timeout: DWORD; const RestoreScope, InstalledFiles: TBackupPaths;
+  AfterBackup: TFixtureBackupCheckpoint): Boolean;
 var
   Data, Source: TJSONObject;
   State: TTransitionState;
@@ -1055,7 +1436,11 @@ begin
     Data.Free;
   end;
   BackupJournal := True;
-  if State = tsPrepared then BackupJournal := RunBackup(Service);
+  if State = tsPrepared then
+  begin
+    BackupJournal := RunBackup(Service);
+    if Assigned(AfterBackup) then AfterBackup(FRoot + 'backup');
+  end;
   Installer := INVALID_HANDLE_VALUE;
   Key := INVALID_HANDLE_VALUE;
   Cert := INVALID_HANDLE_VALUE;
@@ -1171,6 +1556,14 @@ begin
 end;
 
 function TTransitionStore.RunRollback(const RestoreScope, InstalledFiles: TBackupPaths;
+  const IsolatedService: UnicodeString): Boolean;
+begin
+  if (not FIsolated) and (ReadState = tsInstalling) then
+    raise ETransitionState.Create('Installer outcome remains uncertain; rollback blocked');
+  Result := RestoreSettledTransition(RestoreScope, InstalledFiles, IsolatedService);
+end;
+
+function TTransitionStore.RestoreSettledTransition(const RestoreScope, InstalledFiles: TBackupPaths;
   const IsolatedService: UnicodeString): Boolean;
 var
   Data, Source, Manifest: TJSONObject;

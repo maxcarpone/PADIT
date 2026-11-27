@@ -317,16 +317,58 @@ begin
   PinDirectory(Current, Pins, ValidateParents);
 end;
 
+function GetFinalTransitionPath(Handle: THandle; Path: PWideChar; Size, Flags: DWORD): DWORD; stdcall;
+  external 'kernel32.dll' name 'GetFinalPathNameByHandleW';
+
+function FinalDirectoryName(const Path: UnicodeString): UnicodeString;
+var
+  Handle: THandle;
+  Size: DWORD;
+begin
+  CheckLocalPath(Path);
+  Handle := CreateFileW(PWideChar(Path), FILE_READ_ATTRIBUTES,
+    FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING,
+    FILE_FLAG_BACKUP_SEMANTICS or FILE_FLAG_OPEN_REPARSE_POINT, 0);
+  if Handle = INVALID_HANDLE_VALUE then RaiseLastOSError;
+  try
+    SetLength(Result, 32768);
+    Size := GetFinalTransitionPath(Handle, PWideChar(Result), Length(Result), 1); // volume GUID
+    if (Size = 0) or (Size >= DWORD(Length(Result))) then
+      raise Exception.Create('Cannot resolve the isolated storage identity');
+    SetLength(Result, Size);
+  finally
+    CloseHandle(Handle);
+  end;
+end;
+
+procedure RequireSeparateFixtureRoot(const Root, Parent, ProgramData: UnicodeString);
+var
+  FixtureName, RealName, Leaf: UnicodeString;
+begin
+  Leaf := ExtractFileName(Root);
+  if (Leaf = '') or (Leaf[Length(Leaf)] in ['.', ' ']) or (Pos(':', Leaf) <> 0) then
+    raise Exception.Create('Invalid isolated transition directory name');
+  if LocalAttributes(Root) = INVALID_FILE_ATTRIBUTES then
+    FixtureName := IncludeTrailingPathDelimiter(FinalDirectoryName(Parent)) + Leaf
+  else FixtureName := FinalDirectoryName(Root);
+  FixtureName := IncludeTrailingPathDelimiter(FixtureName);
+  RealName := IncludeTrailingPathDelimiter(FinalDirectoryName(ProgramData)) + 'PADIT\Transition\';
+  if UnicodeSameText(Copy(FixtureName, 1, Length(RealName)), RealName) or
+     UnicodeSameText(Copy(RealName, 1, Length(FixtureName)), FixtureName) then
+    raise Exception.Create('Isolated storage overlaps the production transition directory');
+end;
+
 function SecureTransitionRoot(const OverrideRoot: UnicodeString;
   var Pins: TDirectoryPins): UnicodeString;
 var
-  Parent: UnicodeString;
+  Parent, ProgramData: UnicodeString;
   Volume, FileSystem: array[0..MAX_PATH] of WideChar;
 begin
+  ProgramData := GetWindowsSpecialDirUnicode(FOLDERID_ProgramData, False);
+  if ProgramData = '' then raise Exception.Create('Could not resolve ProgramData');
   if OverrideRoot = '' then
   begin
-    Parent := GetWindowsSpecialDirUnicode(FOLDERID_ProgramData, False);
-    if Parent = '' then raise Exception.Create('Could not resolve ProgramData');
+    Parent := ProgramData;
     Result := IncludeTrailingPathDelimiter(Parent) + 'PADIT\Transition';
   end
   else
@@ -335,6 +377,7 @@ begin
     Parent := ExtractFileDir(Result);
   end;
   PinAncestors(Parent, Pins, OverrideRoot = '');
+  if OverrideRoot <> '' then RequireSeparateFixtureRoot(Result, Parent, ProgramData);
   if not GetVolumePathNameW(PWideChar(Parent), @Volume[0], Length(Volume)) or
      not GetVolumeInformationW(@Volume[0], nil, 0, nil, nil, nil,
        @FileSystem[0], Length(FileSystem)) then RaiseLastOSError;

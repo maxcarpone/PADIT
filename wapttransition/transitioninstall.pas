@@ -9,6 +9,7 @@ uses Windows, SysUtils;
 type
   ETransitionInstall = class(Exception);
   EInstallUncertain = class(ETransitionInstall);
+  EInstallNotStarted = class(ETransitionInstall);
 
 const
   TransitionRestartCode = 3010;
@@ -110,14 +111,14 @@ var
     if not TerminateProcess(Process.hProcess, 1) or
       (WaitForSingleObject(Process.hProcess, 5000) <> WAIT_OBJECT_0) then
       raise EInstallUncertain.Create('Cannot account for suspended installer process');
-    raise ETransitionInstall.Create('Cannot start the installer inside its tracking job');
+    raise EInstallNotStarted.Create('Cannot start the installer inside its tracking job');
   end;
 
 begin
   if (Timeout = 0) or (Pos('"', Path) > 0) then
-    raise ETransitionInstall.Create('Invalid installer launch settings');
+    raise EInstallNotStarted.Create('Invalid installer launch settings');
   Job := NewJob(nil, nil);
-  if Job = 0 then raise ETransitionInstall.Create('Cannot create installer tracking job');
+  if Job = 0 then raise EInstallNotStarted.Create('Cannot create installer tracking job');
   try
     FillChar(Startup, SizeOf(Startup), 0);
     Startup.cb := SizeOf(Startup);
@@ -126,7 +127,7 @@ begin
     WorkingDir := ExtractFileDir(Path);
     if not CreateProcessW(PWideChar(Path), PWideChar(Command), nil, nil, False,
       CREATE_SUSPENDED or CREATE_NO_WINDOW, nil, PWideChar(WorkingDir), Startup, Process) then
-      raise ETransitionInstall.CreateFmt('Cannot create installer process (%d)', [GetLastError]);
+      raise EInstallNotStarted.CreateFmt('Cannot create installer process (%d)', [GetLastError]);
     try
       if not AssignJob(Job, Process.hProcess) then RejectSuspendedProcess;
       if ResumeThread(Process.hThread) = High(DWORD) then RejectSuspendedProcess;

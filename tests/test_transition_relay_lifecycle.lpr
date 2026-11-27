@@ -112,9 +112,9 @@ procedure TestRecovery;
 begin
   Check(ClassifyRelayEntry(tsPrepared, True, False) = reaResume, 'Safe prepared resume denied');
   Check(ClassifyRelayEntry(tsBackupVerified, True, False) = reaResume, 'Verified backup resume denied');
-  Check(ClassifyRelayEntry(tsBackupInProgress, True, False) = reaRecovery, 'Interrupted backup admitted');
+  Check(ClassifyRelayEntry(tsBackupInProgress, True, False) = reaResume, 'Interrupted backup was not routed to local resume');
   Check(ClassifyRelayEntry(tsInstalling, True, True) = reaRecovery, 'Interrupted installation admitted');
-  Check(ClassifyRelayEntry(tsRollingBack, True, False) = reaRecovery, 'Interrupted restore admitted');
+  Check(ClassifyRelayEntry(tsRollingBack, True, False) = reaResume, 'Interrupted restore was not routed to local resume');
   Check(ClassifyRelayEntry(tsBackupVerified, True, True) = reaRecovery, 'Unknown installer result admitted');
   try
     ClassifyRelayEntry(tsPrepared, False, False);

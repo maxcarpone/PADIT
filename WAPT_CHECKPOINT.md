@@ -3321,6 +3321,47 @@ Qualification intégrale réalisée par Max et ChatGPT sur waptworm, Debian 12 e
 - Le prochain raccordement doit relier le hook authentifié à la préparation et à la copie protégée complètes, à la collecte SQLite, à la persistance puis à ProgramHistoricalRelay. L'entrée du relais doit ensuite transmettre la main à l'orchestrateur 2F.2B avec ses vérifications de reprise, de sauvegarde et de bascule. Le hook et la publication restent bloqués. Paquet NON DÉPLOYABLE.
 - Restent à qualifier sur VM dédiée le parcours WAPT Community 1.8.2.7393 avec binaires PADIT réellement signés, le premier lancement et la persistance de bout en bout, le Planificateur sous SYSTEM en modes immédiat et démarrage, l'interruption et le nettoyage réels, la libération de la file, des processus et de SQLite, ainsi que Windows 7 SP1. Les PASS sur fixtures et la qualification NTFS Maintenance sont acquis.
 
+### W109-126-L1 — Parcours préparatoire 2F.2B sur fixtures
+
+- Entrée Python réservée aux fixtures. Collecte réelle de l'identité SQLite en lecture seule, authentification WAPT, staging par adaptateur, contrôle Authenticode et verrouillage avant remise au moteur, persistance de l'empreinte puis programmation. Le hook de production refuse toujours l'installation.
+- Le pilote natif x86 utilise le stockage, le manifeste et l'état existants avec un ordonnanceur simulé. L'entrée --historical-relay revérifie et réclame la transition. Le pilote rend la main au point PRECHECK, avant sauvegarde ou action sur l'agent.
+- Banc Python PASS avec signataires, ordonnanceur et stockage natif simulés. Deux modes, échecs de préparation, confiance et programmation, interruption et disparition des sources. Compilation du pilote natif PASS. L'essai natif s'est arrêté sur erreur Windows 1307 à la création du stockage protégé dans la session Codex. La qualification intégrée est à poursuivre avec un jeton administrateur élevé en VM dédiée, sans tâche Windows réelle pour ce pilote.
+- Le point de remise est prêt pour le futur orchestrateur local. Le moteur ne déclenche aucune sauvegarde dans ce lot. Paquet toujours NON DÉPLOYABLE, publication interdite.
+
+### W109-126 — Qualifications L1 et raccordement local L2
+
+- Max a qualifié test_fixture_hook_to_native_relay en session Maintenance élevée sur VM109. 1/1 PASS en 5,872 secondes. Stockage NTFS et pilote natif réels. Authentification WAPT avec certificat de fixture, ordonnanceur et signataires Authenticode simulés. L'élévation UAC a résolu l'erreur 1307. La normalisation des chemins a été corrigée uniquement dans le banc. Les protections de production sont préservées.
+- L2 raccorde les précontrôles, la prise de contrôle, la sauvegarde vérifiée et l'installation locale jusqu'à VERIFYING. Le contenu et la sauvegarde sont revérifiés, et le marqueur installer.pending et le Job Object encadrent le lancement. Aucun parcours ne valide COMPLETED. Le point d'entrée de production reste fermé.
+- Banc L2 x86 compilé. Les huit scénarios avec service et installateur fictifs restent à exécuter en Maintenance élevée. La restauration intégrée et la reprise après interruption relèvent de L3. Paquet NON DÉPLOYABLE, publication interdite.
+
+### W109-126-L2B — Qualification locale et restauration NTFS
+
+- Maintenance a qualifié sept scénarios L2 sur huit. PASS pour l2-precheck, l2-control, l2-save, l2-ok, l2-backup, l2-tamper et l2-timeout.
+- L2A a corrigé la création du dossier vide du Planificateur dédié à la fixture. l2-launch atteint désormais le retour arrière après l'échec de CreateProcessW.
+- Sur la fixture en échec, agent\private\machine.crt a perdu l'indicateur AI de la DACL alors que les ACE héritées restent présentes. Le manifeste de cet essai est inaccessible au jeton Codex. Le moteur préserve désormais un SDDL déjà exactement identique au manifeste et conserve la vérification stricte après toute réapplication nécessaire.
+- Le nouveau test l2-launch compare le SDDL hérité avant sauvegarde, dans le manifeste et après restauration. Qualification élevée encore attendue. Ce changement concerne la restauration NTFS du lot 2C.2 et les retours arrière après échec d'installation du lot 2D. L3 n'a pas commencé. Paquet NON DÉPLOYABLE, publication interdite.
+
+### W109-126 — Clôture L2 et reprise locale L3
+
+- Maintenance élevée sur VM109 : PASS inherited machine.crt SDDL preserved exactly, PASS l2-launch, PASS L2B (1 scenario). Bilan L2 définitif 8/8 PASS. La comparaison exacte des descripteurs et la correction ApplyMetadata sont conservées.
+- L3 reprend les phases stables. Une sauvegarde partielle est conservée et abandonnée après vérification du service historique. Une installation à l'issue incertaine bloque toute relance et tout retour arrière. Une restauration interrompue sans installateur incertain réutilise le moteur de restauration après vérification intégrale de la sauvegarde.
+- Le refus de COMPLETED sans confirmation serveur est conservé. La confirmation appartient à 2F.2C. Le chemin réel reste désactivé jusqu'à qualification de l'inventaire des ajouts, du retour arrière et de la reprise sur VM dédiée.
+- Routage L3 x86 PASS. Banc Maintenance compilé pour l'abandon d'une sauvegarde interrompue, l'installateur incertain, la reprise de restauration avec DACL réellement modifiée et l'échec de restauration. Exécution élevée encore attendue. Paquet NON DÉPLOYABLE, publication interdite.
+
+### W109-126-L3A — Isolation du banc de sauvegarde interrompue
+
+- Maintenance élevée sur VM109 : PASS l3-pending, PASS l3-rollback, PASS l3-restore-fail. La DACL protégée réellement modifiée de machine.crt a retrouvé exactement son SDDL d'origine. Bilan L3 : 3/4 PASS.
+- Le seul échec provient du balayage global des processus historiques appelé dans une fixture alors que le véritable service WAPT fonctionne. La fixture vérifie désormais la fin de son propre processus SCM, identifié par PID, date de création et image, ainsi que la quiescence SQLite. Le contrôle de production reste inchangé.
+- Pilote x86 compilé. Seul l3-backup-interrupted reste à rejouer en Maintenance. 2F.2C n'a pas commencé. Paquet NON DÉPLOYABLE, publication interdite.
+
+### W109-126-L4 — Clôture du lot 2F.2B
+
+- Maintenance élevée sur VM109 : Fixture SCM PID 7376, Fixture process exit confirmed 0 ms after SCM stop, PASS l3-backup-interrupted, PASS L3A (1 scenario).
+- Bilan cumulé sur fixtures : L1 1/1 PASS, L2 8/8 PASS, L3 4/4 PASS. Conservation exacte du SDDL hérité et restauration exacte du SDDL protégé modifié : PASS.
+- Revue L4 : une demande de restauration est refusée avant toute installation. Le banc vérifie son périmètre avant la sauvegarde. La racine d'une fixture ne peut recouvrir le stockage de production. Le contrôle x86 ciblé des nouveaux refus passe. Les essais acquis n'ont pas été relancés.
+- Restent à qualifier sur VM dédiée le paquet avec signatures PADIT réelles et WAPT historique, les deux modes du Planificateur sous SYSTEM, l'arrêt et la reprise du service historique, l'inventaire exact des ajouts de l'installateur, la conservation de l'identité et de SQLite après installation, ainsi que les interruptions et retours arrière réels. Windows 7 SP1 et Server 2012 R2 restent à qualifier. La confirmation serveur relève du prochain lot 2F.2C.
+- Le hook de production demeure verrouillé. Les entrées natives publiques ne déclenchent pas la sauvegarde ni l'installation. Paquet NON DÉPLOYABLE, publication interdite.
+
 ## Backlog post-RC1
 
 ### Gestion intelligente des réinstallations et réaffectations de postes
