@@ -45,6 +45,21 @@ begin
     HiWord(Version^.dwFileVersionLS), LoWord(Version^.dwFileVersionLS)]);
 end;
 
+procedure HandleStagedPayload;
+var
+  Store: TTransitionStore;
+begin
+  Store := TTransitionStore.Create;
+  try
+    if ParamStr(1) = '--record-authenticated-payload' then
+      Store.RecordAuthenticatedPayload(ParamStr(2))
+    else
+      Store.VerifyHistoricalRelay(ParamStr(2));
+  finally
+    Store.Free;
+  end;
+end;
+
 procedure PrintHelp;
 begin
   WriteLn('PADIT Transition');
@@ -60,6 +75,9 @@ begin
       PrintHelp
     else if (ParamCount = 1) and (ParamStr(1) = '--version') then
       WriteLn('wapttransition ', FileVersion)
+    else if (ParamCount = 2) and ((ParamStr(1) = '--historical-relay') or
+      (ParamStr(1) = '--record-authenticated-payload')) then
+      HandleStagedPayload
     else
     begin
       if ParamCount = 1 then

@@ -12,6 +12,8 @@ type
     tsBackupInProgress, tsBackupVerified, tsInstalling, tsVerifying,
     tsCompleted, tsRollingBack, tsRolledBack, tsRecoveryRequired, tsAborted);
 
+  TRelayEntryAction = (reaClaim, reaResume, reaCleanup, reaRecovery);
+
   ETransitionState = class(Exception);
 
   TLocalMetadata = record
@@ -30,6 +32,7 @@ type
     procedure Log(const MessageText: string);
     function TryLog(const MessageText: string): Boolean;
     function InstallerPending: Boolean;
+    procedure RequireStagedRelayImage;
     function Load: TJSONObject;
     procedure Save(Data: TJSONObject);
     function CommitState(Next: TTransitionState; const Diagnostic: string = '';
@@ -60,11 +63,18 @@ type
     // enter PREPARED after all local, network and cryptographic checks pass.
     function RecordLocalMetadata(const Metadata: TLocalMetadata): Boolean;
     procedure StageHistoricalSnapshot(const Snapshot: UTF8String);
+    procedure RecordAuthenticatedPayload(const ManifestDigest: string);
+    procedure ProgramHistoricalRelay;
+    procedure VerifyHistoricalRelay(const TransitionID: string);
+    procedure PrepareFixtureHandoff(const SourceDir: UnicodeString; const Snapshot, ManifestDigest: UTF8String);
+    // The fixture owns the returned exclusive admission handle until it finishes.
+    function AcquireFixtureHandoff(Producer: THandle; const Database: UnicodeString; Timeout: DWORD): THandle;
     function HasBackup: Boolean;
     procedure RecordPrecheckFailure(const Diagnostic: string);
     property RootDirectory: UnicodeString read FRoot;
   end;
 
+function ClassifyRelayEntry(State: TTransitionState; Claimed, InstallPending: Boolean): TRelayEntryAction;
 function CanAdvance(Current, Next: TTransitionState): Boolean;
 
 function IsSafeServerURL(const Value: string): Boolean;
@@ -73,7 +83,7 @@ implementation
 
 uses
   Classes, DateUtils, URIParser, jsonparser, jsonscanner, IniFiles, transitionprecheck,
-  transitionrestore, transitionbackupwindows, transitioninstall;
+  transitionrestore, transitionbackupwindows, transitioninstall, transitionhandoff, transitionrelay;
 
 const
   SchemaVersion = 1;
@@ -84,9 +94,9 @@ const
     'BACKUP_VERIFIED', 'INSTALLING', 'VERIFYING', 'COMPLETED',
     'ROLLING_BACK', 'ROLLED_BACK', 'RECOVERY_REQUIRED', 'ABORTED');
   Successors: array[TTransitionState] of set of TTransitionState = (
-    [tsPrecheckFailed, tsPrepared],                         // PRECHECK
+    [tsPrecheckFailed, tsPrepared, tsRecoveryRequired],                         // PRECHECK
     [],                                                     // PRECHECK_FAILED
-    [tsBackupInProgress, tsAborted],                        // PREPARED
+    [tsBackupInProgress, tsAborted, tsRecoveryRequired],                        // PREPARED
     [tsBackupVerified, tsRecoveryRequired, tsAborted],      // BACKUP_IN_PROGRESS
     [tsInstalling, tsAborted, tsRecoveryRequired],          // BACKUP_VERIFIED
     [tsVerifying, tsRollingBack, tsRecoveryRequired],       // INSTALLING
@@ -96,6 +106,24 @@ const
     [],                                                     // ROLLED_BACK
     [],                                                     // RECOVERY_REQUIRED
     []);                                                    // ABORTED
+
+function ClassifyRelayEntry(State: TTransitionState; Claimed, InstallPending: Boolean): TRelayEntryAction;
+begin
+  case State of
+    tsRecoveryRequired: Exit(reaRecovery);
+    tsPrecheckFailed, tsCompleted, tsRolledBack, tsAborted:
+      begin
+        if InstallPending then
+          raise ETransitionState.Create('Terminal state conflicts with an uncertain installer outcome');
+        Exit(reaCleanup);
+      end;
+    tsBackupInProgress, tsInstalling, tsRollingBack: Exit(reaRecovery);
+  end;
+  if InstallPending then Exit(reaRecovery);
+  if Claimed then Exit(reaResume);
+  if State = tsPrecheck then Exit(reaClaim);
+  raise ETransitionState.Create('Historical relay claim is missing from advanced state');
+end;
 
 function CanAdvance(Current, Next: TTransitionState): Boolean;
 begin
@@ -253,7 +281,14 @@ begin
   if not TryStringToGUID(Identifier, Id) or (GUIDToString(Id) <> Identifier) then
     raise ETransitionState.Create('Invalid transition identifier');
   Current := ParseState(Field(Data, 'state', jtString).AsString);
-  if Data.Count <> 11 + Ord(Current = tsCompleted) then
+  if Data.Find('payload_sha256') <> nil then
+    if not IsConfirmationDigest(Field(Data, 'payload_sha256', jtString).AsString) then
+      raise ETransitionState.Create('Invalid approved payload manifest digest');
+  if Data.Find('relay_claimed') <> nil then
+    if (Data.Find('payload_sha256') = nil) or not Field(Data, 'relay_claimed', jtBoolean).AsBoolean then
+      raise ETransitionState.Create('Invalid historical relay claim');
+  if Data.Count <> 11 + Ord(Current = tsCompleted) + Ord(Data.Find('payload_sha256') <> nil) +
+    Ord(Data.Find('relay_claimed') <> nil) then
     raise ETransitionState.Create('Unexpected fields in state document');
   if Current = tsCompleted then
   begin
@@ -581,6 +616,173 @@ begin
   end;
 end;
 
+procedure TTransitionStore.RequireStagedRelayImage;
+var
+  Image: UnicodeString;
+  Size: DWORD;
+begin
+  SetLength(Image, 32768);
+  Size := GetModuleFileNameW(0, PWideChar(Image), Length(Image));
+  if (Size = 0) or (Size >= DWORD(Length(Image))) then RaiseLastOSError;
+  SetLength(Image, Size);
+  if not UnicodeSameText(Image, FRoot + 'staging\payload\patchs\wapttransition.exe') then
+    raise ETransitionState.Create('Historical relay must run from protected staging');
+end;
+
+procedure TTransitionStore.RecordAuthenticatedPayload(const ManifestDigest: string);
+var
+  Data: TJSONObject;
+  Locks: TPayloadLocks;
+begin
+  if FIsolated then raise ETransitionState.Create('Real relay is unavailable in fixture storage');
+  if not IsConfirmationDigest(ManifestDigest) then
+    raise ETransitionState.Create('Invalid approved manifest digest');
+  RequireStagedRelayImage;
+  LockVerifiedPayload(FRoot + 'staging\payload', ManifestDigest, Locks);
+  try
+    Initialize;
+    Data := Load;
+    try
+      Data.Add('payload_sha256', ManifestDigest);
+      Save(Data);
+    finally
+      Data.Free;
+    end;
+  finally
+    ReleasePayload(Locks);
+  end;
+end;
+
+procedure TTransitionStore.ProgramHistoricalRelay;
+var
+  Data: TJSONObject;
+begin
+  if FIsolated then raise ETransitionState.Create('Real relay is unavailable in fixture storage');
+  Data := Load;
+  try
+    if (Data = nil) or (ParseState(Data.Strings['state']) <> tsPrecheck) or
+      (Data.Find('payload_sha256', jtString) = nil) then
+      raise ETransitionState.Create('No fully staged historical relay');
+    if (Data.Find('relay_claimed') <> nil) or InstallerPending then
+      raise ETransitionState.Create('Historical relay is already claimed or installation is uncertain');
+    try
+      ScheduleHistoricalRelay(FRoot, Data.Strings['transition_id'], Data.Strings['payload_sha256']);
+    except
+      on E: Exception do
+      begin
+        TryLog('ERROR historical relay programming: ' + E.Message);
+        raise;
+      end;
+    end;
+  finally
+    Data.Free;
+  end;
+end;
+
+procedure TTransitionStore.VerifyHistoricalRelay(const TransitionID: string);
+var
+  Data: TJSONObject;
+  Locks: TPayloadLocks;
+  Current: TTransitionState;
+  Action: TRelayEntryAction;
+begin
+  if FIsolated then raise ETransitionState.Create('Real relay is unavailable in fixture storage');
+  Data := Load;
+  try
+    if (Data = nil) or (Data.Strings['transition_id'] <> TransitionID) then
+      raise ETransitionState.Create('No matching historical relay to verify');
+    RequireStagedRelayImage;
+    LockVerifiedPayload(FRoot + 'staging\payload', Data.Get('payload_sha256', ''), Locks);
+    try
+      Current := ParseState(Data.Strings['state']);
+      Action := ClassifyRelayEntry(Current, Data.Find('relay_claimed') <> nil, InstallerPending);
+      if Action = reaClaim then
+      begin
+        Data.Add('relay_claimed', True);
+        Save(Data);
+        TryLog('Historical relay trigger claimed');
+      end;
+      if (Action = reaRecovery) and (Current <> tsRecoveryRequired) then
+        CommitState(tsRecoveryRequired, 'Historical relay interrupted in a phase requiring recovery');
+      try
+        // A consumed task remains registered but disabled while its transition is unfinished.
+        RetireHistoricalRelay(FRoot, TransitionID, Action = reaCleanup);
+      except
+        on E: Exception do
+        begin
+          TryLog('ERROR historical relay task cleanup: ' + E.Message);
+          raise;
+        end;
+      end;
+      if Action = reaRecovery then
+        raise ETransitionState.Create('Historical relay requires recovery; disabled task and data preserved');
+      if Action = reaCleanup then TryLog('Historical relay task removed')
+      else if Action = reaResume then TryLog('Historical relay already claimed; verified without taking control again')
+      else TryLog('Historical relay payload verified and trigger disabled');
+    finally
+      ReleasePayload(Locks);
+    end;
+  finally
+    Data.Free;
+  end;
+end;
+
+procedure TTransitionStore.PrepareFixtureHandoff(const SourceDir: UnicodeString;
+  const Snapshot, ManifestDigest: UTF8String);
+var
+  Data: TJSONObject;
+begin
+  if not FIsolated then raise ETransitionState.Create('Handoff is restricted to isolated fixtures');
+  if not IsConfirmationDigest(ManifestDigest) then raise ETransitionState.Create('Invalid approved manifest digest');
+  Initialize;
+  StagePayload(SourceDir, FRoot + 'staging\payload', ManifestDigest);
+  StageHistoricalSnapshot(Snapshot);
+  Data := Load;
+  try
+    Data.Add('payload_sha256', ManifestDigest);
+    Save(Data);
+  finally
+    Data.Free;
+  end;
+  TryLog('PRECHECK Isolated handoff payload staged and verified');
+end;
+
+function TTransitionStore.AcquireFixtureHandoff(Producer: THandle;
+  const Database: UnicodeString; Timeout: DWORD): THandle;
+var
+  Data: TJSONObject;
+  Ready: THandle;
+begin
+  if not FIsolated then raise ETransitionState.Create('Handoff is restricted to isolated fixtures');
+  Data := Load;
+  try
+    if (Data = nil) or (ParseState(Data.Strings['state']) <> tsPrecheck) or
+      (Data.Find('payload_sha256', jtString) = nil) then
+      raise ETransitionState.Create('No fully staged fixture handoff');
+    WaitForProducer(Producer, Timeout);
+    Result := OpenStorageFile(FRoot + 'staging\fixture-admission.lock', GENERIC_WRITE, 0, OPEN_ALWAYS);
+    if Result = INVALID_HANDLE_VALUE then
+      raise ETransitionState.Create('Fixture task admission is busy');
+    try
+      CheckStagedPayload(FRoot + 'staging\payload', Data.Strings['payload_sha256']);
+      VerifyBackupDatabase(Database);
+      Ready := OpenStorageFile(FRoot + 'staging\fixture-handoff.ready', GENERIC_WRITE, 0, CREATE_NEW);
+      if Ready = INVALID_HANDLE_VALUE then raise ETransitionState.Create('Fixture handoff already taken or cannot persist');
+      try
+        if not FlushFileBuffers(Ready) then RaiseLastOSError;
+      finally
+        CloseHandle(Ready);
+      end;
+      TryLog('PRECHECK Isolated handoff accepted');
+    except
+      CloseHandle(Result);
+      raise;
+    end;
+  finally
+    Data.Free;
+  end;
+end;
+
 function TTransitionStore.RecordLocalMetadata(const Metadata: TLocalMetadata): Boolean;
 var
   Data: TJSONObject;
@@ -656,8 +858,10 @@ var
   Ini: TMemIniFile;
   Roots: TBackupPaths;
   InstallDir, ConfigPath, WorkingDir, DB, Cache, Path, Service: UnicodeString;
-  TransitionID, Digest, Diagnostic: string;
+  TransitionID, Digest, Diagnostic, ApprovedDigest: string;
+  Locks: TPayloadLocks;
   InitialServiceState: DWORD;
+  HistoricalService: TWindowsHistoricalService;
   PayloadSize: QWord;
   FailureState: TTransitionState;
   Port: Integer;
@@ -688,6 +892,7 @@ begin
       raise ETransitionState.Create('Backup requires PREPARED');
     if HasBackup then raise ETransitionBackup.Create('A previous backup exists and will be preserved');
     TransitionID := Data.Strings['transition_id'];
+    ApprovedDigest := Data.Get('payload_sha256', '');
     Source := Data.Objects['source'];
     InstallDir := UTF8Decode(Field(Source, 'install_dir', jtString).AsString);
     ConfigPath := UTF8Decode(Field(Source, 'config_path', jtString).AsString);
@@ -736,45 +941,73 @@ begin
     end;
     RequireScheduledWaptIdle(InstallDir);
   end;
-  PayloadSize := 0;
   if not FIsolated then
-    PayloadSize := FileSizeRequired(FRoot + 'staging\payload\waptagent.exe', 'Missing staged installer');
-  CheckBackupSpace(FRoot + 'backup', InstallDir, Roots, Cache, PayloadSize);
-  RequireRestorableServiceAccount(Service);
-  InitialServiceState := BackupServiceState(Service);
-  RequireWaptIdle(Port, InitialServiceState);
-  StartedJournal := CommitState(tsBackupInProgress, '', '', InitialServiceState);
+    LockVerifiedPayload(FRoot + 'staging\payload', ApprovedDigest, Locks);
   try
-    StopBackupService(Service);
-    RequireWaptIdle(Port, BackupServiceState(Service));
-    CaptureBackup(FRoot + 'backup', Cache, DB, InstallDir, TransitionID, Roots,
-      InitialServiceState, Service);
-    if BackupServiceState(Service) <> SERVICE_STOPPED then
-      raise ETransitionBackup.Create('Historical service resumed during backup');
-    RequireWaptIdle(Port, SERVICE_STOPPED);
-    Digest := VerifyBackup(FRoot + 'backup', TransitionID);
-    FinishedJournal := CommitState(tsBackupVerified, '', Digest);
-  except
-    on E: Exception do
-    begin
-      Diagnostic := 'Backup failed after entering BACKUP_IN_PROGRESS';
-      if (E is ETransitionBackup) or (E is ELocalPrecheck) then Diagnostic := E.Message;
-      FailureState := tsAborted;
+    PayloadSize := 0;
+    if not FIsolated then
+      PayloadSize := FileSizeRequired(FRoot + 'staging\payload\waptagent.exe', 'Missing staged installer');
+    CheckBackupSpace(FRoot + 'backup', InstallDir, Roots, Cache, PayloadSize);
+    RequireRestorableServiceAccount(Service);
+    HistoricalService := nil;
+    if not FIsolated then HistoricalService := TWindowsHistoricalService.Create(Service, DB, Port);
+    try
+      if FIsolated then
+      begin
+        InitialServiceState := BackupServiceState(Service);
+        RequireWaptIdle(Port, InitialServiceState);
+      end
+      else
+        InitialServiceState := WaitForHistoricalIdle(HistoricalService, 15 * 60 * 1000);
+      StartedJournal := CommitState(tsBackupInProgress, '', '', InitialServiceState);
       try
-        RestoreBackupService(Service, InitialServiceState);
-        if InitialServiceState = SERVICE_RUNNING then RequireWaptIdle(Port, InitialServiceState);
-      except
-        on RestoreError: Exception do
+        if FIsolated then
         begin
-          FailureState := tsRecoveryRequired;
-          Diagnostic := Copy(Diagnostic, 1, 350) + '; service restoration failed';
-          if (RestoreError is ETransitionBackup) or (RestoreError is ELocalPrecheck) then
-            Diagnostic := Diagnostic + ': ' + RestoreError.Message;
+          StopBackupService(Service);
+          RequireWaptIdle(Port, BackupServiceState(Service));
+        end
+        else
+          TakeControlOfHistoricalService(HistoricalService, InitialServiceState);
+        CaptureBackup(FRoot + 'backup', Cache, DB, InstallDir, TransitionID, Roots,
+          InitialServiceState, Service);
+        if BackupServiceState(Service) <> SERVICE_STOPPED then
+          raise ETransitionBackup.Create('Historical service resumed during backup');
+        if FIsolated then RequireWaptIdle(Port, SERVICE_STOPPED)
+        else TakeControlOfHistoricalService(HistoricalService, SERVICE_STOPPED);
+        Digest := VerifyBackup(FRoot + 'backup', TransitionID);
+        FinishedJournal := CommitState(tsBackupVerified, '', Digest);
+      except
+        on E: Exception do
+        begin
+          Diagnostic := 'Backup failed after entering BACKUP_IN_PROGRESS';
+          if (E is ETransitionBackup) or (E is ELocalPrecheck) then Diagnostic := E.Message;
+          FailureState := tsAborted;
+          try
+            if FIsolated then
+            begin
+              RestoreBackupService(Service, InitialServiceState);
+              if InitialServiceState = SERVICE_RUNNING then RequireWaptIdle(Port, InitialServiceState);
+            end
+            else
+              RestoreHistoricalService(HistoricalService, InitialServiceState);
+          except
+            on RestoreError: Exception do
+            begin
+              FailureState := tsRecoveryRequired;
+              Diagnostic := Copy(Diagnostic, 1, 350) + '; service restoration failed';
+              if (RestoreError is ETransitionBackup) or (RestoreError is ELocalPrecheck) then
+                Diagnostic := Diagnostic + ': ' + RestoreError.Message;
+            end;
+          end;
+          CommitState(FailureState, Diagnostic);
+          raise;
         end;
       end;
-      CommitState(FailureState, Diagnostic);
-      raise;
+    finally
+      HistoricalService.Free;
     end;
+  finally
+    if not FIsolated then ReleasePayload(Locks);
   end;
   Result := StartedJournal and FinishedJournal;
 end;
@@ -1078,6 +1311,10 @@ var
   Metadata: TLocalMetadata;
   PackagePath: UnicodeString;
   LocalJournal, FinalJournal: Boolean;
+  Data: TJSONObject;
+  ApprovedDigest: string;
+  EffectivePolicy: TTransitionSignerPolicy;
+  Locks: TPayloadLocks;
 begin
   if ReadState <> tsPrecheck then
     raise ETransitionState.Create('A pending PRECHECK state is required');
@@ -1088,16 +1325,38 @@ begin
     RecordPrecheckFailure('Cannot validate protected transition payload directory');
     raise;
   end;
-  LocalJournal := RunLocalPrecheck(Self, PackagePath, Metadata);
   try
-    CheckTransitionSecurity(PackagePath, Metadata, Policy);
+    Data := Load;
+    try
+      ApprovedDigest := Data.Get('payload_sha256', '');
+    finally
+      Data.Free;
+    end;
+    EffectivePolicy := Policy;
+    if not FIsolated then
+    begin
+      LockVerifiedPayload(PackagePath, ApprovedDigest, Locks);
+      try
+        EffectivePolicy := LoadTransitionSignerPolicy(PackagePath);
+      except
+        ReleasePayload(Locks);
+        raise;
+      end;
+    end;
+    try
+      LocalJournal := RunLocalPrecheck(Self, PackagePath, Metadata);
+      CheckTransitionSecurity(PackagePath, Metadata, EffectivePolicy, ApprovedDigest);
+    finally
+      if not FIsolated then ReleasePayload(Locks);
+    end;
   except
     on E: Exception do
     begin
-      if (E is ESecurityPrecheck) or (E is ELocalPrecheck) then
-        RecordPrecheckFailure(E.Message)
-      else
-        RecordPrecheckFailure('Cryptographic or HTTPS precheck failed');
+      if ReadState = tsPrecheck then
+        if (E is ESecurityPrecheck) or (E is ELocalPrecheck) or (E is EHandoff) then
+          RecordPrecheckFailure(E.Message)
+        else
+          RecordPrecheckFailure('Cryptographic or HTTPS precheck failed');
       raise;
     end;
   end;

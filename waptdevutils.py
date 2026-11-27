@@ -472,6 +472,45 @@ def build_waptupgrade_package(wapt,mainrepo,sources_directory=None, target_direc
     return entry.as_dict()
 
 
+def _verify_transition_executable(path):
+    """Check the staged release PE with the Windows Authenticode trust policy."""
+    import ctypes
+    from ctypes import wintypes
+    import subprocess
+
+    system = ctypes.create_unicode_buffer(32768)
+    count = ctypes.windll.kernel32.GetSystemDirectoryW(system, len(system))
+    if not 0 < count < len(system):
+        raise RuntimeError('Cannot locate the Windows system directory for release verification')
+    powershell = os.path.join(system.value, 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    env = os.environ.copy()
+    env['PADIT_TRANSITION_VERIFY_FILE'] = path
+    command = ("$ErrorActionPreference='Stop'; "
+               "$s=Get-AuthenticodeSignature -LiteralPath $env:PADIT_TRANSITION_VERIFY_FILE; "
+               "if ($s.Status -ne 'Valid' -or -not $s.SignerCertificate) { exit 1 }; "
+               "[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash("
+               "$s.SignerCertificate.RawData)).Replace('-','').ToLowerInvariant()")
+    kernel = ctypes.windll.kernel32
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    handle = create(ensure_unicode(path), 0x80000000, 1, None, 3, 0x00200000, None)
+    if handle in (None, ctypes.c_void_p(-1).value):
+        raise RuntimeError('Cannot lock the staged release executable')
+    try:
+        try:
+            pin = subprocess.check_output([powershell, '-NoProfile', '-NonInteractive', '-Command', command],
+                                  env=env, creationflags=0x08000000).strip()
+        except (OSError, subprocess.CalledProcessError):
+            raise RuntimeError('A valid Authenticode signature is required for %s' % os.path.basename(path))
+        if len(pin) != 64 or any(char not in '0123456789abcdef' for char in pin):
+            raise RuntimeError('Cannot identify the Authenticode signer')
+        return sha256_for_file(path), pin
+    finally:
+        kernel.CloseHandle(handle)
+
+
 def build_transition_package(wapt, mainrepo, agent_path, source_server_url, target_server_url,
         target_repo_url, https_certificate_path, package_certificate_path,
         target_directory=None, key_password=None, sign_digests=None,
@@ -488,7 +527,7 @@ def build_transition_package(wapt, mainrepo, agent_path, source_server_url, targ
     from ipaddress import IPv6Address
     from urlparse import urlsplit
 
-    transition = {'schema_version': 1, 'deployable': False}
+    transition = {'schema_version': 2, 'deployable': False}
     if publish and not transition['deployable']:
         raise RuntimeError('Cannot publish a non-deployable PADIT transition package')
 
@@ -523,9 +562,9 @@ def build_transition_package(wapt, mainrepo, agent_path, source_server_url, targ
             raise ValueError('%s has an invalid host or port' % field)
         transition[field] = value
 
-    deploy_path = makepath(wapt.wapt_base_dir, 'waptdeploy.exe')
-    if not os.path.isfile(deploy_path):
-        raise ValueError('waptdeploy.exe is required in the console directory')
+    engine_path = makepath(wapt.wapt_base_dir, 'wapttransition.exe')
+    if not os.path.isfile(engine_path):
+        raise ValueError('wapttransition.exe is required in the console directory')
     certs = wapt.personal_certificate()
     if not certs or not certs[0].is_code_signing:
         raise ValueError('The personal certificate must allow code signing')
@@ -544,8 +583,12 @@ def build_transition_package(wapt, mainrepo, agent_path, source_server_url, targ
         agent_version = get_file_properties(agent_copy).get('FileVersion')
         if not agent_version or not re.match(r'\A1\.8\.3\.[0-9]+\Z', agent_version):
             raise ValueError('The installer must have a PADIT 1.8.3 file version')
-        shutil.copyfile(deploy_path, os.path.join(sources, 'patchs', 'waptdeploy.exe'))
-        agent_sha256 = sha256_for_file(agent_copy)
+        engine_copy = os.path.join(sources, 'patchs', 'wapttransition.exe')
+        shutil.copyfile(engine_path, engine_copy)
+        agent_sha256, installer_pin = _verify_transition_executable(agent_copy)
+        engine_sha256, engine_pin = _verify_transition_executable(engine_copy)
+        with open(os.path.join(sources, 'signer-policy.json'), 'w') as output:
+            json.dump(dict(engine_sha256=engine_pin, installer_sha256=installer_pin), output, sort_keys=True)
         with open(os.path.join(sources, 'waptagent.sha256'), 'wb') as output:
             output.write('%s  waptagent.exe\n' % agent_sha256)
         transition.update(agent_version=agent_version, agent_sha256=agent_sha256)
@@ -567,6 +610,16 @@ def build_transition_package(wapt, mainrepo, agent_path, source_server_url, targ
                 for cert in bundle:
                     output.write(cert.as_pem())
             transition[field] = filename
+
+        helper = 'padit_transition_confirmation.py'
+        shutil.copyfile(os.path.join(os.path.dirname(__file__), 'templates', helper),
+                        os.path.join(sources, helper))
+        transition['components_sha256'] = dict((name, sha256_for_file(os.path.join(sources, *name.split('/'))))
+            for name in ('waptagent.exe', 'patchs/wapttransition.exe', helper,
+                         'certificates/https.pem', 'certificates/packages.pem', 'waptagent.sha256', 'signer-policy.json'))
+        if (transition['components_sha256']['waptagent.exe'] != agent_sha256 or
+                transition['components_sha256']['patchs/wapttransition.exe'] != engine_sha256):
+            raise RuntimeError('An Authenticode-verified executable changed during package assembly')
 
         with open(os.path.join(sources, 'transition.json'), 'w') as output:
             json.dump(transition, output, indent=2, sort_keys=True)

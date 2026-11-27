@@ -4,6 +4,8 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -91,7 +93,7 @@ class TransitionPackageTest(unittest.TestCase):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         shutil.copytree(os.path.join(root, 'templates'), os.path.join(self.root, 'templates'))
         self.agent = self.write('fixture.exe', 'inert installer fixture')
-        self.write('waptdeploy.exe', 'inert deploy fixture')
+        self.write('wapttransition.exe', 'inert engine fixture')
         cert_path = self.write('test.pem', self.cert.as_pem() + self.key.as_pem())
         self.repo = OfflineRepository()
         self.console = OfflineConsole(self.root, cert_path, self.cert, self.key)
@@ -101,6 +103,14 @@ class TransitionPackageTest(unittest.TestCase):
                               target_repo_url='https://repo.example.test:8443/wapt',
                               https_certificate_path=cert_path, package_certificate_path=cert_path,
                               target_directory=self.output, key_password='key-password-test')
+        self.release_signature_check = waptdevutils._verify_transition_executable
+        self.signature_checks = []
+        self.addCleanup(setattr, waptdevutils, '_verify_transition_executable', self.release_signature_check)
+        def verify_fixture(path):
+            self.signature_checks.append(os.path.basename(path))
+            with open(path, 'rb') as stream:
+                return hashlib.sha256(stream.read()).hexdigest(), 'b' * 64 if os.path.basename(path) == 'waptagent.exe' else 'a' * 64
+        waptdevutils._verify_transition_executable = verify_fixture
         original = waptdevutils.get_file_properties
         self.addCleanup(setattr, waptdevutils, 'get_file_properties', original)
         waptdevutils.get_file_properties = self.installer_properties
@@ -138,10 +148,12 @@ class TransitionPackageTest(unittest.TestCase):
         with zipfile.ZipFile(path) as package:
             names = set(package.namelist())
             self.assertTrue({'WAPT/control', 'setup.py', 'transition.json', 'waptagent.exe',
-                             'waptagent.sha256', 'patchs/waptdeploy.exe', 'certificates/https.pem',
-                             'certificates/packages.pem', 'WAPT/manifest.sha256',
+                             'waptagent.sha256', 'patchs/wapttransition.exe', 'padit_transition_confirmation.py', 'certificates/https.pem',
+                             'certificates/packages.pem', 'signer-policy.json', 'WAPT/manifest.sha256',
                              'WAPT/manifest.sha1'}.issubset(names))
-            self.assertEqual(package.read('patchs/waptdeploy.exe'), 'inert deploy fixture')
+            self.assertEqual(package.read('patchs/wapttransition.exe'), 'inert engine fixture')
+            self.assertNotIn('patchs/waptdeploy.exe', names)
+            self.assertEqual(self.signature_checks, ['waptagent.exe', 'wapttransition.exe'])
             self.assertEqual(package.read('certificates/https.pem'), self.cert.as_pem())
             self.assertEqual(package.read('certificates/packages.pem'), self.cert.as_pem())
             self.assertNotIn('WAPT/wapt.psproj', names)
@@ -159,11 +171,152 @@ class TransitionPackageTest(unittest.TestCase):
             for field in ('source_server_url', 'target_server_url', 'target_repo_url'):
                 self.assertEqual(transition[field], self.arguments[field])
             self.assertFalse(transition['deployable'])
+            self.assertEqual(transition['schema_version'], 2)
+            self.assertEqual(set(transition['components_sha256']), {
+                'waptagent.exe', 'waptagent.sha256', 'patchs/wapttransition.exe',
+                'padit_transition_confirmation.py', 'certificates/https.pem', 'certificates/packages.pem', 'signer-policy.json'})
+            for name, digest in transition['components_sha256'].items():
+                self.assertEqual(hashlib.sha256(package.read(name)).hexdigest(), digest)
             namespace = {}
             eval(compile(package.read('setup.py'), 'setup.py', 'exec'), namespace)
             with self.assertRaises(RuntimeError):
                 namespace['install']()
         self.assertEqual(os.listdir(self.output), [result['filename']])
+
+    def test_historical_signer_policy_gate(self):
+        entry = PackageEntry(waptfile=self.build()['localpath'])
+        source = os.path.join(self.root, 'authenticated')
+        entry.unzip_package(target_dir=source, cabundle=self.cert)
+        stage = os.path.join(self.root, 'fixture-stage')
+        shutil.copytree(source, stage)
+        self.console.cabundle = self.cert
+        namespace = {}
+        with open(os.path.join(source, 'setup.py'), 'rb') as script:
+            eval(compile(script.read(), 'setup.py', 'exec'), namespace)
+        checks, launches = [], []
+        namespace['_check_protected_payload'] = lambda path: None
+        pins = {'wapttransition.exe': 'a' * 64, 'waptagent.exe': 'b' * 64}
+
+        def signer(path, handle):
+            self.assertTrue(handle)
+            checks.append(os.path.basename(path))
+            return pins[os.path.basename(path)]
+
+        real_signer = namespace['_windows_authenticode_signer']
+        namespace['_windows_authenticode_signer'] = signer
+
+        def launch(path, digest):
+            self.assertEqual(checks[-2:], ['wapttransition.exe', 'waptagent.exe'])
+            self.assertEqual(path, os.path.join(stage, 'patchs', 'wapttransition.exe'))
+            with open(os.path.join(source, 'transition.json'), 'rb') as stream:
+                self.assertEqual(digest, hashlib.sha256(stream.read()).hexdigest())
+            launches.append(path)
+
+        def gated():
+            namespace['with_verified_transition_engine'](self.console, entry, source, stage, launch)
+
+        namespace['_windows_authenticode_signer'] = real_signer
+        with self.assertRaisesRegexp(RuntimeError, 'Authenticode verification failed'):
+            gated()
+        self.assertEqual(launches, [])
+        namespace['_windows_authenticode_signer'] = signer
+        gated()
+        pins['wapttransition.exe'] = 'c' * 64
+        with self.assertRaisesRegexp(RuntimeError, 'Unauthorized.*engine'):
+            gated()
+        pins.update({'wapttransition.exe': 'b' * 64, 'waptagent.exe': 'a' * 64})
+        with self.assertRaisesRegexp(RuntimeError, 'Unauthorized.*engine'):
+            gated()
+        original_archive = entry.localpath
+        entry.localpath = source
+        with self.assertRaisesRegexp(RuntimeError, 'authenticated WAPT archive'):
+            gated()
+        entry.localpath = original_archive
+
+        policy_path = os.path.join(source, 'signer-policy.json')
+        with open(policy_path, 'rb') as policy:
+            original = policy.read()
+        for bad in ('{}', original + ' ', None):
+            if bad is None:
+                os.remove(policy_path)
+            else:
+                with open(policy_path, 'wb') as policy:
+                    policy.write(bad)
+            with self.assertRaises(Exception):
+                gated()
+        self.assertEqual(len(launches), 1)
+
+    def test_release_signature_policy_rejects_unsigned_fixture(self):
+        waptdevutils._verify_transition_executable = self.release_signature_check
+        with self.assertRaises(RuntimeError) as error:
+            self.build()
+        self.assertIn('valid Authenticode', str(error.exception))
+        self.assertEqual(os.listdir(self.output), [])
+
+    @unittest.skipUnless(os.environ.get('PADIT_HANDOFF_FIXTURE'), 'Build the native handoff fixture')
+    def test_controlled_native_handoff(self):
+        executable = os.environ['PADIT_HANDOFF_FIXTURE']
+        package = self.build()['localpath']
+        source = os.path.join(self.root, 'source')
+        PackageEntry(waptfile=package).unzip_package(target_dir=source, cabundle=self.cert)
+        manifest = os.path.join(source, 'transition.json')
+        with open(manifest, 'rb') as stream:
+            approved = hashlib.sha256(stream.read()).hexdigest()
+        namespace = {}
+        with open(os.path.join(source, 'setup.py'), 'rb') as stream:
+            eval(compile(stream.read(), 'setup.py', 'exec'), namespace)
+
+        def invoke(args, data=None):
+            child = subprocess.Popen([executable] + args, stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            out, _ = child.communicate(data)
+            return child.returncode, out
+
+        def prepare(root, digest):
+            return invoke(['prepare', root, source, digest], '{"uuid":"fixture"}\n')
+
+        helper = os.path.join(source, 'padit_transition_confirmation.py')
+        with open(helper, 'ab') as stream:
+            stream.write('# modified')
+        bad_root = os.path.join(self.root, 'modified')
+        code, out = prepare(bad_root, approved)
+        self.assertNotEqual(code, 0)
+        self.assertIn('source component SHA256', out)
+        self.assertFalse(os.path.exists(os.path.join(bad_root, 'staging', 'historical.json')))
+        code, out = invoke(['relay', bad_root, os.path.join(self.root, 'unused.sqlite')])
+        self.assertNotEqual(code, 0)
+        self.assertIn('No fully staged', out)
+        with zipfile.ZipFile(package) as archive:
+            with open(helper, 'wb') as stream:
+                stream.write(archive.read('padit_transition_confirmation.py'))
+        code, out = prepare(os.path.join(self.root, 'wrong-manifest'), '0' * 64)
+        self.assertNotEqual(code, 0)
+        self.assertIn('source component SHA256', out)
+
+        root = os.path.join(self.root, 'transition')
+        def native_fixture(package_dir, digest, snapshot):
+            code, out = invoke(['prepare', root, package_dir, digest], snapshot + '\n')
+            self.assertEqual(code, 0, out)
+
+        namespace['prepare_fixture_handoff']('{"uuid":"fixture"}', source, approved, native_fixture)
+        self.assertNotEqual(prepare(root, approved)[0], 0)
+        os.rename(source, source + '-removed')
+        with open(os.path.join(root, 'state.json'), 'rb') as stream:
+            state = json.load(stream)
+        self.assertEqual(state['payload_sha256'], approved)
+        self.assertEqual(state['state'], 'PRECHECK')
+        db_path = os.path.join(self.root, 'fixture.sqlite')
+        with sqlite3.connect(db_path) as database:
+            database.execute('create table test (id)')
+        database.close()
+
+        # Failed relay creation leaves the staged attempt intact and unresolved.
+        with self.assertRaises(WindowsError):
+            subprocess.Popen([os.path.join(self.root, 'no-relay.exe')])
+        self.assertFalse(os.path.exists(os.path.join(root, 'staging', 'fixture-handoff.ready')))
+        code, out = invoke(['relay', root, db_path])
+        self.assertEqual(code, 0, out)
+        self.assertIn('PASS relay', out)
 
     def test_normal_edit_and_build_handle_development_files(self):
         result = self.build(source_server_url='https://[2001:db8::1]:8443/wapt')

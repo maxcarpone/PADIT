@@ -3275,6 +3275,52 @@ Revue indépendante de W109-126-f9.diff : PASS. F8/F9 accepté.
 - Paquet toujours **NON DÉPLOYABLE**.
 - Prochain chantier 2F — intégration et qualification complète.
 
+## W109-126 — Lot 2F.1 — Qualification PostgreSQL
+
+Qualification intégrale réalisée par Max et ChatGPT sur waptworm, Debian 12 et PostgreSQL 15 réel. Résultats acquis sans correction du code.
+
+- PASS pour l'initialisation native du schéma historique 1.8.3.0 depuis 060b757a, la migration native vers 1.8.3.1, le champ padit_transition JSONB nullable et l'idempotence de la migration.
+- PASS pour la conservation du poste, de sa description et de son groupe pendant la migration du schéma.
+- Banc test_waptserver_inventory_integration.py, 8/8 PASS en 3,121 secondes. Inscriptions concurrentes et protection de l'identité, confirmation répétée, réinscription classique avec remplacement de la clé et conservation de la fiche, du groupe et de la trace.
+- Expiration provisoire simulée sur PostgreSQL réel, 1/1 PASS en 0,978 seconde. Renouvellement et confirmation refusés après expiration. Nouvelle transition après expiration validée.
+- Arrêt propre de l'instance PostgreSQL isolée PASS.
+- La revue statique est favorable pour la conservation physique du paquet machine. Sa récupération et son utilisation après une réimagerie réelle avec FOG restent à qualifier au lot 2F.4.
+- Prochain chantier 2F.2, raccordement du moteur. Paquet toujours **NON DÉPLOYABLE**.
+
+### W109-126-K6 — Relais historique amélioré
+
+- Décision RC1 validée. Conserver le nom padit-transition et l'ordonnancement historique des paquets. Préparer et sceller les composants dans le stockage NTFS protégé, puis prévoir un relais ponctuel indépendant sous SYSTEM. En présence de waptexit.exe, le relais est prévu au prochain démarrage. Sinon, le relais se lance en différé immédiatement.
+- La fermeture atomique de l'admission des tâches n'est plus bloquante pour RC1. La fenêtre de concurrence résiduelle doit être qualifiée. Un délai dépassé, une API locale injoignable ou un résultat ambigu interdisent la poursuite. Vérifier la fin du traitement, les tâches et processus WAPT, l'arrêt effectif du service et l'absence d'écritures SQLite avant sauvegarde. Différer ou abandonner en préservant le fonctionnement historique avant bascule.
+- L'empreinte persistée du manifeste et la politique indépendante des signataires autorisés doivent servir de référence aux usages critiques. Les doubles lancements, les préparations incomplètes et les interruptions doivent laisser des diagnostics et permettre une reprise contrôlée du relais.
+- La qualification sous SYSTEM et avec WAPT Community historique reste à faire sur une VM dédiée. Paquet toujours NON DÉPLOYABLE, publication interdite.
+
+### W109-126-K6C — Politique de confiance du relais
+
+- La solution initiale prévoyait que la Maintenance provisionne signer-policy.json directement dans le stockage NTFS protégé ProgramData\PADIT\Transition, hors staging et hors paquet. Les valeurs engine_sha256 et installer_sha256 identifient les certificats Authenticode autorisés par rôle. Leur remplacement relève du même canal indépendant. Une politique manquante ou invalide interdit le relais.
+- K6D doit revoir la limite PT30M de la tâche planifiée avant toute bascule réelle. Cette limite ne doit pas interrompre le moteur pendant une phase critique.
+- Paquet toujours NON DÉPLOYABLE, publication interdite.
+
+### W109-126-K6C.2D et K6C.3 — Qualification NTFS et confiance WAPT
+
+- Max a qualifié la fixture NTFS dans la session Maintenance élevée sur VM109. SHA256 du binaire PASS, privilèges administrateur PASS, code retour 0. Le manifeste v2 sans empreinte, les modifications du manifeste et des composants et le retour à v1 sont refusés. L'erreur 1307 provenait de l'absence d'élévation UAC.
+- Politique désormais transportée dans le paquet signé par WAPT, intégrée aux composants du manifeste v2 et vérifiée depuis le stockage protégé. Un nouveau paquet signé porte les nouvelles empreintes lors du renouvellement.
+- Paquet toujours NON DÉPLOYABLE, publication interdite.
+
+### W109-126-K6D — Cycle de vie et reprise du relais
+
+- Le délai du Planificateur Windows est fixé à PT0S. Les délais propres aux phases restent applicables.
+- Le moteur vérifie l'identifiant et le contenu approuvé sous le verrou de transition puis inscrit atomiquement la consommation du relais. Il désactive la tâche jusqu'à la fin de la transition. Une relance vérifie l'état sans prendre à nouveau le contrôle.
+- Une programmation absente peut être reprise. Une tâche de démarrage déjà armée est conservée. Une demande immédiate dont l'issue est incertaine est conservée pour examen sans relance automatique.
+- Une interruption en phase critique conduit à RECOVERY_REQUIRED. Le nettoyage supprime uniquement la tâche vérifiée après un état terminal cohérent. Les données de récupération restent en place.
+- Banc simulé PASS. La qualification du Planificateur et d'un redémarrage sous SYSTEM sur une VM dédiée reste à faire. Paquet toujours NON DÉPLOYABLE, publication interdite.
+
+### W109-126-K6E — Bilan du lot 2F.2A
+
+- Contrat de paquet signé, contrôle de confiance avant premier lancement, persistance NTFS, adaptateur du Planificateur, attente de la file WAPT et garde de reprise disponibles. K6E corrige le libellé NT AUTHORITY\SYSTEM utilisé pour reconnaître une tâche appartenant à la transition.
+- Une invocation explicite de --historical-relay avec le GUID, depuis l'image du stockage protégé, peut vérifier une transition déjà réclamée même si sa tâche est désactivée. Elle ne reprend pas l'orchestration métier. Un installateur à l'issue incertaine bloque la suppression terminale de la tâche et impose de préserver les données.
+- Le prochain raccordement doit relier le hook authentifié à la préparation et à la copie protégée complètes, à la collecte SQLite, à la persistance puis à ProgramHistoricalRelay. L'entrée du relais doit ensuite transmettre la main à l'orchestrateur 2F.2B avec ses vérifications de reprise, de sauvegarde et de bascule. Le hook et la publication restent bloqués. Paquet NON DÉPLOYABLE.
+- Restent à qualifier sur VM dédiée le parcours WAPT Community 1.8.2.7393 avec binaires PADIT réellement signés, le premier lancement et la persistance de bout en bout, le Planificateur sous SYSTEM en modes immédiat et démarrage, l'interruption et le nettoyage réels, la libération de la file, des processus et de SQLite, ainsi que Windows 7 SP1. Les PASS sur fixtures et la qualification NTFS Maintenance sont acquis.
+
 ## Backlog post-RC1
 
 ### Gestion intelligente des réinstallations et réaffectations de postes

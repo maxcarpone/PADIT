@@ -10,6 +10,35 @@ uses SysUtils, Windows, transitionstate, transitionsecurity;
 type
   ELocalPrecheck = class(Exception);
 
+  EWaptTasksBusy = class(ELocalPrecheck);
+
+  THistoricalService = class
+    function State: DWORD; virtual; abstract;
+    procedure CheckQueue(Deadline: QWord); virtual; abstract;
+    procedure Stop; virtual; abstract;
+    procedure RestoreRunning; virtual; abstract;
+    procedure CheckProcesses; virtual; abstract;
+    procedure CheckDatabase; virtual; abstract;
+  end;
+
+  TWindowsHistoricalService = class(THistoricalService)
+  private
+    FService, FDatabase: UnicodeString;
+    FPort: Integer;
+  public
+    constructor Create(const Service, Database: UnicodeString; Port: Integer);
+    function State: DWORD; override;
+    procedure CheckQueue(Deadline: QWord); override;
+    procedure Stop; override;
+    procedure RestoreRunning; override;
+    procedure CheckProcesses; override;
+    procedure CheckDatabase; override;
+  end;
+
+function WaitForHistoricalIdle(Service: THistoricalService; Timeout: DWORD): DWORD;
+procedure RestoreHistoricalService(Service: THistoricalService; InitialState: DWORD);
+procedure TakeControlOfHistoricalService(Service: THistoricalService; InitialState: DWORD);
+
 function RegistryValue(const Key, Name: UnicodeString; View: DWORD; out Value: UnicodeString): Boolean;
 function ResolvePath(const Path, Base: UnicodeString): UnicodeString;
 function ReadDocument(const Path: UnicodeString): UTF8String;
@@ -23,24 +52,25 @@ function InspectLocalAgent(const InstallDir, ConfigPath, WorkingDir,
 // The future orchestrator must recheck the queue and process list after the
 // preparation task exits, and obtain a fresh database check with no exemption.
 function FileSizeRequired(const Path: UnicodeString; const Diagnostic: string): QWord;
+function WaptExitIsActive: Boolean;
 procedure RequireRollbackProcessesIdle;
 procedure RequireWaptIdle(Port: Integer; ServiceState: DWORD);
 function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString;
   out Metadata: TLocalMetadata): Boolean;
 // Successful calls return a read handle which denies both writes and deletion.
 function OpenVerifiedInstaller(const PackageDir: UnicodeString; const Metadata: TLocalMetadata;
-  const Policy: TTransitionSignerPolicy; out RepositoryURL: UTF8String; out Bundle: RawByteString): THandle;
+  const Policy: TTransitionSignerPolicy; out RepositoryURL: UTF8String; out Bundle: RawByteString; const ApprovedDigest: string = ''): THandle;
 procedure CheckInstalledCutover(const Metadata: TLocalMetadata; const RepositoryURL: UTF8String;
   const HTTPSPath, PackageCAPath: UnicodeString; const HTTPSBundle, PackageBundle: RawByteString);
 procedure CheckPayload(const PackageDir: UnicodeString; Installer: THandle;
-  const Metadata: TLocalMetadata; out RepositoryURL: UTF8String; out Bundle: RawByteString);
+  const Metadata: TLocalMetadata; out RepositoryURL: UTF8String; out Bundle: RawByteString; const ApprovedDigest: string = '');
 procedure CheckTransitionSecurity(const PackageDir: UnicodeString;
-  const Metadata: TLocalMetadata; const Policy: TTransitionSignerPolicy);
+  const Metadata: TLocalMetadata; const Policy: TTransitionSignerPolicy; const ApprovedDigest: string = '');
 
 implementation
 
 uses Classes, IniFiles, fpjson, jsonparser, jsonscanner,
-  WinHttp, ShellApi, transitionstorage, transitionbackup;
+  WinHttp, ShellApi, transitionstorage, transitionbackup, transitionhandoff, transitionbackupwindows;
 
 const
   UninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\';
@@ -203,11 +233,12 @@ begin
     Pending := Data.Find('pending', jtArray);
     Require((Running <> nil) and (Pending <> nil) and
       (Running.JSONType in [jtNull, jtObject]), 'Invalid local WAPT task status');
-    Require(Pending.Count = 0, 'Local WAPT tasks are running or pending');
+    if Pending.Count <> 0 then raise EWaptTasksBusy.Create('Local WAPT tasks are pending');
     if Running.JSONType = jtObject then
     begin
       RunningId := TJSONObject(Running).Find('id', jtNumber);
       RunningClass := TJSONObject(Running).Find('classname', jtString);
+      if PreparationTask = 0 then raise EWaptTasksBusy.Create('A local WAPT task is running');
       Require((PreparationTask > 0) and (RunningId <> nil) and
         (RunningId.AsJSON = IntToStr(PreparationTask)) and (RunningClass <> nil) and
         (RunningClass.AsString = 'WaptPackageInstall'), 'Local WAPT tasks are running or pending');
@@ -219,7 +250,7 @@ begin
   end;
 end;
 
-procedure CheckRunningService(Port, PreparationTask: Integer);
+procedure CheckRunningService(Port, PreparationTask: Integer; Deadline: QWord = 0);
 var
   Session, Connection, Request: HINTERNET;
   Status, Size, ReadCount, Mode: DWORD;
@@ -247,6 +278,7 @@ begin
           'Local WAPT task endpoint did not return HTTP 200');
         Data := '';
         repeat
+          Require((Deadline = 0) or (GetTickCount64 < Deadline), 'Local WAPT task query deadline exceeded');
           Require(WinHttpReadData(Request, @Buffer[0], SizeOf(Buffer), @ReadCount),
             'Cannot read local WAPT task response');
           Require(Length(Data) + ReadCount <= MaxLocalDocument, 'Local WAPT task response too large');
@@ -407,7 +439,7 @@ begin
     (Result > 0) and (IntToStr(Result) = Value.AsJSON), 'Invalid historical snapshot identifier: ' + Name);
 end;
 
-procedure CheckCommandLineAgent(PreparationPID: Integer; ForRollback: Boolean = False); forward;
+procedure CheckCommandLineAgent(PreparationPID: Integer; ForRollback: Boolean = False; AfterStop: Boolean = False); forward;
 
 function HistoricalCommunityVersion(const AgentPath, RegisteredEdition: UnicodeString): UTF8String;
 var
@@ -591,7 +623,7 @@ begin
   Result.TargetVersion := TargetVersion;
 end;
 
-procedure CheckCommandLineAgent(PreparationPID: Integer; ForRollback: Boolean);
+procedure CheckCommandLineAgent(PreparationPID: Integer; ForRollback, AfterStop: Boolean);
 var
   Snapshot: THandle;
   Entry: TProcessEntry;
@@ -606,12 +638,36 @@ begin
       Name := UnicodeLowerCase(UnicodeString(PWideChar(@Entry.ExeFile[0])));
       Require((Entry.ProcessId = DWORD(PreparationPID)) or (Name <> 'wapt-get.exe'),
         'A WAPT command-line process is running');
+      if AfterStop then
+        Require((Name <> 'waptpython.exe') and (Name <> 'waptservice.exe') and (Name <> 'waptexit.exe'),
+          'A historical WAPT process remains active after service shutdown');
       if ForRollback then
         Require((Name <> 'waptpython.exe') and (Name <> 'wapttray.exe') and
           (Name <> 'waptself.exe') and (Name <> 'waptmessage.exe') and (Name <> 'waptconsole.exe'),
           'A PADIT or WAPT process remains active after service shutdown');
     until not Process32Next(Snapshot, Entry);
     if GetLastError <> ERROR_NO_MORE_FILES then RaiseLastOSError;
+  finally
+    CloseHandle(Snapshot);
+  end;
+end;
+
+function WaptExitIsActive: Boolean;
+var
+  Snapshot: THandle;
+  Entry: TProcessEntry;
+begin
+  Snapshot := CreateToolhelp32Snapshot($00000002, 0);
+  if Snapshot = INVALID_HANDLE_VALUE then RaiseLastOSError;
+  try
+    Entry.Size := SizeOf(Entry);
+    if not Process32First(Snapshot, Entry) then RaiseLastOSError;
+    repeat
+      if UnicodeSameText(UnicodeString(PWideChar(@Entry.ExeFile[0])), 'waptexit.exe') then
+        Exit(True);
+    until not Process32Next(Snapshot, Entry);
+    if GetLastError <> ERROR_NO_MORE_FILES then RaiseLastOSError;
+    Result := False;
   finally
     CloseHandle(Snapshot);
   end;
@@ -628,6 +684,98 @@ begin
   CheckCommandLineAgent(0);
   if ServiceState = SERVICE_RUNNING then
     CheckRunningService(Port, 0);
+end;
+
+function WaitForHistoricalIdle(Service: THistoricalService; Timeout: DWORD): DWORD;
+var
+  Deadline, Now: QWord;
+begin
+  Require((Timeout > 0) and (Timeout <> INFINITE), 'Historical WAPT wait must be bounded');
+  Deadline := GetTickCount64 + Timeout;
+  repeat
+    Require(GetTickCount64 < Deadline, 'Timed out waiting for historical WAPT tasks');
+    Result := Service.State;
+    Require(Result in [SERVICE_RUNNING, SERVICE_STOPPED], 'Historical WAPT service is not stable');
+    if Result = SERVICE_STOPPED then Exit;
+    try
+      Service.CheckQueue(Deadline);
+      Require(GetTickCount64 < Deadline, 'Timed out waiting for historical WAPT tasks');
+      Exit;
+    except
+      on E: EWaptTasksBusy do
+      begin
+        Now := GetTickCount64;
+        if Now < Deadline then
+          if Deadline - Now > 250 then Sleep(250) else Sleep(DWORD(Deadline - Now));
+      end;
+    end;
+  until False;
+end;
+
+procedure TakeControlOfHistoricalService(Service: THistoricalService; InitialState: DWORD);
+var
+  Deadline: QWord;
+begin
+  Require(InitialState in [SERVICE_RUNNING, SERVICE_STOPPED], 'Historical WAPT service is not stable');
+  Require(Service.State = InitialState, 'Historical WAPT service changed before takeover');
+  if InitialState = SERVICE_RUNNING then
+  begin
+    Deadline := GetTickCount64 + 6000;
+    Service.CheckQueue(Deadline);
+    Require(GetTickCount64 < Deadline, 'Historical WAPT task recheck deadline exceeded');
+    Service.Stop;
+  end;
+  Require(Service.State = SERVICE_STOPPED, 'Historical WAPT service did not stop');
+  Service.CheckProcesses;
+  Service.CheckDatabase;
+  Require(Service.State = SERVICE_STOPPED, 'Historical WAPT service resumed during takeover');
+end;
+
+constructor TWindowsHistoricalService.Create(const Service, Database: UnicodeString; Port: Integer);
+begin
+  inherited Create;
+  FService := Service;
+  FDatabase := Database;
+  FPort := Port;
+end;
+
+function TWindowsHistoricalService.State: DWORD;
+begin
+  Result := BackupServiceState(FService);
+end;
+
+procedure TWindowsHistoricalService.CheckQueue(Deadline: QWord);
+begin
+  CheckRunningService(FPort, 0, Deadline);
+  CheckCommandLineAgent(0);
+end;
+
+procedure TWindowsHistoricalService.Stop;
+begin
+  StopBackupService(FService);
+end;
+
+procedure RestoreHistoricalService(Service: THistoricalService; InitialState: DWORD);
+begin
+  if (InitialState = SERVICE_RUNNING) and (Service.State <> SERVICE_RUNNING) then
+    Service.RestoreRunning;
+  // Never stop a newly started service here, which might have admitted foreign tasks.
+  Require(Service.State = InitialState, 'Historical WAPT service state was not restored');
+end;
+
+procedure TWindowsHistoricalService.RestoreRunning;
+begin
+  RestoreBackupService(FService, SERVICE_RUNNING);
+end;
+
+procedure TWindowsHistoricalService.CheckProcesses;
+begin
+  CheckCommandLineAgent(0, False, True);
+end;
+
+procedure TWindowsHistoricalService.CheckDatabase;
+begin
+  VerifyBackupDatabase(FDatabase);
 end;
 
 function RunLocalPrecheck(Store: TTransitionStore; const PackageDir: UnicodeString;
@@ -758,7 +906,7 @@ begin
 end;
 
 procedure CheckPayload(const PackageDir: UnicodeString; Installer: THandle;
-  const Metadata: TLocalMetadata; out RepositoryURL: UTF8String; out Bundle: RawByteString);
+  const Metadata: TLocalMetadata; out RepositoryURL: UTF8String; out Bundle: RawByteString; const ApprovedDigest: string);
 var
   PackagePath: UnicodeString;
   Manifest: TJSONObject;
@@ -769,9 +917,11 @@ begin
   Manifest := ParseObject(ReadDocument(PackagePath + 'transition.json'), 'Invalid transition manifest');
   try
     Deployable := Manifest.Find('deployable', jtBoolean);
-    Require((Manifest.Count = 9) and (Manifest.Find('schema_version', jtNumber) <> nil) and
-      (Manifest.Find('schema_version').AsJSON = '1') and (Deployable <> nil) and
+    Require((Manifest.Find('schema_version', jtNumber) <> nil) and (Deployable <> nil) and
       not Deployable.AsBoolean, 'Unsupported or deployable transition manifest');
+    if (ApprovedDigest <> '') or (Manifest.Find('schema_version').AsJSON = '2') then CheckStagedPayload(PackagePath, ApprovedDigest)
+    else Require((Manifest.Count = 9) and (Manifest.Find('schema_version').AsJSON = '1'),
+      'Unsupported transition manifest version');
     Require((NormalURL(RequiredString(Manifest, 'source_server_url')) = Metadata.SourceURL) and
       (NormalURL(RequiredString(Manifest, 'target_server_url')) = Metadata.TargetURL) and
       (Pos('https://', Metadata.TargetURL) = 1), 'Transition endpoints changed after local checks');
@@ -793,7 +943,7 @@ begin
 end;
 
 function OpenVerifiedInstaller(const PackageDir: UnicodeString; const Metadata: TLocalMetadata;
-  const Policy: TTransitionSignerPolicy; out RepositoryURL: UTF8String; out Bundle: RawByteString): THandle;
+  const Policy: TTransitionSignerPolicy; out RepositoryURL: UTF8String; out Bundle: RawByteString; const ApprovedDigest: string): THandle;
 var
   InstallerPath: UnicodeString;
 begin
@@ -801,7 +951,7 @@ begin
   Result := OpenStorageFile(InstallerPath, GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING);
   Require(Result <> INVALID_HANDLE_VALUE, 'Cannot lock the staged installer for verification');
   try
-    CheckPayload(PackageDir, Result, Metadata, RepositoryURL, Bundle);
+    CheckPayload(PackageDir, Result, Metadata, RepositoryURL, Bundle, ApprovedDigest);
     CheckAuthenticode(InstallerPath, Result, Policy.InstallerSignerSHA256);
   except
     CloseHandle(Result);
@@ -810,7 +960,7 @@ begin
 end;
 
 procedure CheckTransitionSecurity(const PackageDir: UnicodeString;
-  const Metadata: TLocalMetadata; const Policy: TTransitionSignerPolicy);
+  const Metadata: TLocalMetadata; const Policy: TTransitionSignerPolicy; const ApprovedDigest: string);
 var
   EnginePath: UnicodeString;
   Installer, Engine: THandle;
@@ -819,7 +969,7 @@ var
   Bundle: RawByteString;
 begin
   try
-    Installer := OpenVerifiedInstaller(PackageDir, Metadata, Policy, RepositoryURL, Bundle);
+    Installer := OpenVerifiedInstaller(PackageDir, Metadata, Policy, RepositoryURL, Bundle, ApprovedDigest);
   except
     on E: ESecurityPrecheck do raise ESecurityPrecheck.Create('Installer: ' + E.Message);
   end;

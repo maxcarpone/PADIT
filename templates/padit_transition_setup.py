@@ -221,5 +221,237 @@ def verify_installed_snapshot(config_path, install_dir, working_dir, expected_uu
     return snapshot
 
 
+def prepare_fixture_handoff(snapshot_json, package_dir, approved_manifest_sha256, native_fixture):
+    """Drive only the fixture adapter. The native release CLI has no handoff command."""
+    if not re.match(r'\A[a-f0-9]{64}\Z', approved_manifest_sha256):
+        raise ValueError('Invalid approved fixture manifest digest')
+    if not isinstance(snapshot_json, str) or not 0 < len(snapshot_json) <= 65536:
+        raise ValueError('Invalid fixture snapshot')
+    native_fixture(package_dir, approved_manifest_sha256, snapshot_json)
+
+
+def _locked_path(path, directory=False):
+    from ctypes import wintypes
+
+    kernel = ctypes.windll.kernel32
+    create = kernel.CreateFileW
+    create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    create.restype = wintypes.HANDLE
+    flags = 0x00200000 | (0x02000000 if directory else 0)
+    # Directories deny rename/deletion and images deny writes and deletion.
+    handle = create(unicode(path), 0x80 if directory else 0x80000000,
+                    3 if directory else 1, None, 3, flags, None)
+    if handle in (None, ctypes.c_void_p(-1).value):
+        raise ctypes.WinError()
+
+    class FileInfo(ctypes.Structure):
+        _fields_ = [('attributes', wintypes.DWORD), ('times', wintypes.FILETIME * 3),
+                    ('volume', wintypes.DWORD), ('size_high', wintypes.DWORD),
+                    ('size_low', wintypes.DWORD), ('links', wintypes.DWORD),
+                    ('index_high', wintypes.DWORD), ('index_low', wintypes.DWORD)]
+
+    info = FileInfo()
+    try:
+        if not kernel.GetFileInformationByHandle(wintypes.HANDLE(handle), ctypes.byref(info)):
+            raise ctypes.WinError()
+        if (info.attributes & 0x400 or bool(info.attributes & 0x10) != directory or
+                (not directory and info.links != 1)):
+            raise RuntimeError('Unsafe transition file or directory')
+        return handle
+    except Exception:
+        kernel.CloseHandle(wintypes.HANDLE(handle))
+        raise
+
+
+def _windows_authenticode_signer(path, handle):
+    from ctypes import wintypes as w
+    from uuid import UUID
+    from hashlib import sha256
+
+    class TrustFile(ctypes.Structure):
+        _fields_ = [('size', w.DWORD), ('path', w.LPCWSTR), ('handle', w.HANDLE),
+                    ('subject', ctypes.c_void_p)]
+
+    class TrustData(ctypes.Structure):
+        _fields_ = [('size', w.DWORD), ('callback', ctypes.c_void_p), ('sip', ctypes.c_void_p),
+                    ('ui', w.DWORD), ('revocation', w.DWORD), ('choice', w.DWORD),
+                    ('file', ctypes.POINTER(TrustFile)), ('action', w.DWORD),
+                    ('state', w.HANDLE), ('url', w.LPCWSTR), ('flags', w.DWORD), ('context', w.DWORD)]
+
+    class Certificate(ctypes.Structure):
+        _fields_ = [('encoding', w.DWORD), ('bytes', ctypes.c_void_p), ('length', w.DWORD)]
+
+    class ProviderCert(ctypes.Structure):
+        _fields_ = [('size', w.DWORD), ('certificate', ctypes.POINTER(Certificate))]
+
+    trust = ctypes.windll.wintrust
+    verify = trust.WinVerifyTrust
+    verify.argtypes = (w.HWND, ctypes.c_void_p, ctypes.POINTER(TrustData))
+    verify.restype = w.LONG
+    provider = trust.WTHelperProvDataFromStateData
+    provider.argtypes, provider.restype = (w.HANDLE,), ctypes.c_void_p
+    signer = trust.WTHelperGetProvSignerFromChain
+    signer.argtypes, signer.restype = (ctypes.c_void_p, w.DWORD, w.BOOL, w.DWORD), ctypes.c_void_p
+    cert = trust.WTHelperGetProvCertFromChain
+    cert.argtypes, cert.restype = (ctypes.c_void_p, w.DWORD), ctypes.POINTER(ProviderCert)
+    action = ctypes.create_string_buffer(UUID('00AAC56B-CD44-11D0-8CC2-00C04FC295EE').bytes_le)
+    image = TrustFile(ctypes.sizeof(TrustFile), unicode(path), handle, None)
+    data = TrustData(ctypes.sizeof(TrustData), None, None, 2, 1, 1, ctypes.pointer(image),
+                     1, None, None, 0x80 | 0x1000 | 0x2000, 0)
+    try:
+        if verify(w.HWND(-1), action, ctypes.byref(data)) != 0:
+            raise RuntimeError('Authenticode verification failed')
+        chain = provider(data.state)
+        selected = signer(chain, 0, False, 0) if chain else None
+        candidate = cert(selected, 0) if selected else None
+        if not candidate or not candidate.contents.certificate:
+            raise RuntimeError('Authenticode signer certificate missing')
+        leaf = candidate.contents.certificate.contents
+        return sha256(ctypes.string_at(leaf.bytes, leaf.length)).hexdigest()
+    finally:
+        if data.state:
+            data.action = 2
+            verify(w.HWND(-1), action, ctypes.byref(data))
+
+
+def _approval_for_locked_package(wapt, entry, package_dir, signer_for, images, read):
+    """Use the historical WAPT chain and the signed contents, never an executable's claimed pin."""
+    import hashlib
+    from zipfile import is_zipfile
+
+    if (not entry.localpath or not os.path.isfile(entry.localpath) or
+            not is_zipfile(entry.localpath) or
+            os.path.normcase(os.path.abspath(entry.sourcespath or '')) != os.path.normcase(package_dir)):
+        raise RuntimeError('Transition requires an authenticated WAPT archive')
+    if not entry.check_package_signature(wapt.cabundle):
+        raise RuntimeError('Transition package signer did not authenticate its contents')
+
+    manifest = read('transition.json', 65536)
+    policy_bytes = read('signer-policy.json', 4096)
+    policy = json.loads(policy_bytes)
+    roles = {'engine_sha256': 'patchs/wapttransition.exe', 'installer_sha256': 'waptagent.exe'}
+    if (not isinstance(policy, dict) or set(policy) != set(roles) or
+            any(not isinstance(pin, basestring) or not re.match(r'\A[0-9a-f]{64}\Z', pin)
+                for pin in policy.values())):
+        raise RuntimeError('Invalid transition signer policy')
+    metadata = json.loads(manifest)
+    if (metadata.get('schema_version') != 2 or metadata.get('deployable') is not False or
+            metadata['components_sha256'].get('signer-policy.json') != hashlib.sha256(policy_bytes).hexdigest()):
+        raise RuntimeError('Transition manifest does not authenticate the signer policy')
+    for role, name in sorted(roles.items()):
+        path, handle = images[name]
+        digest = hashlib.sha256()
+        with open(path, 'rb') as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), ''):
+                digest.update(block)
+        if metadata['components_sha256'].get(name) != digest.hexdigest():
+            raise RuntimeError('Transition image differs from the approved manifest')
+        if signer_for(path, handle) != policy[role]:
+            raise RuntimeError('Unauthorized Authenticode signer for %s' % role)
+    return hashlib.sha256(manifest).hexdigest()
+
+
+def _check_protected_payload(path):
+    import win32security
+
+    # Match the owners and allow-list used by the native protected storage.
+    info = win32security.GetNamedSecurityInfo(
+        path, win32security.SE_FILE_OBJECT,
+        win32security.OWNER_SECURITY_INFORMATION | win32security.DACL_SECURITY_INFORMATION)
+    trusted = set(('S-1-5-18', 'S-1-5-32-544'))
+    owner = win32security.ConvertSidToStringSid(info.GetSecurityDescriptorOwner())
+    acl = info.GetSecurityDescriptorDacl()
+    if owner not in trusted or acl is None or acl.GetAceCount() != 2:
+        raise RuntimeError('Unsafe first-launch staging permissions')
+    allowed = set()
+    for index in range(acl.GetAceCount()):
+        header, mask, sid = acl.GetAce(index)
+        if header[0] != 0 or mask != 0x1f01ff:
+            raise RuntimeError('Unsafe first-launch staging access entry')
+        allowed.add(win32security.ConvertSidToStringSid(sid))
+    if allowed != trusted:
+        raise RuntimeError('Unsafe first-launch staging access entries')
+
+
+def with_verified_transition_engine(wapt, entry, package_dir, protected_payload_dir, use_engine):
+    """Gate future first use. The callback must start the approved image before returning."""
+    from ctypes import wintypes
+
+    package_dir = os.path.abspath(package_dir)
+    protected_payload_dir = os.path.abspath(protected_payload_dir)
+    if os.path.normcase(package_dir) == os.path.normcase(protected_payload_dir):
+        raise RuntimeError('The first native launch requires a protected staged copy')
+    if not entry.localpath or not os.path.isfile(entry.localpath):
+        raise RuntimeError('Transition requires an authenticated WAPT archive')
+    if entry._default_md != 'sha256':
+        raise RuntimeError('Transition requires a SHA256-signed WAPT manifest')
+
+    def ancestors(path):
+        chain = []
+        while path != os.path.dirname(path):
+            chain.append(path)
+            path = os.path.dirname(path)
+        return reversed(chain)
+    handles = []
+    paths = {}
+    try:
+        directories = set()
+        for root in (os.path.dirname(os.path.abspath(entry.localpath)), package_dir, protected_payload_dir):
+            for directory in ancestors(root):
+                if directory not in directories:
+                    handles.append(_locked_path(directory, directory=True))
+                    directories.add(directory)
+        handles.append(_locked_path(os.path.abspath(entry.localpath)))
+        handles.append(_locked_path(os.path.join(package_dir, 'WAPT'), directory=True))
+        for name in (entry.get_manifest_filename('sha256'), entry.get_signature_filename('sha256')):
+            handles.append(_locked_path(os.path.join(package_dir, *name.split('/'))))
+        handles.append(_locked_path(os.path.join(protected_payload_dir, 'patchs'), directory=True))
+        for name in ('transition.json', 'signer-policy.json'):
+            path = os.path.join(package_dir, name)
+            handle = _locked_path(path)
+            handles.append(handle)
+            paths[name] = (path, handle)
+        for name in ('waptagent.exe', 'patchs/wapttransition.exe'):
+            path = os.path.join(protected_payload_dir, *name.split('/'))
+            handle = _locked_path(path)
+            handles.append(handle)
+            paths[name] = (path, handle)
+
+        def read(name, maximum):
+            with open(paths[name][0], 'rb') as stream:
+                data = stream.read(maximum + 1)
+            if not 0 < len(data) <= maximum:
+                raise RuntimeError('Invalid transition document size')
+            return data
+
+        for path in (protected_payload_dir, os.path.join(protected_payload_dir, 'patchs'),
+                     paths['waptagent.exe'][0], paths['patchs/wapttransition.exe'][0]):
+            _check_protected_payload(path)
+        for name, maximum in (('transition.json', 65536), ('signer-policy.json', 4096)):
+            staged_path = os.path.join(protected_payload_dir, name)
+            handles.append(_locked_path(staged_path))
+            _check_protected_payload(staged_path)
+            with open(staged_path, 'rb') as staged:
+                if staged.read(maximum + 1) != read(name, maximum):
+                    raise RuntimeError('Staged approval documents differ from the authenticated package')
+        digest = _approval_for_locked_package(wapt, entry, package_dir, _windows_authenticode_signer, paths, read)
+        return use_engine(paths['patchs/wapttransition.exe'][0], digest)
+    finally:
+        for handle in reversed(handles):
+            ctypes.windll.kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+
+def record_verified_transition_payload(wapt, entry, package_dir, protected_payload_dir):
+    """Record staged approval without activating the relay or migration."""
+    import subprocess
+
+    def record(image, digest):
+        return subprocess.check_call([image, '--record-authenticated-payload', digest],
+                                     cwd=protected_payload_dir, shell=False)
+
+    return with_verified_transition_engine(wapt, entry, package_dir, protected_payload_dir, record)
+
+
 def install():
     raise RuntimeError('PADIT transition package: not deployable')

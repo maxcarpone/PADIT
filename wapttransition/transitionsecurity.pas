@@ -5,7 +5,7 @@ unit transitionsecurity;
 
 interface
 
-uses SysUtils, Windows;
+uses Classes, SysUtils, Windows;
 
 type
   ESecurityPrecheck = class(Exception);
@@ -17,6 +17,9 @@ type
     InstallerSignerSHA256, EngineSignerSHA256: string;
   end;
 
+function ParseTransitionSignerPolicy(Stream: TStream): TTransitionSignerPolicy;
+function LoadTransitionSignerPolicy(const ProtectedRoot: UnicodeString): TTransitionSignerPolicy;
+procedure RequireAuthorizedSigner(const Observed, Expected: string);
 function FileSHA256(FileHandle: THandle): string;
 procedure CheckInstallerHash(FileHandle: THandle; const ManifestHash, Sidecar: RawByteString);
 procedure CheckAuthenticode(const Path: UnicodeString; FileHandle: THandle;
@@ -28,8 +31,8 @@ procedure CheckHttps(const URL: UTF8String; const TrustBundle: RawByteString);
 
 implementation
 
-uses Classes, JwaWinCrypt, JwaSspi, JwaWinError, JwaWinsock2, JwaWS2tcpip,
-  URIParser, transitionstorage;
+uses JwaWinCrypt, JwaSspi, JwaWinError, JwaWinsock2, JwaWS2tcpip,
+  URIParser, fpjson, jsonparser, jsonscanner, transitionstorage;
 
 const
   Sha256Alg = $0000800C;
@@ -163,6 +166,58 @@ begin
   Require(SameText(FileSHA256(FileHandle), ManifestHash), 'Installer SHA256 does not match payload');
 end;
 
+function ParseTransitionSignerPolicy(Stream: TStream): TTransitionSignerPolicy;
+var
+  Parser: TJSONParser;
+  Data: TJSONData;
+  Policy: TJSONObject;
+begin
+  Require((Stream.Size > 0) and (Stream.Size <= 4096), 'Invalid PADIT signer policy size');
+  Parser := TJSONParser.Create(Stream, [joUTF8, joStrict]);
+  try
+    Data := Parser.Parse;
+    try
+      Require(Data is TJSONObject, 'Invalid PADIT signer policy format');
+      Policy := TJSONObject(Data);
+      Require((Policy.Count = 2) and (Policy.Find('engine_sha256', jtString) <> nil) and
+        (Policy.Find('installer_sha256', jtString) <> nil), 'Invalid PADIT signer policy fields');
+      Result.EngineSignerSHA256 := Policy.Strings['engine_sha256'];
+      Result.InstallerSignerSHA256 := Policy.Strings['installer_sha256'];
+      Require(IsSHA256(Result.EngineSignerSHA256) and IsSHA256(Result.InstallerSignerSHA256),
+        'Invalid PADIT signer policy fingerprints');
+    finally
+      Data.Free;
+    end;
+  finally
+    Parser.Free;
+  end;
+end;
+
+function LoadTransitionSignerPolicy(const ProtectedRoot: UnicodeString): TTransitionSignerPolicy;
+var
+  Handle: THandle;
+  Stream: THandleStream;
+begin
+  Handle := OpenStorageFile(IncludeTrailingPathDelimiter(ProtectedRoot) + 'signer-policy.json',
+    GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING);
+  Require(Handle <> INVALID_HANDLE_VALUE, 'Independent PADIT relay signer policy is unavailable');
+  try
+    Stream := THandleStream.Create(Handle);
+    try
+      Result := ParseTransitionSignerPolicy(Stream);
+    finally
+      Stream.Free;
+    end;
+  finally
+    CloseHandle(Handle);
+  end;
+end;
+
+procedure RequireAuthorizedSigner(const Observed, Expected: string);
+begin
+  Require(IsSHA256(Expected) and SameText(Observed, Expected), 'Authenticode signer is not authorized');
+end;
+
 procedure CheckAuthenticode(const Path: UnicodeString; FileHandle: THandle;
   const ExpectedSignerSHA256: string);
 var
@@ -201,7 +256,7 @@ begin
     Require(CryptHashCertificate(0, Sha256Alg, 0, Certificate^.Cert^.pbCertEncoded,
       Certificate^.Cert^.cbCertEncoded, @Digest[0], Size) and (Size = SizeOf(Digest)),
       'Cannot hash Authenticode signer certificate');
-    Require(SameText(HashHex(Digest), ExpectedSignerSHA256), 'Authenticode signer is not authorized');
+    RequireAuthorizedSigner(HashHex(Digest), ExpectedSignerSHA256);
   finally
     if Data.StateData <> 0 then
     begin
