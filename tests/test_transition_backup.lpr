@@ -135,6 +135,9 @@ begin
   try
     State.Strings['state'] := 'PREPARED';
     State.Strings['previous_state'] := 'PRECHECK';
+    State.Objects['host'].Strings['uuid'] := 'fixture-id';
+    State.Objects['target'].Strings['url'] := 'https://fixture.example';
+    State.Objects['target'].Strings['agent_version'] := '1.8.3.7766';
     with State.Objects['source'] do
     begin
       Strings['install_dir'] := UTF8Encode(Root + '\agent');
@@ -656,6 +659,37 @@ begin
       except
         on E: ETransitionState do Check(Pos('confirmation', E.Message) > 0, E.Message);
       end;
+      try
+        Store.ConfirmFixture(Service, 'https://fixture.example', 'fixture-id', '1.8.3.7766',
+          StringOfChar('a', 64), StringOfChar('b', 64));
+        raise Exception.Create('Stale fixture acknowledgement accepted');
+      except
+        on E: ETransitionState do Check(Pos('fresh inventory', E.Message) > 0, E.Message);
+      end;
+      Check(Store.ReadState = tsVerifying, 'Rejected acknowledgement changed state');
+      if CaseName = 'cutover-confirmfail' then
+      begin
+        Check(Store.RunRollback(Scope, Added, Service), 'Rollback after confirmation failure failed');
+        Check(Store.ReadState = tsRolledBack, 'Confirmation failure did not roll back');
+        Check(not FileExists(Path), 'Confirmation rollback did not remove fixture output');
+        Check(BackupServiceState(Service) = SERVICE_RUNNING, 'Confirmation rollback did not restore the service');
+        Exit;
+      end;
+      try
+        Store.ConfirmFixture(Service + '_missing', 'https://fixture.example', 'fixture-id', '1.8.3.7766',
+          StringOfChar('a', 64), StringOfChar('a', 64));
+        raise Exception.Create('Confirmation succeeded without a functioning service');
+      except
+        on E: ETransitionBackup do Check(Pos('service', E.Message) > 0, E.Message);
+      end;
+      Check(Store.ReadState = tsVerifying, 'Failed service start changed confirmation state');
+      Check(Store.ConfirmFixture(Service, 'https://fixture.example', 'fixture-id', '1.8.3.7766',
+        StringOfChar('a', 64), StringOfChar('a', 64)), 'Cannot commit fixture confirmation');
+      FreeAndNil(Store);
+      Store := TTransitionStore.Create(Root + '\transition');
+      Check(Store.ReadState = tsCompleted, 'Fixture confirmation did not persist');
+      Check(Pos('inventory_sha256', ReadText(Store.RootDirectory + 'state.json')) > 0,
+        'Persisted confirmation evidence is missing');
     end
     else if Expected = tsInstalling then
     begin

@@ -33,7 +33,8 @@ type
     function Load: TJSONObject;
     procedure Save(Data: TJSONObject);
     function CommitState(Next: TTransitionState; const Diagnostic: string = '';
-      const BackupDigest: string = ''; InitialServiceState: DWORD = 0): Boolean;
+      const BackupDigest: string = ''; InitialServiceState: DWORD = 0;
+      const InventoryDigest: string = ''): Boolean;
   public
     constructor Create(const Root: UnicodeString = '');
     destructor Destroy; override;
@@ -45,6 +46,8 @@ type
     function Advance(Next: TTransitionState): Boolean;
     // Policy must come from trusted configuration, never the transition package.
     function RunFullPrecheck(const Policy: TTransitionSignerPolicy): Boolean;
+    function ConfirmFixture(const Service: UnicodeString; const ServerURL, UUID, Version,
+      ExpectedDigest, ReceivedDigest: string): Boolean;
     // No CLI invokes backup in 2C.1. Isolated execution accepts only a
     // dedicated fixture service, never the installed historical WAPTService.
     function RunBackup(const IsolatedService: UnicodeString = ''): Boolean;
@@ -226,21 +229,39 @@ begin
   end;
 end;
 
+function IsConfirmationDigest(const Value: string): Boolean;
+var
+  C: AnsiChar;
+begin
+  if Length(Value) <> 64 then Exit(False);
+  for C in Value do
+    if not (C in ['0'..'9', 'a'..'f']) then Exit(False);
+  Result := True;
+end;
+
 procedure Validate(Data: TJSONObject);
 var
   Current, Previous: TTransitionState;
   CreatedAt, UpdatedAt, Identifier: string;
   Id: TGUID;
-  Backup: TJSONObject;
+  Backup, Confirmation: TJSONObject;
 begin
   if Field(Data, 'schema_version', jtNumber).AsJSON <> IntToStr(SchemaVersion) then
     raise ETransitionState.Create('Unsupported state schema version');
-  if Data.Count <> 11 then
-    raise ETransitionState.Create('Unexpected fields in state document');
+
   Identifier := Field(Data, 'transition_id', jtString).AsString;
   if not TryStringToGUID(Identifier, Id) or (GUIDToString(Id) <> Identifier) then
     raise ETransitionState.Create('Invalid transition identifier');
   Current := ParseState(Field(Data, 'state', jtString).AsString);
+  if Data.Count <> 11 + Ord(Current = tsCompleted) then
+    raise ETransitionState.Create('Unexpected fields in state document');
+  if Current = tsCompleted then
+  begin
+    Confirmation := TJSONObject(Field(Data, 'confirmation', jtObject));
+    if (Confirmation.Count <> 2) or not IsConfirmationDigest(Field(Confirmation, 'inventory_sha256', jtString).AsString)
+      or not IsUtc(Field(Confirmation, 'confirmed_at', jtString).AsString) then
+      raise ETransitionState.Create('Invalid migration confirmation');
+  end;
   if Current = tsPrecheck then
     Field(Data, 'previous_state', jtNull)
   else
@@ -1084,10 +1105,49 @@ begin
   Result := LocalJournal and FinalJournal;
 end;
 
-function TTransitionStore.CommitState(Next: TTransitionState; const Diagnostic, BackupDigest: string;
-  InitialServiceState: DWORD): Boolean;
+function TTransitionStore.ConfirmFixture(const Service: UnicodeString; const ServerURL, UUID, Version,
+  ExpectedDigest, ReceivedDigest: string): Boolean;
 var
   Data: TJSONObject;
+  Lines: TStringList;
+  Ini: TMemIniFile;
+  Port: Integer;
+begin
+  if not FIsolated or (Pos('PADIT_BackupTest_', Service) <> 1) then raise ETransitionState.Create('Confirmation adapter is restricted to isolated fixtures');
+  if InstallerPending then raise ETransitionState.Create('Installer outcome is uncertain');
+  Data := Load;
+  try
+    if (Data = nil) or (ParseState(Data.Strings['state']) <> tsVerifying) then
+      raise ETransitionState.Create('Confirmation requires VERIFYING');
+    if not IsSafeServerURL(ServerURL) or (Pos('https://', ServerURL) <> 1) or
+      (ServerURL <> Data.Objects['target'].Strings['url']) or
+      (UUID = '') or (UUID <> Data.Objects['host'].Strings['uuid']) or
+      (Pos('1.8.3.', Version) <> 1) or (Version <> Data.Objects['target'].Strings['agent_version']) or
+      not IsConfirmationDigest(ExpectedDigest) or (ExpectedDigest <> ReceivedDigest) then
+      raise ETransitionState.Create('Fixture confirmation does not match transition identity or fresh inventory');
+    Lines := TStringList.Create;
+    Ini := TMemIniFile.Create('');
+    try
+      Lines.Text := RawByteString(ReadDocument(UTF8Decode(Data.Objects['source'].Strings['config_path'])));
+      Ini.SetStrings(Lines);
+      if not TryStrToInt(Ini.ReadString('global', 'waptservice_port', '8088'), Port) or
+        (Port < 1) or (Port > 65535) then raise ETransitionState.Create('Invalid fixture service port');
+      RestoreBackupService(Service, SERVICE_RUNNING);
+      RequireWaptIdle(Port, BackupServiceState(Service));
+    finally
+      Ini.Free;
+      Lines.Free;
+    end;
+    Result := CommitState(tsCompleted, '', '', 0, ReceivedDigest);
+  finally
+    Data.Free;
+  end;
+end;
+
+function TTransitionStore.CommitState(Next: TTransitionState; const Diagnostic, BackupDigest: string;
+  InitialServiceState: DWORD; const InventoryDigest: string): Boolean;
+var
+  Data, Confirmation: TJSONObject;
   Current: TTransitionState;
   Stamp, EventText: string;
 begin
@@ -1119,6 +1179,13 @@ begin
         Data.Objects['backup'].Booleans['verified'] := True;
         Data.Objects['backup'].Strings['manifest'] := 'backup/manifest.json';
         Data.Objects['backup'].Strings['sha256'] := BackupDigest;
+      end;
+      if Next = tsCompleted then
+      begin
+        Confirmation := TJSONObject.Create;
+        Data.Add('confirmation', Confirmation);
+        Confirmation.Add('inventory_sha256', InventoryDigest);
+        Confirmation.Add('confirmed_at', Stamp);
       end;
       Save(Data);
     finally

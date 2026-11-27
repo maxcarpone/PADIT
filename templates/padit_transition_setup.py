@@ -57,7 +57,7 @@ def _identity_parameter(value, ptype):
     return value.decode('utf-8') if isinstance(value, str) else value
 
 
-def _historical_database(database_path, preparation_row_id, preparation_package):
+def _historical_database(database_path, preparation_row_id, preparation_package, check_integrity=False):
     """Query a single SQLite read transaction using the historical Python DLL."""
     import _sqlite3
 
@@ -126,6 +126,8 @@ def _historical_database(database_path, preparation_row_id, preparation_package)
             if sqlite.sqlite3_open_v2(database_path.encode('utf-8'), ctypes.byref(db), 1, None) != 0:
                 raise RuntimeError('Cannot open historical SQLite read-only')
             query('BEGIN')
+            if check_integrity and query('PRAGMA integrity_check', 1) != [(u'ok',)]:
+                raise RuntimeError('Installed SQLite database failed its integrity check')
             params = {}
             for name in ('uuid', 'hostname'):
                 rows = query("SELECT value, ptype FROM wapt_params WHERE name='%s' "
@@ -151,7 +153,7 @@ def _historical_database(database_path, preparation_row_id, preparation_package)
 
 def collect_historical_snapshot(config_path, install_dir, working_dir,
                                 preparation_row_id=None, preparation_package=None,
-                                preparation_task_id=None):
+                                preparation_task_id=None, check_integrity=False):
     """Return JSON bytes for native staging. Only the future orchestrator may call this."""
     from ConfigParser import RawConfigParser
     import setuphelpers
@@ -174,7 +176,10 @@ def collect_historical_snapshot(config_path, install_dir, working_dir,
         database_path = os.path.abspath(os.path.join(working_dir, database_path))
     else:
         database_path = os.path.join(install_dir, u'db', u'waptdb.sqlite')
-    params = _historical_database(database_path, preparation_row_id, preparation_package)
+    if check_integrity:
+        params = _historical_database(database_path, preparation_row_id, preparation_package, True)
+    else:
+        params = _historical_database(database_path, preparation_row_id, preparation_package)
     fake_hostname = config.has_option('global', 'fake_hostname')
     hostname = (config.get('global', 'fake_hostname').decode('utf-8') if fake_hostname
                 else setuphelpers.get_hostname())
@@ -204,6 +209,16 @@ def collect_historical_snapshot(config_path, install_dir, working_dir,
         registered_uuid=registered_uuid or None, identification_mode=mode,
         preparation_pid=os.getpid() if preparation_row_id is not None else None,
         preparation_task_id=preparation_task_id), ensure_ascii=True)
+
+
+def verify_installed_snapshot(config_path, install_dir, working_dir, expected_uuid, expected_mode):
+    """Run under the installed runtime with WAPT stopped. No Wapt object is created."""
+    snapshot = json.loads(collect_historical_snapshot(
+        config_path, install_dir, working_dir, check_integrity=True))
+    if (snapshot['uuid'] != expected_uuid or snapshot['registered_uuid'] != expected_uuid or
+            snapshot['identification_mode'] != expected_mode):
+        raise RuntimeError('Installed SQLite identity does not match historical identity')
+    return snapshot
 
 
 def install():

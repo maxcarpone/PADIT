@@ -3255,3 +3255,40 @@ Revue indépendante de W109-126-f9.diff : PASS. F8/F9 accepté.
 - Vérification logique de SQLite et relecture de l'UUID, puis confirmation auprès du serveur cible.
 - Paquet toujours **NON DÉPLOYABLE** et hook réel désactivé.
 - Prochain lot 2E — confirmation de la migration.
+
+## W109-126 — Lot 2E — Inscription et confirmation de la migration
+
+- Revue indépendante du diff W109-126-lot2e-rev4.diff PASS pour intégration des sources.
+- Le collecteur vérifie logiquement SQLite en lecture seule, relit l'UUID enregistré et vérifie sa concordance avec l'UUID et le mode d'identification historiques.
+- L'inscription de transition exige une preuve cryptographique de possession de la clé. Les écritures de certificat passent par un verrou transactionnel PostgreSQL commun par UUID. La migration de schéma 1.8.3.1 ajoute le champ JSONB nullable Hosts.padit_transition, réservé aux écritures serveur.
+- La confirmation associe l'inventaire signé et son nonce à l'identité et à l'identifiant de transition. Le serveur relit en base les sections concernées avant de valider l'accusé. Une confirmation répétée après perte de réponse conserve la date initiale.
+- La protection cryptographique renforcée reste limitée à la transition provisoire. La confirmation la lève. Une tentative abandonnée expire après 24 heures, sans prolongation automatique ni suppression de fiche. La dernière trace confirmée est conservée.
+- Après migration, la réinscription classique avec le même UUID reste autorisée, y compris après changement de clé. La politique RC1 allow_unauthenticated_registration = True est conservée.
+- Tests ciblés PASS sur données et composants isolés, avec vérification du format de signature RSA sur une clé jetable. La qualification PostgreSQL et le parcours opérationnel réel restent à réaliser.
+
+### Qualifications impératives restantes
+
+- Migration réelle du schéma PostgreSQL, verrous transactionnels et inscriptions concurrentes réelles.
+- Conservation des groupes et des affectations individuelles de paquets après réinscription.
+- Parcours HTTPS signé de bout en bout et réimagerie réelle avec FOG.
+- Respect du délai de protection par le futur orchestrateur, démarrage opérationnel et confirmation réelle.
+- Paquet toujours **NON DÉPLOYABLE**.
+- Prochain chantier 2F — intégration et qualification complète.
+
+## Backlog post-RC1
+
+### Gestion intelligente des réinstallations et réaffectations de postes
+
+**Priorité élevée.** Faciliter la gestion du cycle de vie des postes sans imposer leur suppression préalable dans la console.
+
+- Conserver par défaut le comportement historique de WAPT lors d'une réimagerie. Proposer une politique facultative de validation des réinstallations par un opérateur et suspendre les déploiements automatiques pendant l'attente lorsque cette politique est activée.
+- Détecter les réinstallations probables sans assimiler systématiquement un renouvellement de clé à une réimagerie.
+- Permettre de conserver, de modifier ou de réinitialiser les affectations de paquets. Étudier le transfert des affectations entre postes et le changement de mode d'identification entre UUID matériel et FQDN.
+- Prévoir un traitement individuel ou par sélection multiple des postes. Le changement de mode UUID matériel/FQDN depuis la console reste à étudier.
+#### Conservation de la description Windows — priorité post-RC1 élevée
+
+Les noms informatiques sont imposés par l'organisation. La Description Windows indique l'affectation fonctionnelle des postes. Les réimages simultanées via FOG effacent cette description et rendent les postes difficiles à identifier dans la console WAPT.
+
+- Conserver durablement une description de référence côté serveur, indépendamment de l'inventaire et de la description Windows courante. Un inventaire vide ne doit pas écraser la référence.
+- Permettre la restauration de la description après réimagerie, automatiquement ou sur validation de l'opérateur. Permettre la modification distante et volontaire de la description depuis la console.
+- Prévoir les opérations sur un poste ou sur une sélection de postes. Gérer les descriptions indépendamment des affectations de paquets.

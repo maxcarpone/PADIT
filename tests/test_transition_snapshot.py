@@ -73,6 +73,22 @@ class HistoricalSnapshotTest(unittest.TestCase):
         self.sql("UPDATE wapt_params SET value='fixture.example.test' WHERE name='uuid'")
         self.assertEqual(self.collect('use_fqdn_as_uuid = yes')['identification_mode'], 'fqdn')
 
+    def test_installed_snapshot_checks_sqlite_and_requires_recorded_identity(self):
+        self.collect()
+        with open(self.db, 'rb') as stream:
+            before = stream.read()
+        result = collector.verify_installed_snapshot(
+            self.ini, self.root, self.root, 'fixture-id', 'hardware')
+        self.assertEqual(result['registered_uuid'], 'fixture-id')
+        with open(self.db, 'rb') as stream:
+            self.assertEqual(stream.read(), before)
+        self.assertFalse(os.path.exists(self.db + '-journal'))
+        self.assertRaises(RuntimeError, collector.verify_installed_snapshot,
+                          self.ini, self.root, self.root, 'fixture-id', 'configured')
+        self.sql("DELETE FROM wapt_params WHERE name='uuid'")
+        self.assertRaises(RuntimeError, collector.verify_installed_snapshot,
+                          self.ini, self.root, self.root, 'fixture-id', 'hardware')
+
     def test_identity_disagreement_and_unsafe_fallback(self):
         self.assertRaises(RuntimeError, self.collect, 'uuid = different')
         self.hardware = 'different'

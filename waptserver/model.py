@@ -325,6 +325,7 @@ class Hosts(WaptBaseModel):
 
     #
     status_hashes = BinaryJSONField(null=True,index=False)
+    padit_transition = BinaryJSONField(null=True, index=False)
 
     """
     def save(self,*args,**argvs):
@@ -1315,7 +1316,19 @@ def update_known_ssl_certificates(data,server_conf):
 
     return True
 
-def update_host_data(data,server_conf=None):
+def _transition_identity_rows(uuid):
+    from waptserver.transition import identity_key
+    kind, normalized = identity_key(uuid)
+    key = Hosts.uuid
+    if kind == 'guid':
+        key = fn.Lower(fn.BTrim(key, '{}'))
+    elif kind == 'dns':
+        key = fn.Lower(fn.RTrim(key, '.'))
+    return [host for host in Hosts.select(Hosts.uuid, Hosts.host_certificate, Hosts.padit_transition)
+            .where(key == normalized) if identity_key(host.uuid) == (kind, normalized)]
+
+
+def update_host_data(data,server_conf=None, confirmation_nonce=None, enrollment=None, signed_request=None):
     """Helper function to insert or update host data in db
 
     Args :
@@ -1330,6 +1343,11 @@ def update_host_data(data,server_conf=None):
     Returns:
         dict : with uuid,computer_fqdn,host_info from db after update
     """
+    from waptserver.transition import advisory_key, guard_identity, inventory_readback
+
+    data = dict(data)
+    data.pop('padit_transition', None)
+
     migrate_map_13_14 = {
         'packages': None,
         'installed_packages': None,
@@ -1352,6 +1370,16 @@ def update_host_data(data,server_conf=None):
 
     with wapt_db.atomic() as trans:
         try:
+            # Serialize every writer, including classic registration and first insert.
+            wapt_db.execute_sql('SELECT pg_advisory_xact_lock(%s)', (advisory_key(uuid),))
+            signed_uuid = uuid
+            uuid, trace, already_enrolled = guard_identity(_transition_identity_rows(uuid), uuid, data,
+                enrollment, confirmation_nonce, signed_request, SSLCertificate)
+            if already_enrolled:
+                return dict(uuid=signed_uuid, transition_id=trace['transition_id'])
+            data['uuid'] = uuid
+            transition_request = enrollment is not None or confirmation_nonce is not None
+
             applied_status_hashes = {}
             existing = Hosts.select(Hosts.uuid, Hosts.computer_fqdn,Hosts.status_hashes).where(Hosts.uuid == uuid).first()
             if not existing:
@@ -1362,11 +1390,13 @@ def update_host_data(data,server_conf=None):
                 for k in data.keys():
                     # manage field renaming between 1.3 and >= 1.4
                     target_key = migrate_map_13_14.get(k, k)
-                    if target_key and hasattr(updhost, target_key):
+                    if target_key in Hosts._meta.fields:
                         set_host_field(updhost, target_key, data[k])
                         if k in supplied_hashes:
                             applied_status_hashes[k] = supplied_hashes[k]
                 updhost.status_hashes = applied_status_hashes
+                if enrollment is not None:
+                    updhost.padit_transition = trace
                 updhost.save(force_insert=True)
             else:
                 logger.debug('Updating %s for fields %s' % (uuid, list(data.keys())))
@@ -1380,11 +1410,13 @@ def update_host_data(data,server_conf=None):
                     if k != 'status_hashes':
                         # manage field renaming between 1.3 and >= 1.4
                         target_key = migrate_map_13_14.get(k, k)
-                        if target_key and hasattr(updhost, target_key):
+                        if target_key in Hosts._meta.fields:
                             set_host_field(updhost, target_key, data[k])
                             if k in supplied_hashes:
                                 # logger.info('set data: %s , size: %s' % (target_key,len(jsondump(data[k]))))
                                 applied_status_hashes[k] = supplied_hashes[k]
+                if transition_request:
+                    updhost.padit_transition = trace
                 # merge already known data with new set
                 updhost.status_hashes.update(applied_status_hashes)
                 updhost.save()
@@ -1430,7 +1462,19 @@ def update_host_data(data,server_conf=None):
             logger.info('Applied data for host %s: %s' % (uuid,list(applied_status_hashes.keys())))
             # returns actual registered fqdn and status hashes so that host can omit to send some data next time if they have not changed
             result_query = Hosts.select(Hosts.uuid, Hosts.computer_fqdn,Hosts.status_hashes)
-            return result_query.where(Hosts.uuid == uuid).dicts().first()
+            result = result_query.where(Hosts.uuid == uuid).dicts().first()
+            if confirmation_nonce is not None:
+                stored = (Hosts.select(Hosts.uuid, Hosts.host_info, Hosts.wapt_status)
+                          .where(Hosts.uuid == uuid).dicts().first())
+                signed = dict(data, uuid=signed_uuid)
+                result['transition_confirmation'] = inventory_readback(signed, stored, confirmation_nonce)
+                result['transition_confirmation']['transition_id'] = trace['transition_id']
+                result['transition_confirmation']['confirmed_at'] = trace['confirmed_at']
+                result['uuid'] = signed_uuid
+            if enrollment is not None:
+                result['uuid'] = signed_uuid
+                result['transition_id'] = trace['transition_id']
+            return result
 
         except Exception as e:
             logger.critical(u'Error updating data for %s : %s' % (uuid, ensure_unicode(e)))
@@ -2314,6 +2358,15 @@ def upgrade_db_structure():
                 logger.info("Migrating from %s to %s" % (get_db_version(), next_version))
 
                 # WAPT 1.8.3 consolidated database baseline.
+                set_db_version(next_version)
+
+        next_version = '1.8.3.1'
+        if get_db_version() < next_version:
+            with wapt_db.atomic():
+                opes = []
+                add_column_safe(opes, migrator, Hosts.padit_transition)
+                if opes:
+                    migrate(*opes)
                 set_db_version(next_version)
 
         if get_db_version() < DB_VERSION:

@@ -493,7 +493,7 @@ def register_host():
                 if registration_auth_user:
                     data['registration_auth_user'] = registration_auth_user
 
-            db_data = update_host_data(data,app.conf)
+            db_data = update_host_data(data, app.conf, signed_request=(raw_data, signature))
             # return back signed host certificate
             if 'host_certificate_signing_request' in data and valid_auth:
                 db_data['host_certificate'] = data['host_certificate']
@@ -506,6 +506,40 @@ def register_host():
         logger.debug(traceback.format_exc())
         logger.critical('add_host failed %s' % (repr(e)))
         return make_response_from_exception(e)
+
+
+@app.route('/transition/enroll', methods=['POST'])
+@require_wapt_db
+def enroll_transition():
+    from waptserver.transition import enrollment_trace
+    try:
+        if not app.conf['allow_unauthenticated_registration']:
+            raise ValueError('Transition enrollment requires the RC1 registration policy')
+        if request.content_length is None or not 0 < request.content_length <= 65536:
+            raise ValueError('Invalid transition enrollment size')
+        raw_data = request.data
+        data = ujson.loads(raw_data)
+        if not isinstance(data, dict) or set(data) != set(('uuid', 'host_info', 'host_certificate', 'transition')):
+            raise ValueError('Invalid transition enrollment request')
+        if (not isinstance(data['uuid'], basestring) or
+                not re.match(r'\A[a-zA-Z0-9_.{}-]{1,255}\Z', data['uuid']) or
+                data['uuid'] in ('.', '..')):
+            raise ValueError('Invalid transition host UUID')
+        host_info = data['host_info']
+        if (not isinstance(host_info, dict) or set(host_info) != set(('computer_fqdn',)) or
+                not isinstance(host_info['computer_fqdn'], basestring) or
+                not 0 < len(host_info['computer_fqdn']) <= 255):
+            raise ValueError('Invalid transition host name')
+        if not isinstance(data['host_certificate'], basestring) or not data['host_certificate']:
+            raise ValueError('Missing transition host certificate')
+        signature = request.headers.get('X-Signature', '').decode('base64')
+        trace = enrollment_trace(data.pop('transition'))
+        data['last_seen_on'] = datetime2isodate()
+        result = update_host_data(data, app.conf, enrollment=trace, signed_request=(raw_data, signature))
+        return make_response(result=result, msg='enroll_transition')
+    except Exception as e:
+        logger.warning('Transition enrollment rejected (%s)', type(e).__name__)
+        return make_response(success=False, error_code='transition_enrollment_rejected')
 
 
 @app.route('/update_host',methods=['HEAD','POST'])
@@ -536,6 +570,11 @@ def update_host():
         if not data:
             raise Exception('register_host: No data supplied')
 
+        from waptserver.transition import transition_nonce
+        confirmation_nonce = transition_nonce(data)
+        if confirmation_nonce is not None and app.conf['allow_unsigned_status_data']:
+            raise ValueError('Transition confirmation requires signed inventory policy')
+
         uuid = data['uuid']
         if not uuid:
             raise Exception('register_host: No uuid supplied')
@@ -555,6 +594,14 @@ def update_host():
         if not signature and not app.conf['allow_unsigned_status_data']:
             raise Exception('register_host: Missing signature')
         signer = request.headers.get('X-Signer', None)
+
+        if confirmation_nonce is not None:
+            # The protected certificate is selected and checked after acquiring the UUID lock.
+            data.pop('host_certificate', None)
+            data['last_seen_on'] = datetime2isodate()
+            result = update_host_data(data, app.conf, confirmation_nonce=confirmation_nonce,
+                                      signed_request=(raw_data, signature))
+            return make_response(result=result, msg='update_host', request_time=time.time() - starttime)
 
         # check if data is for the registered host
         existing_host = Hosts.select(Hosts.uuid, Hosts.host_certificate, Hosts.computer_fqdn).where(Hosts.uuid == uuid).first()
@@ -589,7 +636,7 @@ def update_host():
             del data['host_certificate']
 
         data['last_seen_on'] = datetime2isodate()
-        db_data = update_host_data(data,app.conf)
+        db_data = update_host_data(data, app.conf, signed_request=(raw_data, signature))
 
         result = db_data
         message = 'update_host'

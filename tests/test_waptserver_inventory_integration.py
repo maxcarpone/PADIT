@@ -9,6 +9,8 @@ import copy
 import cPickle
 import hashlib
 import logging
+import threading
+import time
 import unittest
 import uuid
 
@@ -16,7 +18,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from playhouse.pool import PooledPostgresqlExtDatabase
-from waptserver import model
+from waptserver import model, transition
+from waptcrypto import SSLPrivateKey, sha256_for_data
 
 SOCKET_DIR = os.environ.get('PADIT_TEST_PG', '')
 
@@ -63,6 +66,7 @@ class TestInventoryIntegration(unittest.TestCase):
                 model.Hosts,
                 model.HostPackagesStatus,
                 model.HostSoftwares,
+                model.HostGroups,
             ], safe=True)
 
         self.addCleanup(self.db.close_all)
@@ -121,6 +125,93 @@ class TestInventoryIntegration(unittest.TestCase):
             original_hash)
 
         return original_hash
+
+    def test_protected_transition_and_repeat_confirmation(self):
+        key = SSLPrivateKey().create()
+        cert = key.build_sign_certificate(cn=unicode(self.uuid), is_ca=False)
+        other_key = SSLPrivateKey().create()
+        other = other_key.build_sign_certificate(cn=unicode(self.uuid), is_ca=False)
+        trace = transition.enrollment_trace(dict(transition_id=str(uuid.uuid4()),
+            source_server='https://source.invalid', source_version='1.8.3.7766',
+            target_version='1.8.3.7766', issued_at=int(time.time())))
+
+        def write(cert, key, enroll=None):
+            data = dict(uuid=self.uuid, host_certificate=cert.as_pem())
+            raw = model.jsondump(data)
+            return model.update_host_data(data, self.server_conf, enrollment=enroll,
+                signed_request=(raw, key.sign_content(sha256_for_data(raw))))
+
+        with model.WaptDB():
+            self.assertEqual(write(cert, key, trace)['transition_id'], trace['transition_id'])
+            self.assertEqual(self.get_host().padit_transition['state'], 'provisional')
+            self.assertEqual(write(cert, key, trace)['transition_id'], trace['transition_id'])
+            self.assertRaises(Exception, write, other, other_key, trace)
+            self.assertRaises(Exception, write, other, other_key)
+            self.assertEqual(self.get_host().host_certificate, cert.as_pem())
+
+            def acknowledge(nonce):
+                data = dict(uuid=self.uuid, transition_id=trace['transition_id'],
+                    host_info={'computer_fqdn': 'fixture.invalid', transition.NONCE_FIELD: nonce},
+                    wapt_status={'wapt-get-version': '1.8.3.7766', transition.NONCE_FIELD: nonce})
+                raw = model.jsondump(data)
+                return model.update_host_data(data, self.server_conf, confirmation_nonce=nonce,
+                    signed_request=(raw, key.sign_content(sha256_for_data(raw))))['transition_confirmation']
+
+            first = acknowledge('a'*32)
+            second = acknowledge('b'*32)
+            self.assertEqual(first['confirmed_at'], second['confirmed_at'])
+            before = self.get_host()
+            model.HostGroups.create(host=self.uuid, group_name='fixture-assignment')
+            write(other, other_key)
+            after = self.get_host()
+            self.assertEqual(after.host_certificate, other.as_pem())
+            self.assertEqual(after.created_on, before.created_on)
+            self.assertEqual(after.padit_transition, before.padit_transition)
+            self.assertTrue(model.HostGroups.select().where(
+                (model.HostGroups.host == self.uuid) &
+                (model.HostGroups.group_name == 'fixture-assignment')).exists())
+            self.assertNotEqual(first['inventory_sha256'], second['inventory_sha256'])
+            model.update_host_data(dict(uuid=self.uuid, padit_transition={'state': 'forged'},
+                __dict__={'padit_transition': None},
+                host_info={'computer_fqdn': 'fixture.invalid'}), self.server_conf)
+            self.assertEqual(self.get_host().padit_transition['confirmed_at'], first['confirmed_at'])
+
+    def test_concurrent_transition_enrollments(self):
+        trace = transition.enrollment_trace(dict(transition_id=str(uuid.uuid4()),
+            source_server='https://source.invalid', source_version='1.8.2.7393',
+            target_version='1.8.3.7766', issued_at=int(time.time())))
+        start = threading.Event()
+        outcome = []
+
+        def enroll(key, pem):
+            data = dict(uuid=self.uuid, host_certificate=pem)
+            raw = model.jsondump(data)
+            signed = raw, key.sign_content(sha256_for_data(raw))
+            start.wait()
+            with model.WaptDB():
+                try:
+                    model.update_host_data(data, self.server_conf, enrollment=trace, signed_request=signed)
+                except Exception as error:
+                    outcome.append(error)
+                else:
+                    outcome.append(None)
+
+        threads = []
+        for _ in range(2):
+            key = SSLPrivateKey().create()
+            cert = key.build_sign_certificate(cn=unicode(self.uuid), is_ca=False)
+            worker = threading.Thread(target=enroll, args=(key, cert.as_pem()))
+            worker.daemon = True
+            threads.append(worker)
+            worker.start()
+        start.set()
+        for worker in threads:
+            worker.join(10)
+        self.assertEqual(len(outcome), 2)
+        self.assertEqual(outcome.count(None), 1)
+        self.assertIsInstance(next(result for result in outcome if result is not None), Exception)
+        with model.WaptDB():
+            self.assertEqual(self.get_host().padit_transition['state'], 'provisional')
 
     def test_inventory_insert(self):
         with model.WaptDB():
